@@ -1,0 +1,56 @@
+name: Release
+
+# Cut a release by pushing a semver tag:
+#   git tag v1.0.0 && git push origin v1.0.0
+# This builds the APK and publishes it as a GitHub Release with the APK attached.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required to create the Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # The native .so files are committed under app/src/main/jniLibs, so no Rust
+      # toolchain is needed here — Gradle just compiles Kotlin and packages the APK.
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/rusty-${GITHUB_REF_NAME}.apk"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/rusty-*.apk
+          generate_release_notes: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Upgrading to a SIGNED release build (optional):
+#   1. Generate a keystore:  keytool -genkey -v -keystore release.jks \
+#        -keyalg RSA -keysize 2048 -validity 10000 -alias release
+#   2. Add repo secrets: SIGNING_KEYSTORE_BASE64, SIGNING_KEYSTORE_PASSWORD,
+#        SIGNING_KEY_ALIAS, SIGNING_KEY_PASSWORD
+#   3. Add a signingConfig in app/build.gradle.kts that reads them, decode the
+#      keystore in a step, and swap the build step to `./gradlew assembleRelease`,
+#      uploading app/build/outputs/apk/release/app-release.apk instead.
+# Until then, the debug-signed APK above installs fine for sideloading.

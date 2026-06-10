@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Ambient redesign palette (retires the GitHub/IDE tokens) -->
+    <color name="bg_base">#FF0B0A0C</color>
+    <color name="surface">#FF141217</color>
+    <color name="surface_border">#FF2A2730</color>
+    <color name="ink">#FFF3EEE7</color>
+    <color name="muted">#FFB7B1AA</color>
+    <color name="muted_dim">#FF9B9690</color>
+
+    <color name="accent_fallback">#FF1DB954</color>
+
+    <color name="mesh_teal">#FF1F6F4A</color>
+    <color name="mesh_blue">#FF243B6E</color>
+    <color name="mesh_violet">#FF5A2C6E</color>
+
+    <!-- Functional status-dot colors -->
+    <color name="dot_green">#FF1DB954</color>
+    <color name="dot_amber">#FFE3B341</color>
+    <color name="dot_grey">#FF8B949E</color>
+    <color name="dot_red">#FFF85149</color>
+</resources>

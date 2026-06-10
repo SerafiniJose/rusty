@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Vector recreation of the selected minimal Librespot receiver icon option. -->
+    <path
+        android:fillColor="#171A1F"
+        android:pathData="M22,4 L86,4 C95.94,4 104,12.06 104,22 L104,86 C104,95.94 95.94,104 86,104 L22,104 C12.06,104 4,95.94 4,86 L4,22 C4,12.06 12.06,4 22,4 Z" />
+
+    <path
+        android:fillColor="#20252B"
+        android:pathData="M24,8 L84,8 C92.84,8 100,15.16 100,24 L100,84 C100,92.84 92.84,100 84,100 L24,100 C15.16,100 8,92.84 8,84 L8,24 C8,15.16 15.16,8 24,8 Z" />
+
+    <!-- Green receiver/audio waves. -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1ED760"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M71,41 C78,47 78,61 71,67" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1ED760"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M80,31 C94,43 94,65 80,77" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1ED760"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M88,22 C108,40 108,68 88,86" />
+
+    <!-- Small orange connection accent. -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF9F1C"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M75,21 C80,16 88,16 93,21" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF9F1C"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M80,27 C83,24 87,24 90,27" />
+
+    <!-- Central speaker/target symbol. -->
+    <path
+        android:fillColor="#0A0C0F"
+        android:pathData="M54,25 A29,29 0,1 0,54.1 25 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,32 A22,22 0,1 0,54.1 32 Z" />
+    <path
+        android:fillColor="#111418"
+        android:pathData="M54,39 A15,15 0,1 0,54.1 39 Z" />
+    <path
+        android:fillColor="#1ED760"
+        android:pathData="M54,46 A8,8 0,1 0,54.1 46 Z" />
+    <path
+        android:fillColor="#74F29A"
+        android:pathData="M50,49 A2.3,2.3 0,1 0,50.1 49 Z" />
+</vector>

@@ -1,0 +1,15 @@
+
+#android
+.gradle/
+local.properties
+.idea/
+build/
+app/build/
+*.iml
+
+#rust
+target/
+**/*.rs.bk
+
+#dont commit binary libs
+app/src/main/jniLibs/

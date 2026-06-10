@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solid white oval; tinted at runtime via backgroundTintList to reflect
+     receiver state (green=playing, amber=paused, grey=starting, red=offline). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#FFFFFF" />
+    <size
+        android:width="12dp"
+        android:height="12dp" />
+</shape>

@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@android:color/transparent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_popup_card"
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingTop="22dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Session &amp; receiver health"
+            android:textColor="@color/ink"
+            android:textSize="20sp"
+            android:fontFamily="@font/bricolage_bold" />
+
+        <!-- Status line: dot + label -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <View
+                android:id="@+id/viewInfoDot"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:background="@drawable/bg_status_dot" />
+
+            <TextView
+                android:id="@+id/tvInfoStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="Waiting"
+                android:textColor="@color/ink"
+                android:textSize="16sp"
+                android:fontFamily="@font/hanken_semibold" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Session"
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp"
+            android:letterSpacing="0.08"
+            android:textAllCaps="true"
+            android:fontFamily="@font/hanken_semibold" />
+
+        <LinearLayout
+            android:id="@+id/llInfoListeners"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:orientation="vertical" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="14dp"
+            android:background="@color/surface_border" />
+
+        <TextView
+            android:id="@+id/tvInfoDiscovery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Discovery: active"
+            android:textColor="@color/muted"
+            android:textSize="15sp"
+            android:fontFamily="@font/hanken_regular" />
+
+        <TextView
+            android:id="@+id/tvInfoService"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Service: listening for Spotify"
+            android:textColor="@color/muted"
+            android:textSize="15sp"
+            android:fontFamily="@font/hanken_regular" />
+
+        <TextView
+            android:id="@+id/tvInfoAudio"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Audio: AAudio • Cache: app cache"
+            android:textColor="@color/muted"
+            android:textSize="15sp"
+            android:fontFamily="@font/hanken_regular" />
+
+        <TextView
+            android:id="@+id/tvInfoQuality"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Quality: 160 kbps · balanced"
+            android:textColor="@color/muted"
+            android:textSize="15sp"
+            android:fontFamily="@font/hanken_regular" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

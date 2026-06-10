@@ -1,0 +1,27 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+.kotlin
+.idea
+
+# Rust build outputs
+/rust/target/
+.superpowers/
+
+# Local design scratch & dev artifacts — not part of the app
+sketches/
+design/
+*.mp4
+docs/

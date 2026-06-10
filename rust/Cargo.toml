@@ -1,0 +1,41 @@
+[package]
+name = "spotify_receiver_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# JNI for Android communication
+jni = "0.21"
+ndk-context = "0.1"
+
+# Async Runtime
+tokio = { version = "1", features = ["full"] }
+futures = "0.3" # Required for StreamExt (discovery.next)
+
+# Logging
+log = "0.4"
+android_logger = "0.13"
+
+# Librespot (0.8.0 umbrella crate). default-features disabled to drop native-tls
+# (OpenSSL — painful on Android NDK). We select rustls with compiled-in webpki roots
+# (no host cert store / no OpenSSL), the rodio audio backend (oboe on Android), and
+# the pure-Rust libmdns zeroconf discovery backend.
+librespot = { version = "0.8", default-features = false, features = [
+    "rustls-tls-webpki-roots",
+    "rodio-backend",
+    "with-libmdns",
+] }
+
+# We provide our own audio sink (see src/audio_sink.rs) instead of librespot's
+# stock rodio backend so we can reopen the output stream when Android changes the
+# active audio route (e.g. Bluetooth connect/disconnect). Pinned to the same rodio
+# (and therefore cpal) version librespot uses so the types unify into one crate.
+# cpal is reached via rodio's re-export (`rodio::cpal`), so no direct cpal dep.
+rodio = { version = "0.21", default-features = false, features = ["playback"] }
+
+# Crypto
+sha1 = "0.10"
+hex = "0.4"

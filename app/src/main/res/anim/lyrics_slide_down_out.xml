@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lyrics screen leaving: slides back down and fades out. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="240"
+    android:interpolator="@android:interpolator/accelerate_quad">
+    <translate
+        android:fromYDelta="0"
+        android:toYDelta="12%p" />
+    <alpha
+        android:fromAlpha="1.0"
+        android:toAlpha="0.3" />
+</set>
