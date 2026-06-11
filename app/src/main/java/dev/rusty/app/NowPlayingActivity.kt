@@ -10,6 +10,7 @@ import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.net.Uri
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -108,6 +109,16 @@ class NowPlayingActivity : AppCompatActivity() {
     private lateinit var insetsController: WindowInsetsControllerCompat
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /** Running build's versionName (e.g. "1.1.0"), read once from the package manager. */
+    private val appVersionName: String by lazy {
+        try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
+    }
+
     private val playbackClockTick = object : Runnable {
         override fun run() {
             if (dashboardState.isPlaybackClockRunning) {
@@ -707,12 +718,89 @@ class NowPlayingActivity : AppCompatActivity() {
         val view = layoutInflater.inflate(R.layout.bottom_sheet_info, null)
         val dialog = createCardDialog(view)
         bindInfoSheet(dialog, dashboardState)
+
+        // About & updates row: shows the running version, opens the About sheet, and lights
+        // an "Update" badge if a newer release is found. The check runs off the main thread
+        // and is cached, so it's cheap on reopen.
+        val updateBadge = view.findViewById<TextView>(R.id.tvUpdateBadge)
+        view.findViewById<TextView>(R.id.tvAboutValue).text = "Version $appVersionName"
+        view.findViewById<View>(R.id.rowAbout).setOnClickListener { showAboutSheet() }
+        Thread {
+            val check = UpdateRepository.check(appVersionName)
+            handler.post {
+                if (dialog.isShowing &&
+                    check.status == UpdateRepository.UpdateStatus.UPDATE_AVAILABLE) {
+                    updateBadge.visibility = View.VISIBLE
+                }
+            }
+        }.start()
+
         dialog.setOnDismissListener {
             infoDialog = null
             if (fullscreenEnabled) hideSystemBars()
         }
         infoDialog = dialog
         dialog.show()
+    }
+
+    // ---- About / updates sheet ---------------------------------------------
+
+    private fun showAboutSheet() {
+        val view = layoutInflater.inflate(R.layout.bottom_sheet_about, null)
+        val dialog = createCardDialog(view)
+
+        val versionLine = view.findViewById<TextView>(R.id.tvAboutVersion)
+        val banner = view.findViewById<View>(R.id.cardUpdateBanner)
+        val bannerText = view.findViewById<TextView>(R.id.tvUpdateBannerText)
+        val statusLine = view.findViewById<TextView>(R.id.tvUpdateStatus)
+        val whatsNewTitle = view.findViewById<TextView>(R.id.tvWhatsNewTitle)
+        val whatsNew = view.findViewById<TextView>(R.id.tvWhatsNew)
+        val downloadButton = view.findViewById<MaterialButton>(R.id.btnDownload)
+        val sourceRow = view.findViewById<View>(R.id.rowSource)
+
+        versionLine.text = "Version $appVersionName"
+        sourceRow.setOnClickListener { openUrl(UpdateRepository.REPO_URL) }
+
+        // Run the (cached) check off the main thread, then render the result.
+        Thread {
+            val check = UpdateRepository.check(appVersionName)
+            handler.post {
+                if (!dialog.isShowing) return@post
+                when (check.status) {
+                    UpdateRepository.UpdateStatus.UPDATE_AVAILABLE -> {
+                        val latest = check.latest!!
+                        statusLine.visibility = View.GONE
+                        banner.visibility = View.VISIBLE
+                        bannerText.text = "Update available · ${latest.versionName}"
+                        if (latest.notes.isNotEmpty()) {
+                            whatsNewTitle.visibility = View.VISIBLE
+                            whatsNew.visibility = View.VISIBLE
+                            whatsNew.text = latest.notes
+                        }
+                        downloadButton.visibility = View.VISIBLE
+                        downloadButton.setOnClickListener { openUrl(latest.releaseUrl) }
+                    }
+                    UpdateRepository.UpdateStatus.UP_TO_DATE ->
+                        statusLine.text = "You're on the latest version."
+                    UpdateRepository.UpdateStatus.ERROR ->
+                        statusLine.text = "Couldn't check for updates. Tap “Source & releases” to check manually."
+                }
+            }
+        }.start()
+
+        dialog.setOnDismissListener {
+            if (fullscreenEnabled) hideSystemBars()
+        }
+        dialog.show()
+    }
+
+    /** Opens [url] in a browser, ignoring the (unlikely) no-browser case rather than crashing. */
+    private fun openUrl(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (e: Exception) {
+            // No browser/handler available — nothing actionable to do.
+        }
     }
 
     private fun bindInfoSheet(dialog: Dialog, state: ReceiverDashboardState) {

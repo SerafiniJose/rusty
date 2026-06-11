@@ -38,11 +38,34 @@ jobs:
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk "dist/rusty-${GITHUB_REF_NAME}.apk"
 
+      # Pull the CHANGELOG section for this tag (e.g. v1.2.0 → "## [1.2.0]") and use it
+      # as the release body, so GitHub and the app's "What's new" show the same curated
+      # notes. If the tag has no entry, fall back to GitHub's auto-generated notes.
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { capture=1; next }
+            capture && /^## \[/ { exit }
+            capture && /^\[[^]]+\]:[[:space:]]/ { exit }
+            capture { print }
+          ' CHANGELOG.md > release-notes.md
+          # Drop leading/trailing blank lines for a tidy body.
+          sed -i -e '/./,$!d' release-notes.md
+          if [ -s release-notes.md ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No CHANGELOG entry for $VERSION; using auto-generated notes."
+          fi
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/rusty-*.apk
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.found == 'true' && 'release-notes.md' || '' }}
+          generate_release_notes: ${{ steps.notes.outputs.found != 'true' }}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Upgrading to a SIGNED release build (optional):
