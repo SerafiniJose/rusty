@@ -1,6 +1,7 @@
 package dev.rusty.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ReceiverDashboardStateTest {
@@ -87,5 +88,16 @@ class ReceiverDashboardStateTest {
 
         assertEquals("3:18", advanced.elapsedLabel)
         assertEquals(198_000L, advanced.elapsedMs)
+    }
+
+    @Test
+    fun offFactoryProducesStoppedReceiverState() {
+        val state = ReceiverDashboardState.off("Living Room")
+
+        assertEquals("Living Room", state.receiverName)
+        assertEquals("Off", state.status)
+        assertEquals("Discovery: off", state.discoveryLine)
+        assertEquals("Service: stopped", state.serviceLine)
+        assertNull(state.sessionUser)
     }
 }

@@ -507,6 +507,7 @@ class NowPlayingActivity : AppCompatActivity() {
         state.sessionUser != null -> (if (state.status == "Paused") "Paused" else "Connected") to DOT_AMBER
         state.status == "Starting" || state.status == "Restarting" -> "Starting" to DOT_GREY
         state.status == "Error" || state.status == "Unavailable" -> "Offline" to DOT_RED
+        state.status == "Off" -> "Off" to DOT_GREY
         // Up and discoverable with no controller (Waiting/Stopped, no session): a calm
         // "Listening" in green, matching the clock face — not an alarming "Offline" red.
         else -> "Listening" to DOT_GREEN
@@ -528,6 +529,8 @@ class NowPlayingActivity : AppCompatActivity() {
         val fullscreenSwitch = view.findViewById<SwitchMaterial>(R.id.switchFullscreen)
         val timeFormatSwitch = view.findViewById<SwitchMaterial>(R.id.switchTimeFormat)
         val feedback = view.findViewById<TextView>(R.id.tvSettingsFeedback)
+        val serviceStatusValue = view.findViewById<TextView>(R.id.tvReceiverStatusValue)
+        val toggleServiceButton = view.findViewById<MaterialButton>(R.id.btnToggleService)
 
         nameValue.text = deviceName
         nameInput.setText(deviceName)
@@ -535,6 +538,14 @@ class NowPlayingActivity : AppCompatActivity() {
         bitrateValue.text = bitrateLabel(bitrateKbps)
         fullscreenSwitch.isChecked = fullscreenEnabled
         timeFormatSwitch.isChecked = is24HourClock
+
+        fun renderServiceToggle() {
+            val isOff = dashboardState.status == "Off"
+            toggleServiceButton.text = if (isOff) "Start" else "Stop"
+            serviceStatusValue.text =
+                if (isOff) "Off" else "Running · listening for Spotify"
+        }
+        renderServiceToggle()
 
         changeButton.setOnClickListener {
             editRow.visibility = if (editRow.visibility == View.VISIBLE) View.GONE else View.VISIBLE
@@ -569,6 +580,21 @@ class NowPlayingActivity : AppCompatActivity() {
         }
 
         saveButton.setOnClickListener { commitName() }
+        toggleServiceButton.setOnClickListener {
+            if (dashboardState.status == "Off") {
+                // Re-start: reuses the permission-gated start path. Bypasses the
+                // once-per-process auto-start guard, which is intentional — the user
+                // explicitly asked to start it again.
+                checkPermissionsAndStartService()
+            } else {
+                // stopService routes through SpotifyService.onDestroy (clean teardown,
+                // publishes OFF). Render OFF immediately so the sheet/header update
+                // without waiting for the broadcast round-trip.
+                stopService(Intent(this, SpotifyService::class.java))
+                renderDashboardState(ReceiverDashboardState.off(deviceName))
+            }
+            renderServiceToggle()
+        }
         // Commit on the IME "Done" action (soft keyboard) and on a hardware/Bluetooth
         // Enter key, which arrives as a KEYCODE_ENTER event with an unspecified action id
         // rather than IME_ACTION_DONE. Gate on ACTION_DOWN so it fires once per press.

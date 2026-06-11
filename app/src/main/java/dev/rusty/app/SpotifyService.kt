@@ -3,6 +3,7 @@ package dev.rusty.app
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -48,6 +49,11 @@ class SpotifyService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ReceiverDashboardBroadcast.ACTION_STOP) {
+            Log.i("SpotifyService", "Stop requested via ACTION_STOP; tearing down")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val deviceName = intent?.getStringExtra("DEVICE_NAME")
             ?: prefs.getString(KEY_DEVICE_NAME, DEFAULT_DEVICE_NAME)
@@ -230,11 +236,27 @@ class SpotifyService : Service() {
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
 
+        val stopIntent = Intent(this, SpotifyService::class.java).apply {
+            action = ReceiverDashboardBroadcast.ACTION_STOP
+        }
+        val stopPendingIntent = PendingIntent.getForegroundService(
+            this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+        val openIntent = PendingIntent.getActivity(
+            this, 1,
+            Intent(this, NowPlayingActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("Spotify Receiver Active")
             .setContentText("Listening for connections...")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)
+            .setContentIntent(openIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
             .build()
     }
 
@@ -245,7 +267,12 @@ class SpotifyService : Service() {
         currentTrackId = null
         TokenStore.clear()
         ProfileRepository.clear()
-        publishStatus(ReceiverDashboardStatusEvent.Lifecycle.STOPPED)
+        // Order matters: emit the playback-STOPPED reset FIRST (it clears the now-playing
+        // track and tells LyricsActivity to close), then publish OFF LAST so the final
+        // dashboard state is the honest "Off" — not the "listening" health a STOPPED
+        // playback event maps to. Publishing OFF last makes it win in both the
+        // DashboardStateHolder snapshot (written in call order) and the broadcast the
+        // Activity receives (delivered in send order).
         publishPlayback(
             playbackState = ReceiverDashboardPlaybackEvent.PlaybackState.STOPPED.name,
             title = null,
@@ -258,6 +285,7 @@ class SpotifyService : Service() {
             coverUrl = null,
             trackId = null
         )
+        publishStatus(ReceiverDashboardStatusEvent.Lifecycle.OFF)
         NativeBridge.stopDevice()
         nativeStartedConfig = null
         multicastLock?.release()

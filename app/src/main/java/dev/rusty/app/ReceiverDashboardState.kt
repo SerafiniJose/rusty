@@ -84,6 +84,13 @@ data class ReceiverDashboardState(
             serviceLine = "Service: restarting"
         )
 
+        fun off(receiverName: String): ReceiverDashboardState = ReceiverDashboardState(
+            receiverName = receiverName,
+            status = "Off",
+            discoveryLine = "Discovery: off",
+            serviceLine = "Service: stopped"
+        )
+
         fun playing(
             receiverName: String,
             title: String,

@@ -6,6 +6,7 @@ package dev.rusty.app
 object ReceiverDashboardBroadcast {
     const val ACTION_STATUS = "dev.rusty.app.action.RECEIVER_STATUS"
     const val ACTION_PLAYBACK = "dev.rusty.app.action.PLAYBACK_STATUS"
+    const val ACTION_STOP = "dev.rusty.app.action.STOP_SERVICE"
     const val EXTRA_RECEIVER_NAME = "dev.rusty.app.extra.RECEIVER_NAME"
     const val EXTRA_LIFECYCLE = "dev.rusty.app.extra.LIFECYCLE"
     const val EXTRA_MESSAGE = "dev.rusty.app.extra.MESSAGE"
@@ -43,6 +44,7 @@ data class ReceiverDashboardStatusEvent(
         CONNECTED,
         RESTARTING,
         STOPPED,
+        OFF,
         ERROR;
 
         companion object {
@@ -95,6 +97,16 @@ data class ReceiverDashboardStatusEvent(
             receiverName = receiverName,
             status = "Stopped",
             discoveryLine = "Discovery: stopped",
+            serviceLine = "Service: stopped",
+            sessionUser = null,
+            sessionDisplayName = null,
+            sessionAvatarUrl = null,
+        )
+
+        Lifecycle.OFF -> previous.copy(
+            receiverName = receiverName,
+            status = "Off",
+            discoveryLine = "Discovery: off",
             serviceLine = "Service: stopped",
             sessionUser = null,
             sessionDisplayName = null,

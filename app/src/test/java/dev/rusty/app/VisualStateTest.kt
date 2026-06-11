@@ -73,4 +73,13 @@ class VisualStateTest {
         val s = ReceiverDashboardState.waiting("R").copy(status = "Permission needed")
         assertEquals("Notifications off — tap settings", s.idleStatus().first)
     }
+
+    @Test fun idleStatusReportsReceiverOff() {
+        val s = ReceiverDashboardState.off("R")
+        assertEquals("Receiver off — open settings to start", s.idleStatus().first)
+    }
+
+    @Test fun offIsIdleFace() {
+        assertEquals(VisualState.IDLE, ReceiverDashboardState.off("R").visualState())
+    }
 }

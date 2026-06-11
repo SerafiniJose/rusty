@@ -23,11 +23,60 @@
             android:textSize="20sp"
             android:fontFamily="@font/bricolage_bold" />
 
-        <!-- Receiver name: one row showing the current name + a Change button that reveals the editor. -->
+        <!-- Receiver power: live status sub-line + a Stop/Start toggle, mirroring the name+Change row. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_medium"
+                    android:text="Receiver"
+                    android:textColor="@color/ink"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tvReceiverStatusValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_regular"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="Running · listening for Spotify"
+                    android:textColor="@color/muted_dim"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnToggleService"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Stop"
+                android:textColor="@color/accent_fallback" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="14dp"
+            android:background="@color/surface_border" />
+
+        <!-- Receiver name: one row showing the current name + a Change button that reveals the editor. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 

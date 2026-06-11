@@ -150,4 +150,57 @@ class ReceiverDashboardStatusEventTest {
         assertEquals("Discovery: error", state.discoveryLine)
         assertEquals("Service: native crash", state.serviceLine)
     }
+
+    @Test
+    fun playbackStoppedThenOffStatusEndsOnOffNotListening() {
+        // Mirrors SpotifyService.onDestroy(): the playback-STOPPED reset is applied first
+        // (clearing the track), then the OFF status is applied LAST and must win — a stopped
+        // service shows "Off", never the "listening" health that a STOPPED playback maps to.
+        val playing = ReceiverDashboardState.playing(
+            receiverName = "Salotto Echo Show",
+            title = "Track",
+            artist = "Artist",
+            elapsedMs = 42_000L,
+            durationMs = 120_000L
+        )
+        val afterPlayback = ReceiverDashboardPlaybackEvent(
+            receiverName = "Salotto Echo Show",
+            playbackState = ReceiverDashboardPlaybackEvent.PlaybackState.STOPPED,
+            queueUnavailable = true
+        ).toDashboardState(playing)
+
+        val afterOff = ReceiverDashboardStatusEvent(
+            receiverName = "Salotto Echo Show",
+            lifecycle = ReceiverDashboardStatusEvent.Lifecycle.OFF
+        ).toDashboardState(afterPlayback)
+
+        assertEquals("Off", afterOff.status)
+        assertEquals("Discovery: off", afterOff.discoveryLine)
+        assertEquals("Service: stopped", afterOff.serviceLine)
+        // Track was reset by the playback-STOPPED event and stays cleared under OFF.
+        assertEquals("Waiting for Spotify", afterOff.trackTitle)
+    }
+
+    @Test
+    fun offEventMapsToOffHealthAndClearsSession() {
+        val connected = ReceiverDashboardStatusEvent(
+            receiverName = "Salotto Echo Show",
+            lifecycle = ReceiverDashboardStatusEvent.Lifecycle.CONNECTED,
+            sessionUser = "jose.serafinig",
+            sessionDisplayName = "Jose",
+            sessionAvatarUrl = "https://img"
+        ).toDashboardState(ReceiverDashboardState.waiting("Salotto Echo Show"))
+
+        val off = ReceiverDashboardStatusEvent(
+            receiverName = "Salotto Echo Show",
+            lifecycle = ReceiverDashboardStatusEvent.Lifecycle.OFF
+        ).toDashboardState(connected)
+
+        assertEquals("Off", off.status)
+        assertEquals("Discovery: off", off.discoveryLine)
+        assertEquals("Service: stopped", off.serviceLine)
+        assertNull(off.sessionUser)
+        assertNull(off.sessionDisplayName)
+        assertNull(off.sessionAvatarUrl)
+    }
 }

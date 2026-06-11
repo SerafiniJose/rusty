@@ -28,6 +28,8 @@ fun ReceiverDashboardState.idleStatus(): Pair<String, Int> = when (status) {
     "Starting", "Restarting", "Loading" -> "Starting…" to R.color.dot_grey
     "Permission needed" -> "Notifications off — tap settings" to R.color.dot_amber
     "Error", "Unavailable" -> "Offline" to R.color.dot_red
+    // Receiver deliberately stopped by the user → neutral grey, with a hint to restart.
+    "Off" -> "Receiver off — open settings to start" to R.color.dot_grey
     // "Stopped" = playback finished but the receiver is still listening → stay calm/ready.
     else -> "Ready for Spotify" to R.color.dot_green
 }
