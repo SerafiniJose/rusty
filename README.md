@@ -5,7 +5,8 @@ Open the app and the device starts advertising itself on your local network — 
 as a speaker target in any Spotify client (phone, desktop, web) on the same Wi‑Fi. Pick it,
 and audio streams directly to the device.
 
-Built for always-on screens like the Amazon Echo Show, but runs on any Android 8.0+ device.
+Built on **[Rust](https://www.rust-lang.org/)** — and built to give new life to rusty devices.
+Runs great on always-on screens like the Amazon Echo Show, and on any Android 8.0+ device.
 
 <!-- Replace the badge owner/repo if you rename the repository. -->
 [![Release](https://img.shields.io/github/v/release/SerafiniJose/rusty?sort=semver)](https://github.com/SerafiniJose/rusty/releases/latest)
