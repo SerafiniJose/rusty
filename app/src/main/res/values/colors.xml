@@ -6,6 +6,7 @@
     <!-- Ambient redesign palette (retires the GitHub/IDE tokens) -->
     <color name="bg_base">#FF0B0A0C</color>
     <color name="surface">#FF141217</color>
+    <color name="surface_raised">#FF24212B</color>
     <color name="surface_border">#FF2A2730</color>
     <color name="ink">#FFF3EEE7</color>
     <color name="muted">#FFB7B1AA</color>

@@ -102,6 +102,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
+            android:foreground="@drawable/bg_tv_focus"
             android:text="Download on GitHub"
             android:textColor="@color/white"
             app:backgroundTint="@color/accent_fallback"
@@ -120,6 +121,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
             android:background="?android:attr/selectableItemBackground"
+            android:foreground="@drawable/bg_tv_focus"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 

@@ -16,6 +16,9 @@ local.properties
 .kotlin
 .idea
 
+# Local environment / secrets (e.g. GH_TOKEN) — never commit
+.env
+
 # Rust build outputs
 /rust/target/
 .superpowers/

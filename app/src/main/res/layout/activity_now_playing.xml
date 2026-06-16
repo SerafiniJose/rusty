@@ -121,6 +121,9 @@
             android:layout_height="44dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Receiver settings"
+            android:foreground="@drawable/bg_tv_focus"
+            android:nextFocusUp="@id/btnNext"
+            android:nextFocusRight="@id/btnInfo"
             android:scaleType="centerInside"
             android:src="@drawable/ic_settings" />
 
@@ -131,6 +134,9 @@
             android:layout_marginStart="6dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Session and receiver health"
+            android:foreground="@drawable/bg_tv_focus"
+            android:nextFocusUp="@id/btnNext"
+            android:nextFocusLeft="@id/btnSettings"
             android:scaleType="centerInside"
             android:src="@drawable/ic_info" />
     </LinearLayout>
@@ -191,6 +197,8 @@
         android:layout_height="0dp"
         android:layout_marginTop="56dp"
         android:layout_marginBottom="8dp"
+        android:focusable="true"
+        android:nextFocusRight="@id/btnPrev"
         android:visibility="gone"
         app:cardCornerRadius="24dp"
         app:cardElevation="0dp"
@@ -318,6 +326,9 @@
                 android:layout_height="56dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Previous track"
+                android:foreground="@drawable/bg_tv_focus"
+                android:nextFocusLeft="@id/albumArtCard"
+                android:nextFocusRight="@id/btnPlayPause"
                 android:scaleType="centerInside"
                 android:src="@drawable/ic_skip_previous" />
 
@@ -329,6 +340,9 @@
                 android:layout_marginEnd="22dp"
                 android:background="@drawable/bg_playpause_button"
                 android:contentDescription="Play or pause"
+                android:foreground="@drawable/bg_tv_focus"
+                android:nextFocusLeft="@id/btnPrev"
+                android:nextFocusRight="@id/btnNext"
                 android:padding="16dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_play" />
@@ -339,6 +353,10 @@
                 android:layout_height="56dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Next track"
+                android:foreground="@drawable/bg_tv_focus"
+                android:nextFocusLeft="@id/btnPlayPause"
+                android:nextFocusRight="@id/btnSettings"
+                android:nextFocusDown="@id/btnSettings"
                 android:scaleType="centerInside"
                 android:src="@drawable/ic_skip_next" />
         </LinearLayout>

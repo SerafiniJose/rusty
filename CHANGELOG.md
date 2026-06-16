@@ -10,6 +10,11 @@ user-facing.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-24
+
+### Added
+- Full Android TV support.
+
 ## [1.2.0] - 2026-06-11
 
 ### Added
@@ -31,7 +36,8 @@ user-facing.
 - Transport controls, live receiver rename, selectable bitrate (96 / 160 / 320 kbps),
   a fullscreen mode, and a 12/24-hour clock.
 
-[Unreleased]: https://github.com/SerafiniJose/rusty/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/SerafiniJose/rusty/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/SerafiniJose/rusty/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/SerafiniJose/rusty/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/SerafiniJose/rusty/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/SerafiniJose/rusty/releases/tag/v1.0.0

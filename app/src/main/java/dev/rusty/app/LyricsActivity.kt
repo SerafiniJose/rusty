@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
@@ -13,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.GestureDetector
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.widget.ImageView
@@ -97,7 +99,7 @@ class LyricsActivity : AppCompatActivity() {
     private val tokenTimeout = Runnable {
         if (awaitingToken) {
             awaitingToken = false
-            showStatus("Couldn't load lyrics. Tap to retry.", retry = true)
+            showStatus("Couldn't load lyrics. $retryHint.", retry = true)
         }
     }
 
@@ -148,6 +150,37 @@ class LyricsActivity : AppCompatActivity() {
         tapDetector.onTouchEvent(ev)
         return super.dispatchTouchEvent(ev)
     }
+
+    /**
+     * Remote support: transport keys control playback from the lyrics view, and OK/Enter mirrors a
+     * screen tap — retrying in the error state, otherwise dismissing — so the touch-only retry path
+     * is reachable with a D-pad. BACK already closes the screen via the framework default.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (TvRemote.dispatchTransportKey(
+                event,
+                onPlayPause = { if (playing) NativeBridge.pause() else NativeBridge.play() },
+                onNext = { NativeBridge.nextTrack() },
+                onPrevious = { NativeBridge.previousTrack() },
+            )
+        ) return true
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    if (statusRetry && statusText.visibility == View.VISIBLE) startFetch() else finish()
+                }
+                return true // consume down AND up so the key never falls through
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    /** TVs have no soft keyboard prompt to "tap"; phrase the retry hint for the active input. */
+    private val retryHint: String
+        get() = if (packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK))
+            "Press OK to retry" else "Tap to retry"
 
     override fun finish() {
         super.finish()
@@ -217,7 +250,7 @@ class LyricsActivity : AppCompatActivity() {
                 renderLines(res)
             }
             LyricsKind.NONE -> showStatus("No lyrics available for this track")
-            LyricsKind.ERROR -> showStatus("Couldn't load lyrics. Tap to retry.", retry = true)
+            LyricsKind.ERROR -> showStatus("Couldn't load lyrics. $retryHint.", retry = true)
         }
     }
 

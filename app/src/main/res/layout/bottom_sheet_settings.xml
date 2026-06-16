@@ -59,11 +59,11 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnToggleService"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
+                style="@style/Widget.Rusty.Button.Secondary"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Stop"
-                android:textColor="@color/accent_fallback" />
+                android:foreground="@drawable/bg_tv_focus"
+                android:text="Stop" />
         </LinearLayout>
 
         <View
@@ -108,11 +108,11 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnChangeName"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
+                style="@style/Widget.Rusty.Button.Secondary"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Change"
-                android:textColor="@color/accent_fallback" />
+                android:foreground="@drawable/bg_tv_focus"
+                android:text="Change" />
         </LinearLayout>
 
         <LinearLayout
@@ -150,6 +150,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="12dp"
+                android:foreground="@drawable/bg_tv_focus"
                 android:text="Save"
                 android:textColor="@color/white"
                 app:backgroundTint="@color/accent_fallback" />
@@ -250,6 +251,11 @@
                 android:id="@+id/switchFullscreen"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:background="@null"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:minHeight="0dp"
+                android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+                app:switchMinWidth="0dp"
                 app:thumbTint="@color/switch_thumb_tint"
                 app:trackTint="@color/switch_track_tint" />
         </LinearLayout>
@@ -294,6 +300,11 @@
                 android:id="@+id/switchTimeFormat"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:background="@null"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:minHeight="0dp"
+                android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+                app:switchMinWidth="0dp"
                 app:thumbTint="@color/switch_thumb_tint"
                 app:trackTint="@color/switch_track_tint" />
         </LinearLayout>

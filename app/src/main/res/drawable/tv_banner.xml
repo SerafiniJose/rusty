@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android TV launcher banner (xhdpi spec: 320x180). Required for the app to appear as a tile
+     on the NVIDIA Shield / Android TV home screen. Reuses the adaptive-icon composition (record +
+     broadcast waves) centered on the icon's dark card. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <!-- Dark card, matching the launcher icon background. -->
+    <path
+        android:fillColor="#20252B"
+        android:pathData="M0,0h320v180h-320z" />
+
+    <!-- Logo composition, centered and scaled up into the 320x180 frame. -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="1.5"
+        android:scaleY="1.5"
+        android:translateX="106"
+        android:translateY="36">
+
+        <group
+            android:pivotX="67.75"
+            android:pivotY="51"
+            android:scaleX="0.64"
+            android:scaleY="0.64"
+            android:translateX="-13.75"
+            android:translateY="3">
+
+            <!-- Green receiver/audio waves. -->
+            <path
+                android:fillColor="#00000000"
+                android:strokeColor="#1ED760"
+                android:strokeWidth="6"
+                android:strokeLineCap="round"
+                android:pathData="M71,41 C78,47 78,61 71,67" />
+            <path
+                android:fillColor="#00000000"
+                android:strokeColor="#1ED760"
+                android:strokeWidth="6"
+                android:strokeLineCap="round"
+                android:pathData="M80,31 C94,43 94,65 80,77" />
+            <path
+                android:fillColor="#00000000"
+                android:strokeColor="#1ED760"
+                android:strokeWidth="5"
+                android:strokeLineCap="round"
+                android:pathData="M88,22 C108,40 108,68 88,86" />
+
+            <!-- Orange connection accent. -->
+            <group
+                android:rotation="180"
+                android:pivotX="84"
+                android:pivotY="22"
+                android:translateX="-30"
+                android:translateY="-6">
+                <path
+                    android:fillColor="#00000000"
+                    android:strokeColor="#FF9F1C"
+                    android:strokeWidth="3.5"
+                    android:strokeLineCap="round"
+                    android:pathData="M75,21 C80,16 88,16 93,21" />
+                <path
+                    android:fillColor="#00000000"
+                    android:strokeColor="#FF9F1C"
+                    android:strokeWidth="3.5"
+                    android:strokeLineCap="round"
+                    android:pathData="M80,27 C83,24 87,24 90,27" />
+            </group>
+
+            <!-- Central record / target symbol. -->
+            <path
+                android:fillColor="#0A0C0F"
+                android:pathData="M54,25 A29,29 0,1 0,54.1 25 Z" />
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M54,32 A22,22 0,1 0,54.1 32 Z" />
+            <path
+                android:fillColor="#111418"
+                android:pathData="M54,39 A15,15 0,1 0,54.1 39 Z" />
+            <path
+                android:fillColor="#1ED760"
+                android:pathData="M54,46 A8,8 0,1 0,54.1 46 Z" />
+            <path
+                android:fillColor="#74F29A"
+                android:pathData="M50,49 A2.3,2.3 0,1 0,50.1 49 Z" />
+        </group>
+    </group>
+</vector>

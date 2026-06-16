@@ -40,6 +40,7 @@ import androidx.palette.graphics.Palette
 import coil.load
 import coil.transform.CircleCropTransformation
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.textfield.TextInputEditText
@@ -80,7 +81,7 @@ class NowPlayingActivity : AppCompatActivity() {
     private lateinit var durationText: TextView
     private lateinit var progressFillView: View
     private lateinit var progressFill: GradientDrawable
-    private lateinit var albumArtCard: View
+    private lateinit var albumArtCard: MaterialCardView
     private lateinit var playingInfo: View
     private lateinit var albumArtImage: ImageView
     private lateinit var albumGlyphText: TextView
@@ -102,6 +103,10 @@ class NowPlayingActivity : AppCompatActivity() {
 
     private var settingsDialog: Dialog? = null
     private var firstRender = true
+
+    // Last visual state we moved D-pad focus for, so we only re-home focus on an idle⇄active
+    // edge (not on every per-second render, which would yank focus away from the user).
+    private var lastFocusVisual: VisualState? = null
     /** Why the ambient clock is up (manual peek vs. pause drift), and the tap rule to dismiss it. */
     private val clockFace = ClockFaceState()
     private var infoDialog: Dialog? = null
@@ -301,11 +306,84 @@ class NowPlayingActivity : AppCompatActivity() {
         infoButton.setOnClickListener { showInfoSheet() }
         prevButton.setOnClickListener { NativeBridge.previousTrack() }
         nextButton.setOnClickListener { NativeBridge.nextTrack() }
-        playPauseButton.setOnClickListener {
-            if (dashboardState.status == STATUS_PLAYING) NativeBridge.pause() else NativeBridge.play()
-        }
+        playPauseButton.setOnClickListener { togglePlayPause() }
         clockText.setOnClickListener { toggleClockOverride() }
         albumArtCard.setOnClickListener { openLyrics() }
+
+        // The album-art card is the only way into the lyrics screen, so it must be reachable and
+        // visibly focusable by a D-pad. MaterialCardView manages its own foreground (ripple), so a
+        // generic focus drawable won't stick — toggle the card's own stroke instead, matching its
+        // rounded shape and the brand-green ring used elsewhere.
+        val focusStroke = (2 * resources.displayMetrics.density).toInt()
+        val focusStrokeColor = ContextCompat.getColor(this, R.color.accent_fallback)
+        albumArtCard.setOnFocusChangeListener { _, hasFocus ->
+            albumArtCard.strokeColor = focusStrokeColor
+            albumArtCard.strokeWidth = if (hasFocus) focusStroke else 0
+        }
+
+        // The clock animates down to ~0.22 scale in the corner, so its foreground ring shrinks to
+        // near-invisible there — recolor the digits to the brand green on focus instead, a cue that
+        // reads clearly at any scale (and still works when the clock is full-size in overlay mode).
+        val clockInk = ContextCompat.getColor(this, R.color.ink)
+        val clockFocused = ContextCompat.getColor(this, R.color.accent_fallback)
+        clockText.setOnFocusChangeListener { _, hasFocus ->
+            clockText.setTextColor(if (hasFocus) clockFocused else clockInk)
+        }
+    }
+
+    /** Toggles playback — shared by the on-screen button and the remote's transport keys. */
+    private fun togglePlayPause() {
+        if (dashboardState.status == STATUS_PLAYING) NativeBridge.pause() else NativeBridge.play()
+    }
+
+    /**
+     * Routes the TV remote's / headset's dedicated transport keys (PLAY/PAUSE/NEXT/PREVIOUS) to
+     * playback, then routes D-pad focus onto/off the clock. Everything else — including center —
+     * is left to the framework so normal focus traversal works (center still "clicks" the focused
+     * control, e.g. toggling the clock-face overlay once the clock holds focus).
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (TvRemote.dispatchTransportKey(
+                event,
+                onPlayPause = { togglePlayPause() },
+                onNext = { NativeBridge.nextTrack() },
+                onPrevious = { NativeBridge.previousTrack() },
+            )
+        ) return true
+        if (routeClockFocus(event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * The clock is animated into the top-right corner via scale + translation, so its layout rect
+     * stays centered and the framework's focus search (even an explicit `nextFocus`) won't land on
+     * it. Route it by hand: D-pad UP from any transport button moves focus onto the clock; DOWN off
+     * it returns to play/pause. Center is left native, so OK on the focused clock toggles the
+     * clock-face overlay (and OK again, on the now-large clock, returns to now-playing).
+     */
+    private fun routeClockFocus(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return false
+        if (rootView.isInTouchMode || !clockText.isFocusable) return false
+        val focusedId = currentFocus?.id
+        val transportVisible = playingInfo.visibility == View.VISIBLE
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                // UP lands on the (corner) clock from the transport row on the active face, and
+                // from settings/info while the clock-overlay is showing (transport hidden, so the
+                // framework would otherwise lose focus trying to reach the transform-moved clock).
+                val fromTransport = focusedId == R.id.btnPrev ||
+                    focusedId == R.id.btnPlayPause || focusedId == R.id.btnNext
+                val fromChromeInOverlay = !transportVisible &&
+                    (focusedId == R.id.btnSettings || focusedId == R.id.btnInfo)
+                if (fromTransport || fromChromeInOverlay) return clockText.requestFocus()
+            }
+            KeyEvent.KEYCODE_DPAD_DOWN ->
+                // Active face: DOWN off the clock returns to play/pause. In overlay mode the
+                // transport is hidden, so DOWN falls through to the framework (→ settings below).
+                if (focusedId == R.id.tvClock && transportVisible)
+                    return playPauseButton.requestFocus()
+        }
+        return false
     }
 
     /** Opens the full-screen lyrics page for the current track (no-op if nothing is playing). */
@@ -396,7 +474,40 @@ class NowPlayingActivity : AppCompatActivity() {
         bloom.apply(visual, animate = !firstRender)
         firstRender = false
 
+        // The clock toggles the playback clock-face overlay — a playing-only action — so it joins
+        // the D-pad focus order whenever playback is active (using realVisual, not the override-
+        // adjusted visual, so it stays reachable to toggle the overlay back OFF). Avoids a stray
+        // focus ring on the genuinely-idle clock.
+        clockText.isFocusable = realVisual == VisualState.ACTIVE
+        homeFocusFor(visual)
+
         infoDialog?.takeIf { it.isShowing }?.let { bindInfoSheet(it, state) }
+    }
+
+    /**
+     * On an idle⇄active edge, parks D-pad focus on a sensible default — play/pause while playing,
+     * the settings button while idle — so the focus ring is always present and never stranded on a
+     * control that's about to disappear. No-op in touch mode, so phones/tablets are unaffected.
+     */
+    private fun homeFocusFor(visual: VisualState) {
+        if (visual == lastFocusVisual) return
+        lastFocusVisual = visual
+        if (rootView.isInTouchMode) return
+        val target = when {
+            visual == VisualState.ACTIVE -> playPauseButton
+            // Clock-overlay mode (playing, but showing the big clock): keep focus on the clock so
+            // OK toggles it straight back off — the transport is hidden, so there's nowhere else.
+            clockFace.showingClock -> clockText
+            else -> settingsButton
+        }
+        // Queue after bloom's posted show/hide so the target is visible (focusable) when we ask.
+        rootView.post { target.requestFocus() }
+    }
+
+    /** Gives a freshly-opened sheet's first control D-pad focus (no-op when opened by touch). */
+    private fun requestInitialFocus(target: View) {
+        if (target.isInTouchMode) return
+        target.post { target.requestFocus() }
     }
 
     /**
@@ -558,15 +669,32 @@ class NowPlayingActivity : AppCompatActivity() {
         }
         renderServiceToggle()
 
-        changeButton.setOnClickListener {
-            editRow.visibility = if (editRow.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-            if (editRow.visibility == View.VISIBLE) nameInput.setText(deviceName)
-        }
-
         fun hideNameKeyboard() {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.hideSoftInputFromWindow(nameInput.windowToken, 0)
             nameInput.clearFocus()
+        }
+
+        // Reveal the editor AND immediately drop the user into typing: focus the field,
+        // place the caret at the end, and pop the soft keyboard. So tapping "Change" goes
+        // straight to input — then Done/Enter or Save commits, no extra tap to open the IME.
+        fun showNameKeyboard() {
+            nameInput.requestFocus()
+            nameInput.setSelection(nameInput.text?.length ?: 0)
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(nameInput, InputMethodManager.SHOW_IMPLICIT)
+        }
+
+        changeButton.setOnClickListener {
+            val reveal = editRow.visibility != View.VISIBLE
+            editRow.visibility = if (reveal) View.VISIBLE else View.GONE
+            if (reveal) {
+                nameInput.setText(deviceName)
+                // Post so the row is laid out/visible before we request focus + IME.
+                nameInput.post { showNameKeyboard() }
+            } else {
+                hideNameKeyboard()
+            }
         }
 
         // Commit the typed name. Shared by the Save button and the keyboard's Done/Enter
@@ -640,6 +768,7 @@ class NowPlayingActivity : AppCompatActivity() {
         }
         settingsDialog = dialog
         dialog.show()
+        requestInitialFocus(toggleServiceButton)
     }
 
     /**
@@ -723,8 +852,9 @@ class NowPlayingActivity : AppCompatActivity() {
         // an "Update" badge if a newer release is found. The check runs off the main thread
         // and is cached, so it's cheap on reopen.
         val updateBadge = view.findViewById<TextView>(R.id.tvUpdateBadge)
+        val aboutRow = view.findViewById<View>(R.id.rowAbout)
         view.findViewById<TextView>(R.id.tvAboutValue).text = "Version $appVersionName"
-        view.findViewById<View>(R.id.rowAbout).setOnClickListener { showAboutSheet() }
+        aboutRow.setOnClickListener { showAboutSheet() }
         Thread {
             val check = UpdateRepository.check(appVersionName)
             handler.post {
@@ -741,6 +871,7 @@ class NowPlayingActivity : AppCompatActivity() {
         }
         infoDialog = dialog
         dialog.show()
+        requestInitialFocus(aboutRow)
     }
 
     // ---- About / updates sheet ---------------------------------------------
@@ -792,6 +923,9 @@ class NowPlayingActivity : AppCompatActivity() {
             if (fullscreenEnabled) hideSystemBars()
         }
         dialog.show()
+        // "Source & releases" is always present; the Download button only appears once an update
+        // is found, so the source row is the reliable initial focus target.
+        requestInitialFocus(sourceRow)
     }
 
     /** Opens [url] in a browser, ignoring the (unlikely) no-browser case rather than crashing. */

@@ -8,4 +8,24 @@
     </style>
 
     <style name="Theme.Rusty" parent="Base.Theme.Rusty" />
+
+    <!-- Secondary action buttons (Stop / Change in the settings sheet): a filled, flat
+         pill on a raised surface so they read clearly as tappable controls against the
+         dark card, instead of low-affordance text-only buttons that blend into the row. -->
+    <style name="Widget.Rusty.Button.Secondary" parent="Widget.MaterialComponents.Button">
+        <item name="backgroundTint">@color/surface_raised</item>
+        <item name="android:textColor">@color/accent_fallback</item>
+        <item name="rippleColor">@color/accent_fallback</item>
+        <item name="elevation">0dp</item>
+        <item name="android:fontFamily">@font/hanken_medium</item>
+        <item name="android:insetTop">4dp</item>
+        <item name="android:insetBottom">4dp</item>
+    </style>
+
+    <!-- Applied to the settings switches so they show NO focus/press state-layer "halo" (the green
+         glow around the thumb). On TV their focus is shown by an explicit pill ring instead, and the
+         halo + ring together read as cluttered. Transparent control-highlight removes the state layer. -->
+    <style name="ThemeOverlay.Rusty.SwitchNoHalo" parent="">
+        <item name="colorControlHighlight">@android:color/transparent</item>
+    </style>
 </resources>
