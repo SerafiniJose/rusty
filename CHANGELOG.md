@@ -10,6 +10,13 @@ user-facing.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-06-24
+
+### Fixed
+- Fixed playback failing with every track skipping and no sound, caused by Spotify
+  handing out an unreachable audio server. The receiver now falls back to the other
+  servers Spotify provides instead of giving up on the track.
+
 ## [1.3.0] - 2026-06-24
 
 ### Added
