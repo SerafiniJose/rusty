@@ -10,7 +10,6 @@ import android.widget.TextView
  * the next so rapid flips never stack.
  */
 class BloomController(
-    private val root: View,
     private val clock: TextView,
     private val idleViews: List<View>,    // date, status
     private val activeViews: List<View>,  // identitySuffix, albumArtCard, playingInfo (children animate transitively)
@@ -19,13 +18,39 @@ class BloomController(
     private val scrim: View
 ) {
     private var current: VisualState? = null
-    private val cornerScale = 0.22f
-    private val marginPx get() = 24f * root.resources.displayMetrics.density
+    private val cornerScale = BloomGeometry.CORNER_SCALE
+    // The clock lives in the shell's full-window, inset-padded chrome layer; derive the corner box
+    // from it directly so the morph works wherever the clock is parented (no `root` handle needed).
+    private val parent get() = clock.parent as View
+    private val marginPx get() = 24f * clock.resources.displayMetrics.density
 
     fun apply(state: VisualState, animate: Boolean) {
         if (state == current) return
         current = state
-        root.post { if (state == VisualState.ACTIVE) showActive(animate) else showIdle(animate) }
+        clock.post { if (state == VisualState.ACTIVE) showActive(animate) else showIdle(animate) }
+    }
+
+    /**
+     * Snap to the IDLE layout with no animation and mark IDLE as current, so the next
+     * animated apply(ACTIVE) replays the full bloom (the state==current guard won't skip it).
+     * Used when returning to the dashboard from the screensaver: we reset under the still-opaque
+     * overlay, then animate, so the morph plays in sync with the overlay crossfade.
+     * Must be called on the main thread (it mutates Views synchronously, unlike apply()'s posted body).
+     *
+     * [showMesh] = false keeps the ambient mesh hidden through the reset (and thus the whole morph),
+     * so returning from a mesh-less saver (OLED) doesn't flash the mesh's colors over the dark exit.
+     */
+    fun resetToIdleInstant(showMesh: Boolean = true) {
+        current = VisualState.IDLE
+        showIdle(animate = false)
+        if (!showMesh) {
+            // showIdle() queued a duration-0 alpha→1 on the mesh that would otherwise apply next
+            // frame and clobber our 0 — cancel it so the mesh stays hidden through the whole morph
+            // (returning from the mesh-less OLED saver must not flash the mesh's colors).
+            mesh.animate().cancel()
+            mesh.stop()
+            mesh.alpha = 0f
+        }
     }
 
     /**
@@ -84,15 +109,23 @@ class BloomController(
      * live bottom-right, so the clock no longer has to dodge them — it targets the padded
      * content edge directly (paddings keep it inside the system-bar insets).
      */
-    private fun clockCornerTranslation(): Pair<Float, Float> {
-        val startCx = clock.x + clock.width / 2f
-        val startCy = clock.y + clock.height / 2f
-        val rightEdge = root.width - root.paddingRight - marginPx
-        val topEdge = root.paddingTop + marginPx
-        val targetCx = rightEdge - (clock.width * cornerScale) / 2f
-        val targetCy = topEdge + (clock.height * cornerScale) / 2f
-        return (targetCx - startCx) to (targetCy - startCy)
-    }
+    private fun clockCornerTranslation(): Pair<Float, Float> =
+        BloomGeometry.cornerTranslation(
+            parentWidth = parent.width,
+            parentPaddingRight = parent.paddingRight,
+            parentPaddingTop = parent.paddingTop,
+            // Use the layout edges (translation-free), NOT clock.x/y. The shell clock now persists
+            // across feature switches, so it can carry a leftover park/active transform when this
+            // runs; the corner translation is absolute (set, not added), so feeding it the already-
+            // translated center would land the clock short of the corner. left/top are the clean
+            // baseline, and equal clock.x/y in the common translationX==0 case.
+            clockX = clock.left.toFloat(),
+            clockY = clock.top.toFloat(),
+            clockWidth = clock.width,
+            clockHeight = clock.height,
+            cornerScale = cornerScale,
+            marginPx = marginPx,
+        )
 
-    private fun dpToPx(dp: Float): Float = dp * root.resources.displayMetrics.density
+    private fun dpToPx(dp: Float): Float = dp * clock.resources.displayMetrics.density
 }

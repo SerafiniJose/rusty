@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Account avatar background: a subtly brand-tinted oval (10% accent) so the initials read as an
+     intentional, on-brand chip rather than a plain grey disc. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/accent_chip_fill" />
+</shape>

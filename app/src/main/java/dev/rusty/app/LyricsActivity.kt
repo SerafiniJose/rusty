@@ -28,8 +28,14 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.palette.graphics.Palette
+import coil.dispose
 import coil.load
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Full-screen, playback-synced lyrics. Opened by tapping the album art. Reads the current track id
@@ -70,6 +76,11 @@ class LyricsActivity : AppCompatActivity() {
     private var fetchInProgress = false
     private var awaitingToken = false
 
+    // Monotonic id incremented before each Coil artwork load; the Palette callback captures the
+    // value at request time and bails out if a newer request has superseded it or the activity is
+    // no longer at least STARTED.
+    private var artworkRequestId = 0
+
     // Background: a per-track artwork accent this screen derives itself (so it is never stale),
     // overridden by the lyrics API's own background color when the response carries one.
     private var artworkAccent: Int? = null
@@ -103,15 +114,20 @@ class LyricsActivity : AppCompatActivity() {
         }
     }
 
-    private val receiver = object : BroadcastReceiver() {
+    private val store: ReceiverStateStore by lazy { RustyApp.from(this) }
+
+    // Playback now comes from the store (Task 12): the same close/re-anchor/reload/play-pause
+    // logic the old ACTION_PLAYBACK receiver ran, decided by the pure LyricsPlaybackReaction.
+    private val storeListener = ReceiverStateStore.Listener { snapshot -> onSnapshot(snapshot) }
+
+    // The token signal is unrelated to playback state, so it stays a broadcast (Task 12 only
+    // migrates status/playback consumption to the store).
+    private val tokenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                ReceiverDashboardBroadcast.ACTION_PLAYBACK -> onPlayback(intent)
-                ReceiverDashboardBroadcast.ACTION_TOKEN -> if (awaitingToken) {
-                    awaitingToken = false
-                    handler.removeCallbacks(tokenTimeout)
-                    startFetch()
-                }
+            if (intent?.action == ReceiverDashboardBroadcast.ACTION_TOKEN && awaitingToken) {
+                awaitingToken = false
+                handler.removeCallbacks(tokenTimeout)
+                startFetch()
             }
         }
     }
@@ -133,16 +149,16 @@ class LyricsActivity : AppCompatActivity() {
         setupFullscreen()
         applyBackground()
 
-        // Seed from the shared snapshot. The position comes from the ground-truth anchor (not the
+        // Seed from the store snapshot. The position comes from the ground-truth anchor (not the
         // possibly-stale snapshot elapsed) so a re-opened screen stays in sync with the song.
-        val snapshot = DashboardStateHolder.current
-        currentTrackId = snapshot.trackId
-        currentCoverUrl = snapshot.coverArtUrl
-        trackText.text = listOf(snapshot.trackTitle, snapshot.trackArtist)
+        val state = store.snapshot.state
+        currentTrackId = state.trackId
+        currentCoverUrl = state.coverArtUrl
+        trackText.text = listOf(state.trackTitle, state.trackArtist)
             .filter { it.isNotBlank() }.joinToString("  ·  ")
-        anchorElapsedMs = DashboardStateHolder.liveElapsedMs()
+        anchorElapsedMs = store.liveElapsedMs()
         anchorRealtime = SystemClock.elapsedRealtime()
-        playing = DashboardStateHolder.isPlayingAnchor
+        playing = store.snapshot.anchor.playing
         loadArtworkAccent(currentCoverUrl)
     }
 
@@ -191,22 +207,23 @@ class LyricsActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        val filter = IntentFilter().apply {
-            addAction(ReceiverDashboardBroadcast.ACTION_PLAYBACK)
-            addAction(ReceiverDashboardBroadcast.ACTION_TOKEN)
-        }
+        val filter = IntentFilter(ReceiverDashboardBroadcast.ACTION_TOKEN)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(tokenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
-            registerReceiver(receiver, filter)
+            registerReceiver(tokenReceiver, filter)
         }
+        // addListener delivers the current snapshot immediately; onSnapshot's reaction re-anchors
+        // from it (the seed in onCreate already set currentTrackId, so this won't spuriously reload).
+        store.addListener(storeListener)
         startFetch()
     }
 
     override fun onStop() {
         handler.removeCallbacks(tick)
         handler.removeCallbacks(tokenTimeout)
-        unregisterReceiver(receiver)
+        store.removeListener(storeListener)
+        unregisterReceiver(tokenReceiver)
         super.onStop()
     }
 
@@ -229,14 +246,13 @@ class LyricsActivity : AppCompatActivity() {
         fetchInProgress = true
         showStatus("Loading lyrics…")
         val requested = trackId
-        Thread {
-            val res = LyricsRepository.fetch(requested, token)
-            handler.post {
-                fetchInProgress = false
-                if (requested != currentTrackId) return@post   // stale (track changed mid-fetch)
-                onLyricsLoaded(res)
-            }
-        }.start()
+        lifecycleScope.launch {
+            val res = withContext(Dispatchers.IO) { LyricsRepository.fetch(requested, token) }
+            fetchInProgress = false
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@launch
+            if (requested != currentTrackId) return@launch   // stale (track changed mid-fetch)
+            onLyricsLoaded(res)
+        }
     }
 
     private fun onLyricsLoaded(res: LyricsResult) {
@@ -316,23 +332,25 @@ class LyricsActivity : AppCompatActivity() {
 
     // ---- Live updates ----
 
-    private fun onPlayback(intent: Intent) {
-        val state = intent.getStringExtra(ReceiverDashboardBroadcast.EXTRA_PLAYBACK_STATE)
-        val trackId = intent.getStringExtra(ReceiverDashboardBroadcast.EXTRA_TRACK_ID)
-        val elapsed = intent.getLongExtra(ReceiverDashboardBroadcast.EXTRA_ELAPSED_MS, 0L)
-        val title = intent.getStringExtra(ReceiverDashboardBroadcast.EXTRA_TRACK_TITLE)
-        val artist = intent.getStringExtra(ReceiverDashboardBroadcast.EXTRA_TRACK_ARTIST)
-        val cover = intent.getStringExtra(ReceiverDashboardBroadcast.EXTRA_COVER_URL)
+    /**
+     * Reacts to a store snapshot exactly as the old ACTION_PLAYBACK receiver did, with the
+     * close/re-anchor/reload/play-pause split decided by the pure [LyricsPlaybackReaction].
+     */
+    private fun onSnapshot(snapshot: ReceiverSnapshot) {
+        val decision = LyricsPlaybackReaction.decide(snapshot, currentTrackId)
+        if (decision.close) { finish(); return }
 
-        if (state == "STOPPED") { finish(); return }
-
-        // Re-anchor the clock.
-        anchorElapsedMs = elapsed
+        // Re-anchor the clock from the ground-truth live position (extrapolated), not the
+        // possibly-stale snapshot elapsed, so the lyrics stay in sync with the song.
+        anchorElapsedMs = store.liveElapsedMs()
         anchorRealtime = SystemClock.elapsedRealtime()
-        playing = state == "PLAYING"
+        playing = decision.playing
 
+        val state = snapshot.state
         // Track changed → reload lyrics and refresh the background for the new track.
-        if (!trackId.isNullOrBlank() && trackId != currentTrackId) {
+        if (decision.reloadTrack) {
+            val trackId = state.trackId
+            val cover = state.coverArtUrl
             handler.removeCallbacks(tokenTimeout)
             fetchInProgress = false
             awaitingToken = false
@@ -349,7 +367,7 @@ class LyricsActivity : AppCompatActivity() {
             bgColor = darkenForReadability(AccentHolder.accent)
             applyBackground()
             loadArtworkAccent(cover)
-            trackText.text = listOf(title.orEmpty(), artist.orEmpty())
+            trackText.text = listOf(state.trackTitle, state.trackArtist)
                 .filter { it.isNotBlank() }.joinToString("  ·  ")
             startFetch()
             return
@@ -400,12 +418,16 @@ class LyricsActivity : AppCompatActivity() {
     private fun loadArtworkAccent(url: String?) {
         if (url.isNullOrBlank()) return
         val requestedFor = currentTrackId
+        val req = ++artworkRequestId
         coverProbe.load(url) {
             allowHardware(false)
             size(160)
             listener(onSuccess = { _, result ->
                 val bitmap = (result.drawable as? BitmapDrawable)?.bitmap ?: return@listener
                 Palette.from(bitmap).generate { palette ->
+                    // Bail if a newer artwork request has superseded this one or the activity is gone.
+                    if (req != artworkRequestId) return@generate
+                    if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@generate
                     if (requestedFor != currentTrackId) return@generate   // track moved on
                     val raw = palette?.vibrantSwatch?.rgb
                         ?: palette?.darkVibrantSwatch?.rgb
@@ -422,6 +444,12 @@ class LyricsActivity : AppCompatActivity() {
         }
     }
 
+    override fun onDestroy() {
+        coverProbe.dispose()
+        artworkRequestId++   // invalidate any in-flight Palette callback
+        super.onDestroy()
+    }
+
     private fun setupFullscreen() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val content = findViewById<View>(R.id.lyricsContent)
@@ -434,6 +462,9 @@ class LyricsActivity : AppCompatActivity() {
         }
         val fullscreen = getSharedPreferences("spotify_receiver_prefs", MODE_PRIVATE)
             .getBoolean("fullscreen_enabled", false)
+        if (KeepScreenOnSettings.isEnabled(getSharedPreferences("spotify_receiver_prefs", MODE_PRIVATE))) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         val controller = WindowCompat.getInsetsController(window, root)
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE

@@ -65,7 +65,13 @@ class SpotifyService : Service() {
             ?: DEFAULT_BITRATE_KBPS
         currentDeviceName = deviceName
         currentBitrateKbps = bitrateKbps
-        publishStatus(ReceiverDashboardStatusEvent.Lifecycle.FOREGROUND)
+        // NOTE: do NOT publish a FOREGROUND ("Starting") status here. It is emitted on the MAIN
+        // thread while NATIVE_STARTING ("Waiting") is emitted on the native start thread below —
+        // the two store dispatches then race and when "Starting" wins the dashboard is stuck on
+        // "Starting…" until a manual stop/start. It is also redundant: the UI already shows
+        // "Starting" from the fragment seed + startReceiver, and NATIVE_STARTING sets the name and
+        // clears the session too. The duplicate-start guard below also no longer strands "Starting"
+        // when it skips the native start.
 
         // Duplicate-start guard: START_STICKY (and re-delivered intents) can call
         // onStartCommand repeatedly with the same name. The native layer is also
@@ -73,28 +79,45 @@ class SpotifyService : Service() {
         val requestedConfig = NativeReceiverConfig(deviceName, bitrateKbps)
         if (nativeStartedConfig == requestedConfig) {
             Log.i("SpotifyService", "Native receiver already started as '$deviceName' at ${bitrateKbps}kbps; skipping duplicate start")
+            // Duplicate start: the native receiver is already up → reconcile the service state to
+            // RUNNING (no display change). Covers a START_STICKY redelivery that lands while the
+            // store thinks we're STARTING.
+            store().transitionService(ReceiverServiceState.RUNNING)
             return START_STICKY
         }
         nativeStartedConfig = requestedConfig
         val deviceId = resolveDeviceId()
 
+        // Native init is about to begin → service is STARTING. (Display state is untouched; the
+        // store derives no display change from a service-only transition.)
+        store().transitionService(ReceiverServiceState.STARTING)
+
         // start the Rust engine
         Thread {
             try {
-                publishStatus(ReceiverDashboardStatusEvent.Lifecycle.NATIVE_STARTING)
+                // The native receiver is now listening/discoverable → RUNNING (carried with the
+                // NATIVE_STARTING "Waiting" display event as one revision).
+                publishStatus(
+                    ReceiverDashboardStatusEvent.Lifecycle.NATIVE_STARTING,
+                    service = ReceiverServiceState.RUNNING,
+                )
                 NativeBridge.startDevice(deviceName, deviceId, bitrateKbps)
             } catch (throwable: Throwable) {
                 Log.e("SpotifyService", "Native receiver failed", throwable)
                 nativeStartedConfig = null
                 publishStatus(
                     ReceiverDashboardStatusEvent.Lifecycle.ERROR,
-                    throwable.message ?: throwable.javaClass.simpleName
+                    throwable.message ?: throwable.javaClass.simpleName,
+                    service = ReceiverServiceState.FAILED,
                 )
             }
         }.start()
 
         return START_STICKY
     }
+
+    /** The process-wide store this service routes all receiver writes through (Task 11). */
+    private fun store(): ReceiverStateStore = RustyApp.from(this)
 
     /**
      * Returns a stable per-install device id, generating and persisting one on
@@ -115,28 +138,24 @@ class SpotifyService : Service() {
 
     private fun publishStatus(
         lifecycle: ReceiverDashboardStatusEvent.Lifecycle,
-        message: String? = null
+        message: String? = null,
+        service: ReceiverServiceState? = null,
     ) {
-        // Keep the process-wide snapshot current so an Activity that was stopped
-        // (screensaver / Now Playing) catches up when it re-seeds on start.
-        DashboardStateHolder.current = ReceiverDashboardStatusEvent(
-            receiverName = currentDeviceName,
-            lifecycle = lifecycle,
-            message = message,
-            sessionUser = currentSessionUser,
-            sessionDisplayName = currentSessionDisplayName,
-            sessionAvatarUrl = currentSessionAvatarUrl
-        ).toDashboardState(DashboardStateHolder.current)
-
-        sendBroadcast(Intent(ReceiverDashboardBroadcast.ACTION_STATUS).apply {
-            setPackage(packageName)
-            putExtra(ReceiverDashboardBroadcast.EXTRA_RECEIVER_NAME, currentDeviceName)
-            putExtra(ReceiverDashboardBroadcast.EXTRA_LIFECYCLE, lifecycle.name)
-            message?.let { putExtra(ReceiverDashboardBroadcast.EXTRA_MESSAGE, it) }
-            currentSessionUser?.let { putExtra(ReceiverDashboardBroadcast.EXTRA_SESSION_USER, it) }
-            currentSessionDisplayName?.let { putExtra(ReceiverDashboardBroadcast.EXTRA_SESSION_DISPLAY_NAME, it) }
-            currentSessionAvatarUrl?.let { putExtra(ReceiverDashboardBroadcast.EXTRA_SESSION_AVATAR_URL, it) }
-        })
+        // Route through the store (the single source of truth). An optional [service] transition is
+        // applied together with the display event as one revision.
+        store().dispatch(
+            ReceiverEvent.Status(
+                ReceiverDashboardStatusEvent(
+                    receiverName = currentDeviceName,
+                    lifecycle = lifecycle,
+                    message = message,
+                    sessionUser = currentSessionUser,
+                    sessionDisplayName = currentSessionDisplayName,
+                    sessionAvatarUrl = currentSessionAvatarUrl
+                )
+            ),
+            service = service,
+        )
     }
 
     private fun publishPlayback(
@@ -154,46 +173,30 @@ class SpotifyService : Service() {
         currentTrackId = trackId?.takeIf { it.isNotBlank() } ?: currentTrackId
 
         ReceiverDashboardPlaybackEvent.PlaybackState.fromWireName(playbackState)?.let { state ->
-            DashboardStateHolder.current = ReceiverDashboardPlaybackEvent(
-                receiverName = currentDeviceName,
-                playbackState = state,
-                trackTitle = title,
-                trackArtist = artist,
-                coverArtUrl = coverUrl,
-                trackId = currentTrackId,
-                sessionUser = currentSessionUser,
-                sessionDisplayName = currentSessionDisplayName,
-                sessionAvatarUrl = currentSessionAvatarUrl,
-                elapsedMs = elapsedMs,
-                durationMs = durationMs,
-                queueTitle = queueTitle,
-                queueArtist = queueArtist,
-                queueUnavailable = queueUnavailable
-            ).toDashboardState(DashboardStateHolder.current)
-            // Ground-truth position for any screen's playback clock (see DashboardStateHolder).
-            DashboardStateHolder.anchorPlayback(
-                elapsedMs,
-                playing = state == ReceiverDashboardPlaybackEvent.PlaybackState.PLAYING
+            // Route through the store (single source of truth). The store derives the playback
+            // anchor from the event inside the same revision. Playback never carries a service
+            // transition.
+            store().dispatch(
+                ReceiverEvent.Playback(
+                    ReceiverDashboardPlaybackEvent(
+                        receiverName = currentDeviceName,
+                        playbackState = state,
+                        trackTitle = title,
+                        trackArtist = artist,
+                        coverArtUrl = coverUrl,
+                        trackId = currentTrackId,
+                        sessionUser = currentSessionUser,
+                        sessionDisplayName = currentSessionDisplayName,
+                        sessionAvatarUrl = currentSessionAvatarUrl,
+                        elapsedMs = elapsedMs,
+                        durationMs = durationMs,
+                        queueTitle = queueTitle,
+                        queueArtist = queueArtist,
+                        queueUnavailable = queueUnavailable
+                    )
+                )
             )
         }
-
-        sendBroadcast(Intent(ReceiverDashboardBroadcast.ACTION_PLAYBACK).apply {
-            setPackage(packageName)
-            putExtra(ReceiverDashboardBroadcast.EXTRA_RECEIVER_NAME, currentDeviceName)
-            putExtra(ReceiverDashboardBroadcast.EXTRA_PLAYBACK_STATE, playbackState)
-            putExtra(ReceiverDashboardBroadcast.EXTRA_TRACK_TITLE, title)
-            putExtra(ReceiverDashboardBroadcast.EXTRA_TRACK_ARTIST, artist)
-            putExtra(ReceiverDashboardBroadcast.EXTRA_ELAPSED_MS, elapsedMs)
-            putExtra(ReceiverDashboardBroadcast.EXTRA_DURATION_MS, durationMs)
-            putExtra(ReceiverDashboardBroadcast.EXTRA_QUEUE_UNAVAILABLE, queueUnavailable)
-            queueTitle?.let { putExtra(ReceiverDashboardBroadcast.EXTRA_QUEUE_TITLE, it) }
-            queueArtist?.let { putExtra(ReceiverDashboardBroadcast.EXTRA_QUEUE_ARTIST, it) }
-            coverUrl?.let { putExtra(ReceiverDashboardBroadcast.EXTRA_COVER_URL, it) }
-            currentTrackId?.let { putExtra(ReceiverDashboardBroadcast.EXTRA_TRACK_ID, it) }
-            currentSessionUser?.let { putExtra(ReceiverDashboardBroadcast.EXTRA_SESSION_USER, it) }
-            currentSessionDisplayName?.let { putExtra(ReceiverDashboardBroadcast.EXTRA_SESSION_DISPLAY_NAME, it) }
-            currentSessionAvatarUrl?.let { putExtra(ReceiverDashboardBroadcast.EXTRA_SESSION_AVATAR_URL, it) }
-        })
     }
 
     /** Resolves the connected account's display name + avatar off the main thread, then re-publishes. */
@@ -206,7 +209,10 @@ class SpotifyService : Service() {
             if (activeService !== self) return@Thread
             currentSessionDisplayName = profile.displayName?.takeIf { it.isNotBlank() }
             currentSessionAvatarUrl = profile.avatarUrl?.takeIf { it.isNotBlank() }
-            publishStatus(ReceiverDashboardStatusEvent.Lifecycle.CONNECTED)
+            publishStatus(
+                ReceiverDashboardStatusEvent.Lifecycle.CONNECTED,
+                service = ReceiverServiceState.RUNNING,
+            )
         }.start()
     }
 
@@ -244,7 +250,7 @@ class SpotifyService : Service() {
         )
         val openIntent = PendingIntent.getActivity(
             this, 1,
-            Intent(this, NowPlayingActivity::class.java).apply {
+            Intent(this, HomeActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             },
             PendingIntent.FLAG_IMMUTABLE
@@ -270,9 +276,7 @@ class SpotifyService : Service() {
         // Order matters: emit the playback-STOPPED reset FIRST (it clears the now-playing
         // track and tells LyricsActivity to close), then publish OFF LAST so the final
         // dashboard state is the honest "Off" — not the "listening" health a STOPPED
-        // playback event maps to. Publishing OFF last makes it win in both the
-        // DashboardStateHolder snapshot (written in call order) and the broadcast the
-        // Activity receives (delivered in send order).
+        // playback event maps to.
         publishPlayback(
             playbackState = ReceiverDashboardPlaybackEvent.PlaybackState.STOPPED.name,
             title = null,
@@ -285,7 +289,8 @@ class SpotifyService : Service() {
             coverUrl = null,
             trackId = null
         )
-        publishStatus(ReceiverDashboardStatusEvent.Lifecycle.OFF)
+        // Full service teardown → STOPPED (carried with the honest "Off" display event).
+        publishStatus(ReceiverDashboardStatusEvent.Lifecycle.OFF, service = ReceiverServiceState.STOPPED)
         NativeBridge.stopDevice()
         nativeStartedConfig = null
         multicastLock?.release()
@@ -320,15 +325,20 @@ class SpotifyService : Service() {
             activeService?.let { service ->
                 service.currentDeviceName = sanitized
                 service.nativeStartedConfig = service.nativeStartedConfig?.copy(deviceName = sanitized)
+                // Route the rename through the store (single source of truth).
+                service.store().dispatch(ReceiverEvent.Rename(sanitized))
             }
-            DashboardStateHolder.current = DashboardStateHolder.current.copy(receiverName = sanitized)
         }
 
         @JvmStatic
         fun onNativeReceiverConnected(username: String?) {
             activeService?.let { service ->
                 service.currentSessionUser = username?.takeIf { it.isNotBlank() }
-                service.publishStatus(ReceiverDashboardStatusEvent.Lifecycle.CONNECTED)
+                // Spotify account connected — the receiver stays up, so the service stays RUNNING.
+                service.publishStatus(
+                    ReceiverDashboardStatusEvent.Lifecycle.CONNECTED,
+                    service = ReceiverServiceState.RUNNING,
+                )
                 NativeBridge.requestAccessToken()
             }
         }
@@ -350,7 +360,12 @@ class SpotifyService : Service() {
                 service.currentTrackId = null
                 TokenStore.clear()
                 ProfileRepository.clear()
-                service.publishStatus(ReceiverDashboardStatusEvent.Lifecycle.STOPPED)
+                // Native session ended on its own — the receiver stays running and discoverable for
+                // the next connection, so the service stays RUNNING (display returns to idle).
+                service.publishStatus(
+                    ReceiverDashboardStatusEvent.Lifecycle.STOPPED,
+                    service = ReceiverServiceState.RUNNING,
+                )
                 service.publishPlayback(
                     playbackState = ReceiverDashboardPlaybackEvent.PlaybackState.STOPPED.name,
                     title = null,

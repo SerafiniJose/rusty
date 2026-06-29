@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shell clock digit size. The clock is shell-owned (one activity_home for both orientations),
+         so its size is qualified here: 120sp by default (landscape), 84sp in portrait (values-port)
+         so the full-size idle/exit clock never clips the narrow portrait width. -->
+    <dimen name="shell_clock_text_size">120sp</dimen>
+
+    <!-- Top strip reserved on a non-Spotify feature (Home Assistant) so the floating corner clock
+         (parked at ~base 22dp + 24dp margin + its ~0.22-scaled height) doesn't overlay the feature's
+         own top row. On-device tunable. -->
+    <dimen name="ha_clock_clearance">84dp</dimen>
+
+    <!-- The shell chrome cluster's margin from its (base+bars-padded) parent. -->
+    <dimen name="chrome_bar_margin">22dp</dimen>
+
+    <!-- The screensaver themes draw their cluster on an unpadded overlay, so they need the shell's
+         base pad folded in (CHROME_BASE_PAD_DP 22dp + chrome_bar_margin 22dp) to align with the shell
+         cluster in immersive. On-device tunable. -->
+    <dimen name="screensaver_chrome_margin">44dp</dimen>
+
+    <!-- Bottom strip reserved on the HA feature so the dashboard content / HA's own bottom controls
+         aren't hidden behind the chip bar + cluster. Mirrors ha_clock_clearance. On-device tunable. -->
+    <dimen name="ha_chrome_clearance">84dp</dimen>
+
+    <!-- Corner radius for inner settings cards (account row + dashboard cards) — rounder than the
+         old 12dp so they sit closer to the app's other surfaces. -->
+    <dimen name="settings_card_radius">16dp</dimen>
+</resources>

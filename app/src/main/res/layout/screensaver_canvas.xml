@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base">
+
+    <!-- Fallback: blurred album-art wash shown when the current track has no Canvas. -->
+    <ImageView
+        android:id="@+id/ssCanvasWash"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:scaleType="centerCrop"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <dev.rusty.app.CanvasPlayerView
+        android:id="@+id/ssCanvasPlayer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:alpha="0"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Centered migrating clock, matching the real idle face -->
+    <TextView
+        android:id="@+id/ssClock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/bricolage_regular"
+        android:includeFontPadding="false"
+        android:text="9:41"
+        android:textColor="@color/ink"
+        android:textSize="120sp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.42" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/ssClock">
+
+        <TextView
+            android:id="@+id/ssDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:letterSpacing="0.14"
+            android:text="Tuesday · June 8"
+            android:textAllCaps="true"
+            android:textColor="@color/muted"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/ssStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:fontFamily="@font/hanken_regular"
+            android:text="Ready for Spotify"
+            android:textColor="@color/muted_dim"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <!-- Tap-catcher that dismisses the saver launcher; GONE unless the menu is open. Declared before
+         the chrome so the chrome row and the menu pills stay tappable above it while the menu is open. -->
+    <View
+        android:id="@+id/ssLauncherScrim"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clickable="true"
+        android:focusable="false"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Settings/Info chrome, matching the idle face (bottom-end, dimmed) -->
+    <LinearLayout
+        android:id="@+id/ssChrome"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/screensaver_chrome_margin"
+        android:alpha="0.55"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ImageButton
+            android:id="@+id/ssBtnSettings"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Receiver settings"
+            android:foreground="@drawable/bg_tv_focus"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_settings" />
+
+        <ImageButton
+            android:id="@+id/ssBtnInfo"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Session and receiver health"
+            android:foreground="@drawable/bg_tv_focus"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_info" />
+
+        <!-- Launcher toggle. GONE unless 2+ features are enabled (FeatureLauncher.refresh() decides). -->
+        <ImageButton
+            android:id="@+id/ssBtnLauncher"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Open menu"
+            android:foreground="@drawable/bg_tv_focus"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_apps"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Expandable launcher menu: feature pills stack upward above the saver chrome. Built at runtime. -->
+    <LinearLayout
+        android:id="@+id/ssLauncherMenu"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="@dimen/screensaver_chrome_margin"
+        android:layout_marginBottom="8dp"
+        android:gravity="end"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/ssChrome"
+        app:layout_constraintEnd_toEndOf="parent" />
+</androidx.constraintlayout.widget.ConstraintLayout>

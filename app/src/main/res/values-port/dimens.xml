@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Portrait override: smaller clock so "10:38" never clips the narrow portrait width (matches
+         the pre-SP2.1 portrait fragment's 84sp clock). -->
+    <dimen name="shell_clock_text_size">84sp</dimen>
+</resources>

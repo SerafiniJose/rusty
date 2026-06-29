@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Portrait variant of the Now Playing face. Identical view IDs to res/layout/ (the
+  landscape variant) so SpotifyFragment + BloomController bind unchanged; Android
+  re-inflates the right one per orientation on the rotation-triggered recreate.
+
+  Difference from landscape: the playing group is STACKED rather than split. The album
+  art is sized by WIDTH (a square that fits the narrow axis) with the info + transport
+  below it, so nothing overflows the viewport the way a height-sized square does in
+  portrait. The shared clock stays a direct, centered child of contentLayer so the
+  BloomController corner-park math keeps working.
+-->
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nowPlayingRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base">
+
+    <!-- Layer 1: drifting mesh (idle background) -->
+    <dev.rusty.app.AmbientMeshView
+        android:id="@+id/viewAmbientMesh"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Layer 2: blurred art wash (playing background) -->
+    <ImageView
+        android:id="@+id/ivWash"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:alpha="0"
+        android:contentDescription="@null"
+        android:scaleType="centerCrop"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Layer 3: Canvas video loop (playing background override; gated by the Canvas toggle) -->
+    <dev.rusty.app.CanvasPlayerView
+        android:id="@+id/canvasPlayer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:alpha="0"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Layer 4: scrim for text legibility over the wash -->
+    <View
+        android:id="@+id/viewScrim"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:alpha="0"
+        android:background="@drawable/bg_scrim_playing"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Layer 5: grain -->
+    <dev.rusty.app.GrainView
+        android:id="@+id/viewGrain"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Foreground content. The Activity pads THIS (system-bar insets + base margin), so the
+         background layers above stay full-bleed to the window edges (no inset border). -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/contentLayer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <!-- Top-left identity: dot + name + (active) suffix -->
+        <LinearLayout
+            android:id="@+id/statusRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <View
+                android:id="@+id/viewStatusDot"
+                android:layout_width="11dp"
+                android:layout_height="11dp"
+                android:background="@drawable/bg_status_dot"
+                android:contentDescription="Receiver status" />
+
+            <TextView
+                android:id="@+id/tvStatusName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_semibold"
+                android:maxLines="1"
+                android:text="Salotto"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvIdentitySuffix"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="· Spotify Connect"
+                android:textColor="@color/muted_dim"
+                android:textSize="16sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Settings + Info moved to the shell chrome cluster (activity_home.xml) in SP2.1 so they
+             float above every feature; the clock is shell-owned too (one activity_home for both
+             orientations). The shell clock uses the landscape 120sp size in portrait as well. -->
+
+        <!-- Idle group: date + status, centered just below where the shell clock's idle face sits. -->
+        <LinearLayout
+            android:id="@+id/idleGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintVertical_bias="0.60">
+
+            <TextView
+                android:id="@+id/tvClockDate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:letterSpacing="0.14"
+                android:text="Tuesday · June 8"
+                android:textAllCaps="true"
+                android:textColor="@color/muted"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvIdleStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:fontFamily="@font/hanken_regular"
+                android:text="Ready for Spotify"
+                android:textColor="@color/muted_dim"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <!-- Playing group (portrait): cover on top, info + transport stacked below. The card is
+             sized by WIDTH (centered, capped) with a 1:1 ratio, so it always fits the narrow axis
+             and leaves room for the info column underneath. -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/albumArtCard"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_marginTop="48dp"
+            android:visibility="gone"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="0dp"
+            app:layout_constraintDimensionRatio="1:1"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintHorizontal_bias="0.5"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/statusRow"
+            app:layout_constraintWidth_max="300dp">
+
+            <ImageView
+                android:id="@+id/ivFullAlbumArt"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_album_art_placeholder"
+                android:contentDescription="Album art"
+                android:scaleType="centerCrop" />
+
+            <TextView
+                android:id="@+id/tvFullAlbumGlyph"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="♫"
+                android:textColor="@color/white"
+                android:textSize="84sp" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <LinearLayout
+            android:id="@+id/playingInfo"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/albumArtCard"
+            app:layout_constraintVertical_bias="0.0">
+
+            <TextView
+                android:id="@+id/tvEyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_semibold"
+                android:letterSpacing="0.18"
+                android:text="NOW PLAYING"
+                android:textColor="@color/accent_fallback"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvFullTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:ellipsize="end"
+                android:fontFamily="@font/bricolage_bold"
+                android:gravity="center_horizontal"
+                android:maxLines="2"
+                android:text="Waiting for Spotify"
+                android:textColor="@color/ink"
+                android:textSize="28sp" />
+
+            <TextView
+                android:id="@+id/tvFullArtist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_regular"
+                android:gravity="center_horizontal"
+                android:maxLines="1"
+                android:text="Select this receiver from Spotify"
+                android:textColor="@color/muted"
+                android:textSize="18sp" />
+
+            <FrameLayout
+                android:id="@+id/progressRow"
+                android:layout_width="match_parent"
+                android:layout_height="6dp"
+                android:layout_marginTop="24dp"
+                android:background="@drawable/bg_progress_track_ambient">
+
+                <View
+                    android:id="@+id/viewFullProgressFill"
+                    android:layout_width="120dp"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_progress_fill" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tvFullElapsed"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="@font/hanken_regular"
+                    android:text="0:00"
+                    android:textColor="@color/muted"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/tvFullDuration"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_regular"
+                    android:text="0:00"
+                    android:textColor="@color/muted"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/transportRow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="24dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/btnPrev"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Previous track"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_skip_previous" />
+
+                <ImageButton
+                    android:id="@+id/btnPlayPause"
+                    android:layout_width="68dp"
+                    android:layout_height="68dp"
+                    android:layout_marginStart="22dp"
+                    android:layout_marginEnd="22dp"
+                    android:background="@drawable/bg_playpause_button"
+                    android:contentDescription="Play or pause"
+                    android:padding="16dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_play" />
+
+                <ImageButton
+                    android:id="@+id/btnNext"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Next track"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_skip_next" />
+            </LinearLayout>
+        </LinearLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>

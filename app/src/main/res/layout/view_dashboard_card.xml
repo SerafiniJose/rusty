@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_margin="5dp"
+    android:checkable="true"
+    android:focusable="true"
+    android:foreground="@drawable/bg_tv_focus"
+    app:cardBackgroundColor="@color/surface_raised"
+    app:cardCornerRadius="@dimen/settings_card_radius"
+    app:cardElevation="0dp"
+    app:strokeColor="@color/surface_border"
+    app:strokeWidth="1dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <ImageView
+            android:id="@+id/cardIcon"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_marginBottom="8dp"
+            app:tint="@color/ink" />
+
+        <TextView
+            android:id="@+id/cardTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="@font/hanken_medium"
+            android:gravity="center"
+            android:maxLines="2"
+            android:textColor="@color/ink"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/cardTag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:fontFamily="@font/hanken_regular"
+            android:text="default"
+            android:textColor="@color/muted_dim"
+            android:textSize="10sp"
+            android:visibility="gone" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

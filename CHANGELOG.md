@@ -10,6 +10,30 @@ user-facing.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-29
+
+Rusty grows from a single-purpose Spotify Connect receiver into an ambient,
+multi-feature appliance. The Spotify receiver works exactly as before — everything
+new is additive, and the whole-screen features are off by default.
+
+### Added
+- **Screensaver.** After an idle timeout — or a tap on the clock — Rusty shows a
+  full-screen idle face and gently wakes back to now-playing. Choose a clean Clock
+  face, an OLED-burn-in-safe drifting face, or a Canvas face that plays the track's
+  looping Spotify Canvas video.
+- **Home Assistant as a second screen.** Sign in once and Rusty shows your Home
+  Assistant dashboards full-screen in a kiosk-style view, with switcher chips to jump
+  between them.
+- **Spotify Canvas in now-playing.** Optionally fill the now-playing screen with the
+  track's looping Canvas video instead of static album art.
+- **Start on boot.** Optionally launch Rusty automatically when the device powers on,
+  so it comes back as an always-on display.
+- **Keep screen on.** An optional switch holds the display awake while Rusty is in
+  front, honored on both now-playing and lyrics.
+
+### Changed
+- Settings are now organized into tabs, one page per feature.
+
 ## [1.3.1] - 2026-06-24
 
 ### Fixed
@@ -43,7 +67,9 @@ user-facing.
 - Transport controls, live receiver rename, selectable bitrate (96 / 160 / 320 kbps),
   a fullscreen mode, and a 12/24-hour clock.
 
-[Unreleased]: https://github.com/SerafiniJose/rusty/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/SerafiniJose/rusty/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/SerafiniJose/rusty/compare/v1.3.1...v2.0.0
+[1.3.1]: https://github.com/SerafiniJose/rusty/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/SerafiniJose/rusty/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/SerafiniJose/rusty/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/SerafiniJose/rusty/compare/v1.0.0...v1.1.0

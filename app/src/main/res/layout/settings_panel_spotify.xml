@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Receiver power: live status sub-line + a Stop/Start toggle, mirroring the name+Change row. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Receiver"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvReceiverStatusValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="Running · listening for Spotify"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnToggleService"
+            style="@style/Widget.Rusty.Button.Secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:foreground="@drawable/bg_tv_focus"
+            android:text="Stop" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="14dp"
+        android:background="@color/surface_border" />
+
+    <!-- Receiver name: one row showing the current name + a Change button that reveals the editor. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Receiver name"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvReceiverNameValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="Android Speaker"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnChangeName"
+            style="@style/Widget.Rusty.Button.Secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:foreground="@drawable/bg_tv_focus"
+            android:text="Change" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/rowReceiverNameEdit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilReceiverName"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColorHint="@color/muted_dim"
+            app:boxStrokeColor="@color/accent_fallback"
+            app:hintTextColor="@color/muted_dim">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etReceiverName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:imeOptions="actionDone"
+                android:inputType="text"
+                android:maxLines="1"
+                android:textColor="@color/ink"
+                android:fontFamily="@font/hanken_regular" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSaveName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:foreground="@drawable/bg_tv_focus"
+            android:text="Save"
+            android:textColor="@color/white"
+            app:backgroundTint="@color/accent_fallback" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="14dp"
+        android:background="@color/surface_border" />
+
+    <!-- Bitrate: label + current value on the left, a compact horizontal bar on the right. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Bitrate"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvBitrateValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:text="160 kbps · balanced"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/sliderBitrate"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="16dp"
+            android:value="1"
+            android:valueFrom="0"
+            android:valueTo="2"
+            android:stepSize="1"
+            app:labelBehavior="gone"
+            app:haloColor="@color/accent_fallback"
+            app:thumbColor="@color/accent_fallback"
+            app:tickColorActive="@color/white"
+            app:tickColorInactive="@color/muted_dim"
+            app:trackColorActive="@color/accent_fallback"
+            app:trackColorInactive="@color/surface_border" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvSettingsFeedback"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text=""
+        android:textColor="@color/muted_dim"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="14dp"
+        android:background="@color/surface_border" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Show Canvas videos"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:text="Play looping artist video art when available"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchCanvas"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:foreground="@drawable/bg_tv_focus_switch"
+            android:minHeight="0dp"
+            android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+            app:switchMinWidth="0dp"
+            app:thumbTint="@color/switch_thumb_tint"
+            app:trackTint="@color/switch_track_tint" />
+    </LinearLayout>
+</LinearLayout>

@@ -1,30 +1,19 @@
 package dev.rusty.app
 
 /**
- * Shared broadcast contract for service-to-dashboard status updates.
+ * Shared broadcast contract for service control signals.
+ *
+ * The old ACTION_STATUS / ACTION_PLAYBACK producers and all their EXTRA_* keys have been removed
+ * (Task 13). All receiver state is now delivered exclusively via [ReceiverStateStore]. Only the two
+ * non-data signals remain:
+ *  - [ACTION_STOP] — sent by the notification stop button to the service.
+ *  - [ACTION_TOKEN] — bare signal that the access token in [TokenStore] has been refreshed;
+ *    consumed by [LyricsActivity].
  */
 object ReceiverDashboardBroadcast {
-    const val ACTION_STATUS = "dev.rusty.app.action.RECEIVER_STATUS"
-    const val ACTION_PLAYBACK = "dev.rusty.app.action.PLAYBACK_STATUS"
     const val ACTION_STOP = "dev.rusty.app.action.STOP_SERVICE"
-    const val EXTRA_RECEIVER_NAME = "dev.rusty.app.extra.RECEIVER_NAME"
-    const val EXTRA_LIFECYCLE = "dev.rusty.app.extra.LIFECYCLE"
-    const val EXTRA_MESSAGE = "dev.rusty.app.extra.MESSAGE"
-    const val EXTRA_SESSION_USER = "dev.rusty.app.extra.SESSION_USER"
-    const val EXTRA_PLAYBACK_STATE = "dev.rusty.app.extra.PLAYBACK_STATE"
-    const val EXTRA_TRACK_TITLE = "dev.rusty.app.extra.TRACK_TITLE"
-    const val EXTRA_TRACK_ARTIST = "dev.rusty.app.extra.TRACK_ARTIST"
-    const val EXTRA_ELAPSED_MS = "dev.rusty.app.extra.ELAPSED_MS"
-    const val EXTRA_DURATION_MS = "dev.rusty.app.extra.DURATION_MS"
-    const val EXTRA_QUEUE_TITLE = "dev.rusty.app.extra.QUEUE_TITLE"
-    const val EXTRA_QUEUE_ARTIST = "dev.rusty.app.extra.QUEUE_ARTIST"
-    const val EXTRA_QUEUE_UNAVAILABLE = "dev.rusty.app.extra.QUEUE_UNAVAILABLE"
-    const val EXTRA_COVER_URL = "dev.rusty.app.extra.COVER_URL"
     // Bare "access token refreshed" signal (no payload — the token lives in TokenStore). Consumed by LyricsActivity.
     const val ACTION_TOKEN = "dev.rusty.app.action.TOKEN"
-    const val EXTRA_TRACK_ID = "dev.rusty.app.extra.TRACK_ID"
-    const val EXTRA_SESSION_DISPLAY_NAME = "dev.rusty.app.extra.SESSION_DISPLAY_NAME"
-    const val EXTRA_SESSION_AVATAR_URL = "dev.rusty.app.extra.SESSION_AVATAR_URL"
 }
 
 /**
@@ -45,7 +34,8 @@ data class ReceiverDashboardStatusEvent(
         RESTARTING,
         STOPPED,
         OFF,
-        ERROR;
+        ERROR,
+        PERMISSION_DENIED;
 
         companion object {
             fun fromWireName(value: String?): Lifecycle? = entries.firstOrNull { it.name == value }
@@ -118,6 +108,16 @@ data class ReceiverDashboardStatusEvent(
             status = "Error",
             discoveryLine = "Discovery: error",
             serviceLine = "Service: ${message?.takeIf { it.isNotBlank() } ?: "native startup failed"}",
+            sessionUser = null,
+            sessionDisplayName = null,
+            sessionAvatarUrl = null,
+        )
+
+        Lifecycle.PERMISSION_DENIED -> previous.copy(
+            receiverName = receiverName,
+            status = "Permission needed",
+            discoveryLine = "Discovery: stopped",
+            serviceLine = "Service: notification permission denied",
             sessionUser = null,
             sessionDisplayName = null,
             sessionAvatarUrl = null,

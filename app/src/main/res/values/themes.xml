@@ -28,4 +28,15 @@
     <style name="ThemeOverlay.Rusty.SwitchNoHalo" parent="">
         <item name="colorControlHighlight">@android:color/transparent</item>
     </style>
+
+    <!-- Section header for settings panels: small all-caps muted label, matching the General
+         panel's BEHAVIOR/FEATURES headers. A full style (not a textAppearance) so textAllCaps +
+         letterSpacing reliably apply on the TextView. -->
+    <style name="Widget.Rusty.SectionHeader" parent="">
+        <item name="android:textSize">12sp</item>
+        <item name="android:fontFamily">@font/hanken_regular</item>
+        <item name="android:textColor">@color/muted_dim</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.12</item>
+    </style>
 </resources>

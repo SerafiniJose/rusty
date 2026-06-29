@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Behavior -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/hanken_regular"
+        android:letterSpacing="0.12"
+        android:text="BEHAVIOR"
+        android:textAllCaps="true"
+        android:textColor="@color/muted_dim"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Fullscreen"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Hide system bars"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchFullscreen"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:foreground="@drawable/bg_tv_focus_switch"
+            android:minHeight="0dp"
+            android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+            app:switchMinWidth="0dp"
+            app:thumbTint="@color/switch_thumb_tint"
+            app:trackTint="@color/switch_track_tint" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Keep screen on"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Stop the display from sleeping while Rusty is open"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchKeepScreenOn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:foreground="@drawable/bg_tv_focus_switch"
+            android:minHeight="0dp"
+            android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+            app:switchMinWidth="0dp"
+            app:thumbTint="@color/switch_thumb_tint"
+            app:trackTint="@color/switch_track_tint" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Start on boot"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvBootSwitchHelper"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Run the receiver when the device powers on"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchStartOnBoot"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:foreground="@drawable/bg_tv_focus_switch"
+            android:minHeight="0dp"
+            android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+            app:switchMinWidth="0dp"
+            app:thumbTint="@color/switch_thumb_tint"
+            app:trackTint="@color/switch_track_tint" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="16dp"
+        android:background="@color/surface_border" />
+
+    <!-- Features -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:fontFamily="@font/hanken_regular"
+        android:letterSpacing="0.12"
+        android:text="FEATURES"
+        android:textAllCaps="true"
+        android:textColor="@color/muted_dim"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Home Assistant"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Show a Home Assistant dashboard"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchHomeAssistant"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:foreground="@drawable/bg_tv_focus_switch"
+            android:minHeight="0dp"
+            android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+            app:switchMinWidth="0dp"
+            app:thumbTint="@color/switch_thumb_tint"
+            app:trackTint="@color/switch_track_tint" />
+    </LinearLayout>
+</LinearLayout>

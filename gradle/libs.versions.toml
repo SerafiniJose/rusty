@@ -8,10 +8,16 @@ espressoCore = "3.7.0"
 appcompat = "1.7.1"
 material = "1.13.0"
 activity = "1.12.2"
+fragment = "1.8.5"
 constraintlayout = "2.2.1"
 coil = "2.7.0"
 palette = "1.0.0"
 orgJson = "20231013"
+coroutines = "1.8.1"
+lifecycleRuntime = "2.8.7"
+media3 = "1.4.1"
+protobuf = "3.25.5"
+protobufPlugin = "0.9.4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -21,12 +27,21 @@ androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-co
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 androidx-activity = { group = "androidx.activity", name = "activity", version.ref = "activity" }
+androidx-fragment-ktx = { group = "androidx.fragment", name = "fragment-ktx", version.ref = "fragment" }
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 coil = { group = "io.coil-kt", name = "coil", version.ref = "coil" }
 androidx-palette = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }
 org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntime" }
+fragment-testing = { group = "androidx.fragment", name = "fragment-testing", version.ref = "fragment" }
+androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
+protobuf-javalite = { group = "com.google.protobuf", name = "protobuf-javalite", version.ref = "protobuf" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+protobuf = { id = "com.google.protobuf", version.ref = "protobufPlugin" }
 

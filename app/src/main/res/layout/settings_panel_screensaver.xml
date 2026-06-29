@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Theme: label and the two themes as side-by-side radio buttons, all on one line. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_medium"
+            android:text="Theme"
+            android:textColor="@color/ink"
+            android:textSize="16sp" />
+
+        <RadioGroup
+            android:id="@+id/rgScreensaverTheme"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/rbThemeClock"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:buttonTint="@color/accent_fallback"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:fontFamily="@font/hanken_regular"
+                android:text="Clock"
+                android:textColor="@color/ink" />
+
+            <RadioButton
+                android:id="@+id/rbThemeOled"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
+                android:buttonTint="@color/accent_fallback"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:fontFamily="@font/hanken_regular"
+                android:text="OLED (minimal)"
+                android:textColor="@color/ink" />
+
+            <RadioButton
+                android:id="@+id/rbThemeCanvas"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
+                android:buttonTint="@color/accent_fallback"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:fontFamily="@font/hanken_regular"
+                android:text="Canvas"
+                android:textColor="@color/ink" />
+        </RadioGroup>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="14dp"
+        android:layout_marginBottom="14dp"
+        android:background="@color/surface_border" />
+
+    <!-- Start after (idle): label + current value on the left, a stepped bar on the right
+         (mirrors the Spotify bitrate selector). -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Start after (idle)"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvScreensaverTimeoutValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:text="2 minutes"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/sliderScreensaverTimeout"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="16dp"
+            android:value="2"
+            android:valueFrom="0"
+            android:valueTo="4"
+            android:stepSize="1"
+            app:labelBehavior="gone"
+            app:haloColor="@color/accent_fallback"
+            app:thumbColor="@color/accent_fallback"
+            app:tickColorActive="@color/white"
+            app:tickColorInactive="@color/muted_dim"
+            app:trackColorActive="@color/accent_fallback"
+            app:trackColorInactive="@color/surface_border" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="14dp"
+        android:layout_marginBottom="14dp"
+        android:background="@color/surface_border" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="24-hour time"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:text="Off shows 12-hour time"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchTimeFormat"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:foreground="@drawable/bg_tv_focus_switch"
+            android:minHeight="0dp"
+            android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+            app:switchMinWidth="0dp"
+            app:thumbTint="@color/switch_thumb_tint"
+            app:trackTint="@color/switch_track_tint" />
+    </LinearLayout>
+</LinearLayout>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Show all / Show less" button for the dashboard checklist. Inflated programmatically so it
+     gets the app's Secondary pill style + D-pad focus ring (the old code built a bare outlined
+     MaterialButton with no focus ring). -->
+<com.google.android.material.button.MaterialButton
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/Widget.Rusty.Button.Secondary"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:foreground="@drawable/bg_tv_focus" />

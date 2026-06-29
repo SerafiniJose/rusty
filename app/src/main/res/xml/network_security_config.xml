@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- LAN Home Assistant is commonly plain http. Permit cleartext (affects Java/WebView only;
+         librespot's native networking is unaffected, and Spotify APIs / cover art are https). -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

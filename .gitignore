@@ -22,9 +22,13 @@ local.properties
 # Rust build outputs
 /rust/target/
 .superpowers/
+.claude/
 
 # Local design scratch & dev artifacts — not part of the app
 sketches/
 design/
 *.mp4
 docs/
+
+# Local release procedure notes — kept locally, not tracked
+RELEASING.md

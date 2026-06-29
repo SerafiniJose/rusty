@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package com.spotify.canvaz;
+
+option java_package = "com.spotify.canvaz";
+option java_outer_classname = "CanvazMetaProto";
+option optimize_for = CODE_SIZE;
+
+enum Type {
+    IMAGE = 0;
+    VIDEO = 1;
+    VIDEO_LOOPING = 2;
+    VIDEO_LOOPING_RANDOM = 3;
+    GIF = 4;
+}

@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/homeRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base">
+
+    <!-- The active feature fills the window; features draw their own full-bleed backgrounds. -->
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/featureContainer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Shell chrome: navigation that floats above any feature. Inset-padded by the activity;
+         covered by screensaverOverlay (declared after it) whenever the saver shows. The shared
+         clock is added here in SP2.1 Task 3 (it still lives in the Spotify fragment until then). -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/shellChrome"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <!-- The single shared clock. BloomController morphs it over Spotify; the shell parks it in
+             the corner over a non-Spotify feature. Tap → screensaver. -->
+        <TextView
+            android:id="@+id/tvClock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:focusable="true"
+            android:fontFamily="@font/bricolage_regular"
+            android:includeFontPadding="false"
+            android:text="9:41"
+            android:textColor="@color/ink"
+            android:textSize="@dimen/shell_clock_text_size"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintVertical_bias="0.42" />
+
+        <!-- HA dashboard switcher. Shares the bottom row with the cluster; GONE unless HA is foreground
+             with 2+ dashboards selected. Constrained to the cluster's start so they never overlap. -->
+        <HorizontalScrollView
+            android:id="@+id/haChipBar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/chrome_bar_margin"
+            android:scrollbars="none"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="@id/chromeCluster"
+            app:layout_constraintEnd_toStartOf="@id/chromeCluster"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@id/chromeCluster">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/haChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
+
+        <!-- Bottom-right cluster: settings, info, switch. One group → switch can't overlap info. -->
+        <LinearLayout
+            android:id="@+id/chromeCluster"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="@dimen/chrome_bar_margin"
+            android:alpha="0.85"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <ImageButton
+                android:id="@+id/btnSettings"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_chrome_pill"
+                android:contentDescription="Receiver settings"
+                android:foreground="@drawable/bg_tv_focus"
+                android:nextFocusUp="@id/btnNext"
+                android:nextFocusRight="@id/btnInfo"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_settings" />
+
+            <ImageButton
+                android:id="@+id/btnInfo"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/bg_chrome_pill"
+                android:contentDescription="Session and receiver health"
+                android:foreground="@drawable/bg_tv_focus"
+                android:nextFocusUp="@id/btnNext"
+                android:nextFocusLeft="@id/btnSettings"
+                android:nextFocusRight="@id/btnLauncher"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_info" />
+
+            <ImageButton
+                android:id="@+id/btnLauncher"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/bg_chrome_pill"
+                android:contentDescription="Open menu"
+                android:foreground="@drawable/bg_tv_focus"
+                android:nextFocusUp="@id/btnNext"
+                android:nextFocusLeft="@id/btnInfo"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_apps" />
+
+            <!-- `@id/btnNext` (nextFocusUp) resolves to the Spotify fragment's transport across the
+                 activity tree over Spotify; over HA it's absent and the framework falls back. -->
+        </LinearLayout>
+
+        <!-- Tap-catcher that dismisses the launcher; GONE unless the menu is open. -->
+        <View
+            android:id="@+id/launcherScrim"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:clickable="true"
+            android:focusable="false"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- Expandable launcher menu: pills stack upward above the cluster. Built at runtime. -->
+        <LinearLayout
+            android:id="@+id/launcherMenu"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="@dimen/chrome_bar_margin"
+            android:layout_marginBottom="10dp"
+            android:gravity="end"
+            android:orientation="vertical"
+            android:visibility="gone"
+            app:layout_constraintBottom_toTopOf="@id/chromeCluster"
+            app:layout_constraintEnd_toEndOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- Screensaver overlay slot: reserved for SP1. Empty + GONE in SP0; floats above everything. -->
+    <FrameLayout
+        android:id="@+id/screensaverOverlay"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

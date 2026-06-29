@@ -152,6 +152,21 @@ class ReceiverDashboardStatusEventTest {
     }
 
     @Test
+    fun permissionDeniedEventMapsToPermissionNeededStatus() {
+        val event = ReceiverDashboardStatusEvent(
+            receiverName = "Salotto Echo Show",
+            lifecycle = ReceiverDashboardStatusEvent.Lifecycle.PERMISSION_DENIED
+        )
+
+        val state = event.toDashboardState(previous = ReceiverDashboardState.waiting("Salotto Echo Show"))
+
+        assertEquals("Permission needed", state.status)
+        assertEquals("Discovery: stopped", state.discoveryLine)
+        assertEquals("Service: notification permission denied", state.serviceLine)
+        assertNull(state.sessionUser)
+    }
+
+    @Test
     fun playbackStoppedThenOffStatusEndsOnOffNotListening() {
         // Mirrors SpotifyService.onDestroy(): the playback-STOPPED reset is applied first
         // (clearing the track), then the OFF status is applied LAST and must win — a stopped

@@ -13,6 +13,8 @@
     <color name="muted_dim">#FF9B9690</color>
 
     <color name="accent_fallback">#FF1DB954</color>
+    <!-- ~10% accent_fallback, used as the active dashboard chip fill -->
+    <color name="accent_chip_fill">#1A1DB954</color>
 
     <color name="mesh_teal">#FF1F6F4A</color>
     <color name="mesh_blue">#FF243B6E</color>

@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF000000">
+
+    <LinearLayout
+        android:id="@+id/ssOledGroup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/ssOledClock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_medium"
+            android:text="0:00"
+            android:textColor="#B3FFFFFF"
+            android:textSize="84sp" />
+
+        <TextView
+            android:id="@+id/ssOledDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:textColor="#80FFFFFF"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/ssOledTrack"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:fontFamily="@font/hanken_regular"
+            android:gravity="center"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textColor="#80FFFFFF"
+            android:textSize="14sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Tap-catcher that dismisses the saver launcher; GONE unless the menu is open. -->
+    <View
+        android:id="@+id/ssOledLauncherScrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:focusable="false"
+        android:visibility="gone" />
+
+    <!-- Bottom-end stack: the launcher menu fans up above the Settings/Info/launcher chrome row. -->
+    <LinearLayout
+        android:id="@+id/ssOledChromeWrap"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="@dimen/screensaver_chrome_margin"
+        android:gravity="end"
+        android:orientation="vertical">
+
+        <!-- Expandable launcher menu: feature pills, built at runtime. -->
+        <LinearLayout
+            android:id="@+id/ssOledLauncherMenu"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:gravity="end"
+            android:orientation="vertical"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/ssOledChrome"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:alpha="0.55"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <ImageButton
+                android:id="@+id/ssOledBtnSettings"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Receiver settings"
+                android:foreground="@drawable/bg_tv_focus"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_settings" />
+
+            <ImageButton
+                android:id="@+id/ssOledBtnInfo"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="6dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Session and receiver health"
+                android:foreground="@drawable/bg_tv_focus"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_info" />
+
+            <!-- Launcher toggle. GONE unless 2+ features are enabled (FeatureLauncher.refresh() decides). -->
+            <ImageButton
+                android:id="@+id/ssOledBtnLauncher"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="6dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Open menu"
+                android:foreground="@drawable/bg_tv_focus"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_apps"
+                android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

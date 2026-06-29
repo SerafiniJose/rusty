@@ -1,9 +1,11 @@
 # Rusty
 
-A **Spotify Connect receiver for Android** with an ambient, lyrics-aware now-playing screen.
-Open the app and the device starts advertising itself on your local network — it then appears
-as a speaker target in any Spotify client (phone, desktop, web) on the same Wi‑Fi. Pick it,
-and audio streams directly to the device.
+A **Spotify Connect receiver for Android** with an ambient, lyrics-aware now-playing screen —
+now grown into a small, always-on **appliance**. Open the app and the device starts advertising
+itself on your local network, appearing as a speaker target in any Spotify client (phone,
+desktop, web) on the same Wi‑Fi. Pick it, and audio streams directly to the device. When nothing
+is playing it settles into a screensaver, and it can double as a full-screen **Home Assistant**
+dashboard.
 
 Built on **[Rust](https://www.rust-lang.org/)** — and built to give new life to rusty devices.
 Runs great on always-on screens like the Amazon Echo Show, and on any Android 8.0+ device.
@@ -16,16 +18,21 @@ Runs great on always-on screens like the Amazon Echo Show, and on any Android 8.
 
 ## Screenshots
 
-| Idle (ambient clock) | Now playing | Synced lyrics |
+| Now playing | Synced lyrics | Screensaver · Clock |
 | --- | --- | --- |
-| ![Idle clock face](screenshots/idle.png) | ![Now playing](screenshots/now-playing.png) | ![Lyrics](screenshots/lyrics.png) |
+| ![Now playing](screenshots/now-playing.png) | ![Lyrics](screenshots/lyrics.png) | ![Clock screensaver face](screenshots/screensaver-clock.png) |
+
+| Screensaver · OLED | Home Assistant | On-screen launcher |
+| --- | --- | --- |
+| ![OLED screensaver face](screenshots/screensaver-oled.png) | ![Home Assistant dashboard](screenshots/home-assistant.png) | ![On-screen launcher](screenshots/launcher.png) |
 
 | Settings | Session & health |
 | --- | --- |
 | ![Settings](screenshots/settings.png) | ![Session and receiver health](screenshots/session.png) |
 
-> Captured on an Amazon Echo Show 8 (1280×800). Cover art is a generated gradient; the track,
-> artist, listener and lyrics are placeholders — no copyrighted content.
+> Captured on an Amazon Echo Show 8 (1280×800). Cover art is a generated gradient and the track,
+> artist, listener and lyrics are placeholders — no copyrighted content. The Home Assistant shot
+> uses the public Home Assistant demo.
 
 ---
 
@@ -40,6 +47,12 @@ Runs great on always-on screens like the Amazon Echo Show, and on any Android 8.
 - **Live device rename** — change the receiver's broadcast name from Settings; it re-advertises immediately, no restart.
 - **Tunable** — pick streaming bitrate (96 / 160 / 320 kbps), a fullscreen "hide system bars" mode, and 12/24-hour clock.
 - **Shows your Spotify display name** while connected.
+- **Screensaver** — after an idle timeout (or a tap on the clock) Rusty shows a full-screen idle face and gently wakes back to now-playing. Pick a clean **Clock** face, an **OLED**-burn-in-safe drifting face, or a **Canvas** face that plays the track's looping Spotify Canvas video.
+- **Home Assistant dashboard** — an optional second screen: sign in once and Rusty shows your Home Assistant dashboards full-screen in a kiosk-style view, with switcher chips to jump between them. It auto-discovers your dashboards and sidebar apps.
+- **Spotify Canvas in now-playing** — optionally fill the now-playing screen with the track's looping Canvas video instead of static album art.
+- **On-screen launcher** — an expandable button jumps between Spotify, Home Assistant, and the screensaver.
+- **Start on boot & Keep screen on** — optional toggles to launch Rusty when the device powers on and to hold the display awake while it's in front.
+- **Tabbed settings** — each feature gets its own settings page.
 
 ## Requirements
 
@@ -47,16 +60,17 @@ Runs great on always-on screens like the Amazon Echo Show, and on any Android 8.
 - **Android 8.0 (API 26) or newer.**
 - A **64-bit (arm64-v8a)** or **32-bit ARM (armeabi-v7a)** device. (No x86 builds are shipped.)
 - The receiver and the controlling Spotify client must be on the **same local network**.
+- **Home Assistant mode (optional)** needs a Home Assistant instance reachable on the same local network.
 
 > Tested on an Amazon Echo Show 8 running LineageOS 18.1 (Android 11) and on a Lenovo Tab M10 (TB-X606FA).
 
 ## Install
 
 1. Go to the [**Releases**](https://github.com/SerafiniJose/rusty/releases/latest) page.
-2. Download the `.apk` for the latest release (e.g. `rusty-v1.0.0.apk`).
+2. Download the `.apk` for the latest release (e.g. `rusty-v2.0.0.apk`).
 3. Sideload it onto your device:
    ```bash
-   adb install -r rusty-v1.0.0.apk
+   adb install -r rusty-v2.0.0.apk
    ```
    (Or enable "Install unknown apps" and open the APK directly on the device.)
 4. Launch the app — it begins advertising as a Connect target right away.
@@ -105,17 +119,25 @@ cargo ndk -t armeabi-v7a -t arm64-v8a --platform 26 \
 ## How it works
 
 ```
-Spotify client ──Connect/zeroconf──▶  Kotlin app (UI, service, discovery)
-                                              │  JNI
+Spotify client ──Connect/zeroconf──▶  Rusty — a feature shell (Kotlin · HomeActivity)
+(same network)                           ├─ Spotify         now playing · lyrics · idle
+                                         ├─ Screensaver     Clock / OLED / Canvas
+                                         └─ Home Assistant  kiosk WebView → your HA instance
+                                              │  JNI  (Spotify feature)
                                               ▼
                                    Rust core (librespot 0.8)
                                    session · player · audio backend
 ```
 
+- The app is a small **feature shell** (`HomeActivity`) that hosts switchable, full-screen
+  features — the **Spotify** receiver, the **screensaver**, and **Home Assistant** — under one
+  shared chrome (clock, settings, on-screen launcher).
 - **Kotlin** (`app/`) handles the UI, the foreground service, network advertising, and the
-  now-playing / lyrics / settings screens.
+  now-playing / lyrics / settings / screensaver screens. Home Assistant is a kiosk **WebView**
+  pointed at your own instance — no Rust involved.
 - **Rust** (`rust/`) wraps [librespot](https://github.com/librespot-org/librespot) 0.8 and exposes
-  a small JNI surface (`NativeBridge`) for session lifecycle, transport, token retrieval, and rename.
+  a small JNI surface (`NativeBridge`) for session lifecycle, transport, token retrieval, and
+  rename — used only by the Spotify feature.
 
 ## Credits & attribution
 
@@ -123,6 +145,10 @@ Spotify client ──Connect/zeroconf──▶  Kotlin app (UI, service, discove
   Spotify client library that does the real protocol and audio work.
 - Originally inspired by **[willturr/librespot-android-connect](https://github.com/willturr/librespot-android-connect)**,
   a proof-of-concept that demonstrated driving librespot from Android over JNI.
+- Home Assistant dashboard icons are rendered with the **[Material Design Icons](https://pictogrammers.com/library/mdi/)**
+  webfont by the [Pictogrammers](https://pictogrammers.com/) group (fonts under the Apache 2.0 license).
+- The **Home Assistant** screen embeds your own [Home Assistant](https://www.home-assistant.io/)
+  instance (an open-source home-automation platform; this project is not affiliated with it).
 
 ## Disclaimer
 
