@@ -19,6 +19,7 @@ use librespot::playback::config::{PlayerConfig, Bitrate};
 use librespot::playback::player::{Player, PlayerEvent, PlayerEventChannel};
 use librespot::playback::mixer::{self, MixerConfig};
 use librespot::metadata::{Episode, Metadata, Track};
+use librespot::metadata::image::{Image, ImageSize};
 
 //helpers
 use sha1::{Sha1, Digest};
@@ -791,7 +792,8 @@ async fn resolve_spotify_metadata(session: &Session, track_id: &SpotifyUri) -> O
             artist_names.join(", ")
         };
         // 0.8: track.album is the embedded Album; covers is Vec<Image>, each Image has id: FileId.
-        let cover_url = track.album.covers.first().and_then(|img| cover_url_from_file(&img.id));
+        // The renditions aren't size-ordered, so pick the largest instead of the first.
+        let cover_url = best_cover_url(&track.album.covers);
         return Some((track.name, artists, track.duration.max(0) as u32, cover_url));
     }
 
@@ -802,7 +804,7 @@ async fn resolve_spotify_metadata(session: &Session, track_id: &SpotifyUri) -> O
         } else {
             episode.show_name.clone()
         };
-        let cover_url = episode.covers.first().and_then(|img| cover_url_from_file(&img.id));
+        let cover_url = best_cover_url(&episode.covers);
         return Some((episode.name, show_name, episode.duration.max(0) as u32, cover_url));
     }
 
@@ -814,6 +816,31 @@ async fn resolve_spotify_metadata(session: &Session, track_id: &SpotifyUri) -> O
 /// Builds the public CDN URL for a Spotify image `FileId` (40-char base16 hex).
 fn cover_url_from_file(file: &FileId) -> Option<String> {
     file.to_base16().ok().map(|hex| format!("https://i.scdn.co/image/{}", hex))
+}
+
+/// Ranks a cover rendition's size enum. Spotify serves DEFAULT < SMALL < LARGE < XLARGE.
+fn size_rank(size: ImageSize) -> i32 {
+    match size {
+        ImageSize::DEFAULT => 0,
+        ImageSize::SMALL => 1,
+        ImageSize::LARGE => 2,
+        ImageSize::XLARGE => 3,
+    }
+}
+
+/// Picks the highest-resolution rendition from a set of Spotify cover images.
+///
+/// Spotify attaches several renditions of each cover (typically 64, 300 and 640 px) as
+/// separate `Image`s, and the list is *not* ordered by size — so `.first()` can hand back
+/// the 64 px thumbnail, which the now-playing screen then upscales into a blurry mess.
+/// We rank by pixel area (width * height), falling back to the `Size` enum when width and
+/// height are absent (they come back as 0 from Spotify's protobuf). This reliably yields
+/// the 640 px art, which is the largest rendition i.scdn.co serves.
+fn best_cover_url(covers: &[Image]) -> Option<String> {
+    covers
+        .iter()
+        .max_by_key(|img| (img.width as i64 * img.height as i64, size_rank(img.size)))
+        .and_then(|img| cover_url_from_file(&img.id))
 }
 
 fn send_native_receiver_connected(username: &str) {
