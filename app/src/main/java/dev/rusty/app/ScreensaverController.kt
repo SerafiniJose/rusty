@@ -184,9 +184,12 @@ class ScreensaverController(
 
     private fun onWakeGesture() {
         if (!isShowing || exiting) return
-        // Sleep layer over a non-receiver feature: any input crossfades straight back to it
-        // (no theme two-stage; exitTarget is null for HA, so no bloom — just the crossfade).
-        if (!isReceiverForeground()) {
+        // Exit straight to the dashboard when either (a) we're a sleep layer over a non-receiver
+        // feature — any input crossfades back to it — or (b) the UI is non-touch: a remote/D-pad
+        // user (e.g. NVIDIA Shield) has no focusable control while the full-screen saver covers the
+        // chrome, and at idle the saver would otherwise never dismiss, trapping the remote. Touch on
+        // the receiver falls through to the per-theme / ACTIVE handling below (unchanged behaviour).
+        if (ScreensaverWake.exitsImmediately(isReceiverForeground(), overlay.isInTouchMode)) {
             exitToDashboard()
             return
         }
