@@ -10,6 +10,16 @@ user-facing.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-07-09
+
+Fixed
+- Updates now install over an existing version. Releases are signed with a stable
+  key; the jump from v2.0.0 needs one final uninstall, then future updates apply
+  normally.
+- Android TV: a remote key now dismisses the idle screensaver, restoring D-pad
+  control on devices like the NVIDIA Shield.
+- Album art now loads at full resolution.
+
 ## [2.0.0] - 2026-06-29
 
 Rusty grows from a single-purpose Spotify Connect receiver into an ambient,

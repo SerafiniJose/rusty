@@ -28,15 +28,28 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      # Decode the persistent release keystore (stored as a base64 repo secret) so the
+      # APK is signed with the same certificate on every build. Without this, Android
+      # rejects in-place updates with INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+      - name: Decode signing keystore
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+        run: echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
       # The native .so files are committed under app/src/main/jniLibs, so no Rust
       # toolchain is needed here — Gradle just compiles Kotlin and packages the APK.
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+      - name: Build release APK
+        env:
+          SIGNING_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Stage APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk "dist/rusty-${GITHUB_REF_NAME}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "dist/rusty-${GITHUB_REF_NAME}.apk"
 
       # Pull the CHANGELOG section for this tag (e.g. v1.2.0 → "## [1.2.0]") and use it
       # as the release body, so GitHub and the app's "What's new" show the same curated
@@ -68,12 +81,18 @@ jobs:
           generate_release_notes: ${{ steps.notes.outputs.found != 'true' }}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Upgrading to a SIGNED release build (optional):
-#   1. Generate a keystore:  keytool -genkey -v -keystore release.jks \
-#        -keyalg RSA -keysize 2048 -validity 10000 -alias release
-#   2. Add repo secrets: SIGNING_KEYSTORE_BASE64, SIGNING_KEYSTORE_PASSWORD,
-#        SIGNING_KEY_ALIAS, SIGNING_KEY_PASSWORD
-#   3. Add a signingConfig in app/build.gradle.kts that reads them, decode the
-#      keystore in a step, and swap the build step to `./gradlew assembleRelease`,
-#      uploading app/build/outputs/apk/release/app-release.apk instead.
-# Until then, the debug-signed APK above installs fine for sideloading.
+# One-time release-signing setup (required for the steps above to work):
+#   1. Generate a keystore ONCE and keep it forever (losing it means future
+#      updates can't be installed over old ones):
+#        keytool -genkey -v -keystore release.jks \
+#          -keyalg RSA -keysize 2048 -validity 10000 -alias release
+#   2. Base64-encode it:  base64 -w0 release.jks > release.jks.b64
+#   3. Add these repo secrets (Settings → Secrets and variables → Actions):
+#        SIGNING_KEYSTORE_BASE64    contents of release.jks.b64
+#        SIGNING_KEYSTORE_PASSWORD  the keystore password
+#        SIGNING_KEY_ALIAS          the key alias (e.g. release)
+#        SIGNING_KEY_PASSWORD       the key password
+#   The matching signingConfig lives in app/build.gradle.kts.
+#
+# NOTE: v2.0.0 and earlier were debug-signed, so the FIRST signed release still
+# requires users to uninstall once. Every release after that updates in place.
