@@ -49,6 +49,7 @@ Runs great on always-on screens like the Amazon Echo Show, and on any Android 8.
 - **Shows your Spotify display name** while connected.
 - **Screensaver** — after an idle timeout (or a tap on the clock) Rusty shows a full-screen idle face and gently wakes back to now-playing. Pick a clean **Clock** face, an **OLED**-burn-in-safe drifting face, or a **Canvas** face that plays the track's looping Spotify Canvas video.
 - **Home Assistant dashboard** — an optional second screen: sign in once and Rusty shows your Home Assistant dashboards full-screen in a kiosk-style view, with switcher chips to jump between them. It auto-discovers your dashboards and sidebar apps.
+- **Home Assistant media renderer** — optionally expose Rusty as a DLNA media player that Home Assistant auto-discovers as a `media_player` entity (nothing to install on the HA side). Speak TTS announcements ("the wash is done", a doorbell chime, a morning briefing) or stream internet radio to it from automations, scripts, or a dashboard card — Rusty pauses or fades Spotify while the message plays and resumes it afterwards.
 - **Spotify Canvas in now-playing** — optionally fill the now-playing screen with the track's looping Canvas video instead of static album art.
 - **On-screen launcher** — an expandable button jumps between Spotify, Home Assistant, and the screensaver.
 - **Start on boot & Keep screen on** — optional toggles to launch Rusty when the device powers on and to hold the display awake while it's in front.

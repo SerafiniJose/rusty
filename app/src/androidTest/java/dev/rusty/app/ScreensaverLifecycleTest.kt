@@ -1,8 +1,12 @@
 package dev.rusty.app
 
+import android.content.Context
 import android.view.KeyEvent
+import android.view.View
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -153,6 +157,59 @@ class ScreensaverLifecycleTest {
             }
 
             assertTrue("Key event must be consumed (return true) while screensaver is showing", consumed)
+        }
+    }
+
+    /**
+     * Enabling a second feature while the saver is already showing must reveal the saver's launcher
+     * toggle without a re-mount.
+     *
+     * Regression for the "can't navigate to Home Assistant" bug: the saver's expandable-launcher
+     * toggle ([R.id.ssBtnLauncher]) is evaluated only when the theme view is mounted. An idle saver
+     * sits up indefinitely and never re-mounts on its own, so enabling Home Assistant from Settings
+     * (a dialog over the showing saver) left the toggle GONE — stranding the user on the saver with
+     * no way to reach the newly enabled feature. The fix propagates the enabled-set change to the
+     * showing saver via [ScreensaverController.onEnabledFeaturesChanged].
+     *
+     * HA is forced OFF in prefs BEFORE launch so the saver mounts in the single-feature world (toggle
+     * hidden), then enabled while showing; the toggle must flip to VISIBLE.
+     */
+    @Test
+    fun enablingFeatureWhileSaverShowing_revealsSaverLauncher() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val prefs = ctx.getSharedPreferences("spotify_receiver_prefs", Context.MODE_PRIVATE)
+        val originalHaEnabled = prefs.getBoolean(HomeAssistantFeature.KEY_ENABLED, false)
+        prefs.edit().putBoolean(HomeAssistantFeature.KEY_ENABLED, false).commit()
+        try {
+            ActivityScenario.launch(HomeActivity::class.java).use { scenario ->
+                // The saver auto-shows over the idle Spotify face at cold launch; make sure it's up
+                // (no-op if already showing) so it mounts in the single-feature world.
+                scenario.onActivity { activity -> activity.showScreensaver() }
+
+                // Baseline: one enabled feature (Spotify) → nothing to navigate to → toggle hidden.
+                scenario.onActivity { activity ->
+                    val toggle = activity.findViewById<View>(R.id.ssBtnLauncher)
+                    assertNotNull("Saver launcher toggle should be inflated while showing", toggle)
+                    assertEquals(
+                        "Launcher toggle is hidden with a single enabled feature",
+                        View.GONE, toggle!!.visibility,
+                    )
+                }
+
+                // Enable a SECOND feature (Home Assistant) WHILE the saver is showing.
+                scenario.onActivity { activity -> activity.setHomeAssistantEnabled(true) }
+
+                // The showing saver must now expose its launcher toggle — no re-mount required.
+                scenario.onActivity { activity ->
+                    val toggle = activity.findViewById<View>(R.id.ssBtnLauncher)
+                    assertEquals(
+                        "Launcher toggle must appear when a 2nd feature is enabled while showing",
+                        View.VISIBLE, toggle!!.visibility,
+                    )
+                }
+            }
+        } finally {
+            prefs.edit().putBoolean(HomeAssistantFeature.KEY_ENABLED, originalHaEnabled).commit()
         }
     }
 }

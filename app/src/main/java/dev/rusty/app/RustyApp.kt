@@ -77,7 +77,7 @@ class RustyApp : Application() {
     companion object {
         private const val PREFS_NAME = "spotify_receiver_prefs"
         private const val KEY_DEVICE_NAME = "device_name"
-        private const val DEFAULT_DEVICE_NAME = "Android Speaker"
+        private const val DEFAULT_DEVICE_NAME = "Rusty Speaker"
 
         /** The process-wide store, reachable from any [Context]. */
         fun from(context: Context): ReceiverStateStore =

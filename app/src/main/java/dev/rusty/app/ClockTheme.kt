@@ -65,4 +65,6 @@ class ClockTheme : ScreensaverTheme {
         if (!visible) launcher.collapse()  // don't leave the menu floating over a chrome-less saver
         chrome.visibility = if (visible) View.VISIBLE else View.GONE
     }
+
+    override fun refreshLauncher() = launcher.refresh()
 }

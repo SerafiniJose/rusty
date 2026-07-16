@@ -82,7 +82,7 @@
                 android:fontFamily="@font/hanken_regular"
                 android:maxLines="1"
                 android:ellipsize="end"
-                android:text="Android Speaker"
+                android:text="Rusty Speaker"
                 android:textColor="@color/muted_dim"
                 android:textSize="13sp" />
         </LinearLayout>

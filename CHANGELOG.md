@@ -10,9 +10,24 @@ user-facing.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-07-17
+
+### Added
+- Home Assistant media renderer. Rusty now shows up as a media player in Home
+  Assistant and other DLNA/UPnP apps, so you can send text-to-speech announcements and
+  audio to it over the network. Announcements duck or pause Spotify and then hand
+  playback back automatically, with an optional volume fade (off, 250, 500, or
+  1000 ms). Radio streams play too.
+- DLNA player screen. An optional full-screen now-playing view for media sent to
+  Rusty — album art, title, artist, and a progress bar with play, pause, stop, and
+  seek. Turn it on under the app's settings.
+
+### Changed
+- The default Spotify Connect device name is now Rusty Speaker.
+
 ## [2.1.0] - 2026-07-09
 
-Fixed
+### Fixed
 - Updates now install over an existing version. Releases are signed with a stable
   key; the jump from v2.0.0 needs one final uninstall, then future updates apply
   normally.
@@ -77,7 +92,9 @@ new is additive, and the whole-screen features are off by default.
 - Transport controls, live receiver rename, selectable bitrate (96 / 160 / 320 kbps),
   a fullscreen mode, and a 12/24-hour clock.
 
-[Unreleased]: https://github.com/SerafiniJose/rusty/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/SerafiniJose/rusty/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/SerafiniJose/rusty/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/SerafiniJose/rusty/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/SerafiniJose/rusty/compare/v1.3.1...v2.0.0
 [1.3.1]: https://github.com/SerafiniJose/rusty/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/SerafiniJose/rusty/compare/v1.2.0...v1.3.0

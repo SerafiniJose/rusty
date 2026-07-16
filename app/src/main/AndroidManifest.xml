@@ -58,6 +58,11 @@
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
 
+        <service
+            android:name=".renderer.MediaRendererService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
+
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"

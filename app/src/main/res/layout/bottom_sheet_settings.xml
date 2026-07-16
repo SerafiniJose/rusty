@@ -18,7 +18,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Receiver settings"
+            android:text="Settings"
             android:textColor="@color/ink"
             android:textSize="20sp"
             android:fontFamily="@font/bricolage_bold" />
@@ -37,6 +37,7 @@
             app:tabMode="scrollable"
             app:tabPaddingStart="12dp"
             app:tabPaddingEnd="12dp"
+            app:tabIconTint="@color/muted_dim"
             app:tabRippleColor="@null"
             app:tabSelectedTextColor="@color/accent_fallback"
             app:tabTextColor="@color/muted_dim" />

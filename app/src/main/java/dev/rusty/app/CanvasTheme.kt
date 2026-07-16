@@ -124,4 +124,6 @@ class CanvasTheme : ScreensaverTheme {
         if (!visible) launcher.collapse()
         chrome.visibility = if (visible) View.VISIBLE else View.GONE
     }
+
+    override fun refreshLauncher() = launcher.refresh()
 }

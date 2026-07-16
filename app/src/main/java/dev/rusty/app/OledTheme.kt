@@ -158,6 +158,10 @@ class OledTheme : ScreensaverTheme {
         if (!visible && ::chrome.isInitialized) chrome.visibility = View.GONE
     }
 
+    override fun refreshLauncher() {
+        if (::launcher.isInitialized) launcher.refresh()
+    }
+
     /** Teleport the center-anchored text to a fresh random point inside the safe inset. */
     private fun reposition() {
         val maxDX = OledBurnIn.maxTravel(root.width, group.width, insetPx)

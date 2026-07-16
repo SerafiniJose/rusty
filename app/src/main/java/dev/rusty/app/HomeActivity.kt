@@ -97,6 +97,25 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             receiverController.onPermissionResult(isGranted)
         }
 
+    /** DLNA Start gate: on API 33+ an ungranted POST_NOTIFICATIONS hides the FGS notification
+     *  from the shade. The service starts EITHER WAY — the permission only affects visibility. */
+    private val dlnaNotificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+            dev.rusty.app.renderer.MediaRendererController.setEnabled(this, true)
+        }
+
+    /** Entry point for the DLNA Player settings tab's Start button. */
+    fun startDlnaPlayer() {
+        val needsAsk = android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (needsAsk) {
+            dlnaNotificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            dev.rusty.app.renderer.MediaRendererController.setEnabled(this, true)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_home)
@@ -198,6 +217,10 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         // per-feature chrome so Info/chips/launcher are correct even on a cold start into a non-Spotify
         // feature. animate=false — no bloom on cold start (clock snaps to corner if needed).
         shellChrome.onFeatureChanged(featureNavigator.current, animate = false)
+
+        // Best-effort DLNA/UPnP media-renderer exposure — syncs the service to the desired-state
+        // pref owned by the DLNA Player settings tab; no-ops if the player is stopped.
+        dev.rusty.app.renderer.MediaRendererController.syncFromPrefs(this)
     }
 
     override fun onStart() {
@@ -242,15 +265,16 @@ class HomeActivity : AppCompatActivity(), ShellHost {
      * rotates. The trade-off is that nothing is auto-re-inflated, so we manually refresh the few things
      * a recreate used to give us for free:
      *  1. the shared floating clock's orientation-qualified text size (`values-port/dimens` shrinks it);
-     *  2. the orientation-sensitive Spotify fragment's view (it has `layout-port`/`values-port`), rebuilt
-     *     in place — HA and the screensaver are not orientation-qualified, so they are left untouched and
-     *     keep their live state;
+     *  2. the orientation-sensitive Spotify and DLNA Player fragments' views (each has `layout-port`/
+     *     `values-port`), rebuilt in place — HA and the screensaver are not orientation-qualified, so
+     *     they are left untouched and keep their live state;
      *  3. the clock park / chrome layout for the new window dimensions.
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         tvClock.setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.shell_clock_text_size))
         featureNavigator.recreateFeatureView(FeatureId.SPOTIFY)
+        featureNavigator.recreateFeatureView(FeatureId.DLNA)
         shellChrome.onFeatureChanged(featureNavigator.current, animate = false)
     }
 
@@ -479,21 +503,56 @@ class HomeActivity : AppCompatActivity(), ShellHost {
      * Persists the HA enable flag and reconciles the shell: disabling HA while it's foreground snaps
      * back to Spotify (which also recomputes the screensaver); [FeatureLauncher.refresh] keeps the
      * launcher toggle visible and rebuilds the open menu so active-marking stays current.
+     *
+     * The toggle is reached from Settings, which is a dialog over the (possibly showing) screensaver
+     * — so the shell's launcher refresh isn't enough: [ScreensaverController.onEnabledFeaturesChanged]
+     * re-evaluates the showing saver's own launcher so the newly enabled feature is reachable there
+     * too, without waiting for the idle saver to re-mount.
      */
     fun setHomeAssistantEnabled(enabled: Boolean) {
+        // Capture BEFORE mutating the ring: onEnabledChanged() below may move `current` off HA when
+        // it's the active feature, which would make a post-mutation `currentFeatureId() ==
+        // HOME_ASSISTANT` check always false and skip the switch-away (see FeatureDisable).
+        val activeBefore = currentFeatureId()
         prefs.edit().putBoolean(HomeAssistantFeature.KEY_ENABLED, enabled).apply()
         // Keep the nav-state ring in sync so next() and onEnabledChanged queries are correct.
-        featureNavigator.state.onEnabledChanged(FeatureRegistry.enabledIds(prefs))
+        val stillEnabled = FeatureRegistry.enabledIds(prefs)
+        featureNavigator.state.onEnabledChanged(stillEnabled)
         if (!enabled) {
             // Disabling HA: if it's foreground, switch away first (so it's no longer current), then
             // REMOVE its retained fragment so the WebView/native resources are destroyed rather than
             // kept hidden. removeRetained no-ops when HA was never shown (no fragment to destroy).
-            if (currentFeatureId() == FeatureId.HOME_ASSISTANT) {
-                switchTo(FeatureId.SPOTIFY)
-            }
+            FeatureDisable.switchTargetOnDisable(FeatureId.HOME_ASSISTANT, activeBefore, stillEnabled)
+                ?.let { switchTo(it) }
             featureNavigator.removeRetained(FeatureId.HOME_ASSISTANT)
         }
         shellChrome.onFeatureChanged(currentFeatureId(), animate = false)
+        screensaver.onEnabledFeaturesChanged()
+    }
+
+    /** Whether the DLNA Player screen feature is enabled, for the General toggle's initial state. */
+    val isDlnaFeatureEnabled: Boolean
+        get() = prefs.getBoolean(DlnaPlayerFeature.KEY_ENABLED, false)
+
+    /**
+     * Persists the DLNA screen-feature flag and reconciles the shell. Independent of the renderer
+     * service run-state ([dev.rusty.app.renderer.MediaRendererController.setEnabled]) — this never
+     * starts/stops the service, it only controls whether the now-playing screen + launcher entry
+     * appear. Captures the active feature BEFORE the nav ring is mutated so disabling the active
+     * DLNA screen actually switches away and shows the fallback (see [FeatureDisable]).
+     */
+    fun setDlnaFeatureEnabled(enabled: Boolean) {
+        val activeBefore = currentFeatureId()
+        prefs.edit().putBoolean(DlnaPlayerFeature.KEY_ENABLED, enabled).apply()
+        val stillEnabled = FeatureRegistry.enabledIds(prefs)
+        featureNavigator.state.onEnabledChanged(stillEnabled)
+        if (!enabled) {
+            FeatureDisable.switchTargetOnDisable(FeatureId.DLNA, activeBefore, stillEnabled)
+                ?.let { switchTo(it) }
+            featureNavigator.removeRetained(FeatureId.DLNA)
+        }
+        shellChrome.onFeatureChanged(currentFeatureId(), animate = false)
+        screensaver.onEnabledFeaturesChanged()
     }
 
     /** Whether start-on-boot is enabled, for the General toggle's initial state. */
@@ -606,7 +665,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         private const val KEY_FULLSCREEN = "fullscreen_enabled"
         private const val KEY_TIME_FORMAT_24H = "time_format_24h"
         private const val KEY_CURRENT_FEATURE = "current_feature"
-        private const val DEFAULT_DEVICE_NAME = "Android Speaker"
+        private const val DEFAULT_DEVICE_NAME = "Rusty Speaker"
         private const val DEFAULT_BITRATE_KBPS = 160
         // Mirrors SpotifyFragment.BASE_PAD_DP so the floating shell chrome sits in the same safe box
         // the Spotify content used (keeps the clock's corner-park position consistent across the move).

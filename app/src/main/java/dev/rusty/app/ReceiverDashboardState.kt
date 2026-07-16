@@ -108,7 +108,7 @@ data class ReceiverDashboardState(
             durationMs = durationMs.coerceAtLeast(0L)
         )
 
-        private fun formatDuration(milliseconds: Long): String {
+        fun formatDuration(milliseconds: Long): String {
             val totalSeconds = milliseconds.coerceAtLeast(0L) / 1000L
             val minutes = totalSeconds / 60L
             val seconds = totalSeconds % 60L

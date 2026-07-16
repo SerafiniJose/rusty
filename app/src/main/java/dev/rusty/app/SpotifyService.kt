@@ -45,7 +45,12 @@ class SpotifyService : Service() {
         NativeBridge.initAndroidContext(applicationContext, applicationContext.cacheDir.absolutePath)
         NativeBridge.initLogger()
         acquireLocks()
+        // The first notification is posted BEFORE onStartCommand delivers the name — seed it
+        // from prefs so the shade never shows the stale default.
+        currentDeviceName = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getString(KEY_DEVICE_NAME, DEFAULT_DEVICE_NAME) ?: DEFAULT_DEVICE_NAME
         startForeground(1, createNotification())
+        ServiceNotifications.started(this, ServiceNotifications.Kind.SPOTIFY)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -65,6 +70,7 @@ class SpotifyService : Service() {
             ?: DEFAULT_BITRATE_KBPS
         currentDeviceName = deviceName
         currentBitrateKbps = bitrateKbps
+        postNotification()   // a start intent may carry a different name than the seed
         // NOTE: do NOT publish a FOREGROUND ("Starting") status here. It is emitted on the MAIN
         // thread while NATIVE_STARTING ("Waiting") is emitted on the native start thread below —
         // the two store dispatches then race and when "Starting" wins the dashboard is stuck on
@@ -257,13 +263,21 @@ class SpotifyService : Service() {
         )
 
         return NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Spotify Receiver Active")
-            .setContentText("Listening for connections...")
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle("Spotify receiver")
+            .setContentText("Listening as \"$currentDeviceName\"")
+            .setSmallIcon(R.drawable.ic_mdi_spotify)
+            .setGroup(ServiceNotifications.GROUP_KEY)
             .setOngoing(true)
             .setContentIntent(openIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
             .build()
+    }
+
+    /** Re-posts the foreground notification so the shade reflects the current receiver name. */
+    private fun postNotification() {
+        runCatching {   // POST_NOTIFICATIONS may be denied on API 33+
+            getSystemService(NotificationManager::class.java).notify(1, createNotification())
+        }
     }
 
     override fun onDestroy() {
@@ -296,6 +310,7 @@ class SpotifyService : Service() {
         multicastLock?.release()
         wakeLock?.release()
         activeService = null
+        ServiceNotifications.stopped(this, ServiceNotifications.Kind.SPOTIFY)
         super.onDestroy()
     }
 
@@ -306,7 +321,7 @@ class SpotifyService : Service() {
         private const val KEY_DEVICE_NAME = "device_name"
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_BITRATE_KBPS = "bitrate_kbps"
-        private const val DEFAULT_DEVICE_NAME = "Android Speaker"
+        private const val DEFAULT_DEVICE_NAME = "Rusty Speaker"
         private const val DEFAULT_BITRATE_KBPS = 160
         private val SUPPORTED_BITRATES_KBPS = setOf(96, 160, 320)
 
@@ -327,6 +342,7 @@ class SpotifyService : Service() {
                 service.nativeStartedConfig = service.nativeStartedConfig?.copy(deviceName = sanitized)
                 // Route the rename through the store (single source of truth).
                 service.store().dispatch(ReceiverEvent.Rename(sanitized))
+                service.postNotification()   // the shade must show the new receiver name
             }
         }
 

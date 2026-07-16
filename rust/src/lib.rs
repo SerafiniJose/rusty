@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::{env, thread};
 use std::os::raw::c_void;
-use std::sync::{Mutex, Once, OnceLock};
+use std::sync::{Arc, Mutex, Once, OnceLock};
 use std::time::Duration;
 use std::backtrace::Backtrace;
 use std::future::{self, Future};
@@ -9,6 +9,7 @@ use std::pin::Pin;
 
 use jni::{JNIEnv, JavaVM};
 use jni::objects::{GlobalRef, JClass, JObject, JString, JValue};
+use jni::sys::{jfloat, jint};
 
 //librespot imports (0.8 umbrella crate)
 use librespot::core::{Session, SessionConfig, SpotifyUri, FileId};
@@ -17,7 +18,7 @@ use librespot::core::authentication::Credentials;
 use librespot::connect::{ConnectConfig, Spirc};
 use librespot::playback::config::{PlayerConfig, Bitrate};
 use librespot::playback::player::{Player, PlayerEvent, PlayerEventChannel};
-use librespot::playback::mixer::{self, MixerConfig};
+use librespot::playback::mixer::{Mixer, MixerConfig};
 use librespot::metadata::{Episode, Metadata, Track};
 use librespot::metadata::image::{Image, ImageSize};
 
@@ -33,6 +34,11 @@ use android_logger::Config;
 /// Custom audio sink that reopens the output stream when Android's active audio
 /// route changes (e.g. Bluetooth connect/disconnect) — see the module docs.
 mod audio_sink;
+
+/// Duck-aware wrapper around librespot's soft mixer, used to lower the Spotify volume
+/// while a DLNA/TTS announcement plays through the app's own player — see the module docs.
+mod duck;
+use duck::DuckingMixer;
 
 /// Thread-safe state for the single active native Spotify Connect receiver.
 ///
@@ -119,6 +125,12 @@ static SPIRC_CONTROL: OnceLock<Mutex<Option<Spirc>>> = OnceLock::new();
 /// request outside a session is a safe no-op. `Session` is an `Arc` handle, so cloning is cheap.
 static SESSION_HANDLE: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
 
+/// Process-wide handle to the active session's ducking mixer, used by JNI
+/// (`setSpotifyAttenuation`) to lower/restore the Spotify volume while a DLNA stream plays.
+/// Set when a session connects, cleared on every teardown path, so duck calls outside
+/// a session are safe no-ops.
+static DUCK_MIXER: OnceLock<Mutex<Option<Arc<DuckingMixer>>>> = OnceLock::new();
+
 /// Process-wide Tokio runtime handle, set on each `startDevice`. Lets a JNI call made from
 /// outside the runtime (e.g. requestAccessToken) spawn an async task onto it.
 static RUNTIME_HANDLE: OnceLock<Mutex<Option<tokio::runtime::Handle>>> = OnceLock::new();
@@ -136,6 +148,11 @@ fn spirc_slot() -> &'static Mutex<Option<Spirc>> {
 /// Returns the process-wide session slot, initialising it on first use.
 fn session_slot() -> &'static Mutex<Option<Session>> {
     SESSION_HANDLE.get_or_init(|| Mutex::new(None))
+}
+
+/// Returns the process-wide ducking-mixer slot, initialising it on first use.
+fn duck_slot() -> &'static Mutex<Option<Arc<DuckingMixer>>> {
+    DUCK_MIXER.get_or_init(|| Mutex::new(None))
 }
 
 /// Returns the process-wide runtime-handle slot, initialising it on first use.
@@ -500,6 +517,7 @@ async fn start_discovery_loop(
                                 // failed partway (slots may have been set).
                                 *spirc_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
                                 *session_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
+                                *duck_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
                                 active = None;
                             }
                         }
@@ -563,9 +581,10 @@ async fn build_active_session(
     };
     info!("Player configured for bitrate {}kbps", bitrate_label(bitrate));
 
-    // 0.8: mixer::find -> Option<MixerFn>; MixerFn -> Result<Arc<dyn Mixer>, Error>.
-    let mixer_fn = mixer::find(None).expect("No mixer found!");
-    let mixer = mixer_fn(MixerConfig::default()).expect("Failed to open mixer");
+    // Duck-aware wrapper around the soft mixer: Spirc volume changes and DLNA ducking
+    // serialize behind one lock, and the Connect slider only ever sees the logical volume.
+    let mixer: Arc<DuckingMixer> =
+        Arc::new(<DuckingMixer as Mixer>::open(MixerConfig::default()).expect("Failed to open mixer"));
 
     // 0.8: Player::new returns Arc<Player>; the sink closure now takes NO args.
     // We supply our own route-following sink instead of librespot's stock rodio
@@ -587,9 +606,17 @@ async fn build_active_session(
     info!("Player initialized. Starting Spotify Connect control loop.");
 
     // 0.8: Spirc::new is async, takes credentials, connects internally, returns Result.
-    // player (Arc<Player>) and mixer (Arc<dyn Mixer>) are moved in; not needed after.
-    let (spirc, spirc_task) =
-        Spirc::new(connect_config, session.clone(), credentials, player, mixer).await?;
+    // player (Arc<Player>) is moved in; the mixer is handed over as an Arc<dyn Mixer> so
+    // every Connect volume change goes through the ducking wrapper's lock. We keep our own
+    // Arc so JNI can duck/restore it (see duck_slot()).
+    let (spirc, spirc_task) = Spirc::new(
+        connect_config,
+        session.clone(),
+        credentials,
+        player,
+        Arc::clone(&mixer) as Arc<dyn Mixer>,
+    )
+    .await?;
 
     // The session is connected now (Spirc::new did it) — publish the connected event.
     let username = session.username();
@@ -604,6 +631,8 @@ async fn build_active_session(
     send_native_receiver_connected(&username);
 
     *spirc_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = Some(spirc);
+
+    *duck_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = Some(mixer);
 
     Ok(ActiveSession {
         session,
@@ -628,6 +657,8 @@ fn teardown_active_session(active: &mut ActiveSession) {
     active.player_events_handle.abort();
     // Token requests after the session ends become safe no-ops.
     *session_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
+    // Duck calls after the session ends become safe no-ops (the next session starts unducked).
+    *duck_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
 }
 
 /// Cached track metadata `(title, artist, duration_ms, cover_url)`.
@@ -1072,6 +1103,27 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_pause(
     _class: JClass,
 ) {
     dispatch_spirc("pause", |spirc| spirc.pause());
+}
+
+/// Fades the audible Spotify volume to `factor` (1.0 = full, 0.0 = silence) over `fade_ms`.
+/// Goes through the session's `DuckingMixer`, so the Connect volume slider never sees the
+/// attenuation and a user volume change mid-fade is not clobbered. Sanitises its inputs
+/// (NaN → 1.0, clamped to [0,1], negative durations → instant). A no-op when no session is
+/// active (the next session's mixer starts unattenuated).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rusty_app_NativeBridge_setSpotifyAttenuation(
+    _env: JNIEnv,
+    _class: JClass,
+    factor: jfloat,
+    fade_ms: jint,
+) {
+    if let Some(mixer) = duck_slot()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .as_ref()
+    {
+        mixer.set_attenuation(f64::from(factor), fade_ms.max(0) as u32);
+    }
 }
 
 #[unsafe(no_mangle)]

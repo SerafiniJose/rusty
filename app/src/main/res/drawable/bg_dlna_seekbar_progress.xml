@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Thin Spotify-style SeekBar drawable: ambient track + accent fill (same drawables the
+     Spotify screen's progress row uses, packaged for a real SeekBar). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background" android:drawable="@drawable/bg_progress_track_ambient" />
+    <item android:id="@android:id/progress">
+        <clip android:drawable="@drawable/bg_progress_fill" />
+    </item>
+</layer-list>

@@ -815,7 +815,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     private companion object {
         private const val PREFS_NAME = "spotify_receiver_prefs"
         private const val KEY_TIME_FORMAT_24H = "time_format_24h"
-        private const val DEFAULT_DEVICE_NAME = "Android Speaker"
+        private const val DEFAULT_DEVICE_NAME = "Rusty Speaker"
 
         private const val STATUS_PLAYING = "Playing"
         private const val BASE_PAD_DP = 22

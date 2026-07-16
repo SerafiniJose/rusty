@@ -76,6 +76,9 @@ class ScreensaverController(
         store.addListener(stateListener) // immediate delivery sees no edge (prev==next)
         if (isShowing && !exiting) {
             activeTheme?.onShown()
+            // The enabled-feature set may have changed while stopped (e.g. HA toggled) — the showing
+            // saver mounted its launcher against the old set, so re-evaluate it now.
+            activeTheme?.refreshLauncher()
             handler.post(tickRunnable)
         } else if (!isShowing && isReceiverForeground() &&
             store.snapshot.state.visualState() == VisualState.IDLE
@@ -109,6 +112,17 @@ class ScreensaverController(
         } else {
             resetIdleTimer()
         }
+    }
+
+    /**
+     * The enabled-feature set changed (a feature was toggled in settings) while the saver may be
+     * showing. Re-evaluate the showing saver's launcher toggle so a newly enabled feature becomes
+     * reachable (or a disabled one disappears) without waiting for a re-mount — an idle saver never
+     * re-mounts on its own. No-op when not showing: the next [show] re-mounts and reads the current
+     * set anyway.
+     */
+    fun onEnabledFeaturesChanged() {
+        if (isShowing && !exiting) activeTheme?.refreshLauncher()
     }
 
     /** Re-arms the idle countdown from the latest input. No-op while showing or paused. */

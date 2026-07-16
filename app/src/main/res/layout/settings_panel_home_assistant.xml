@@ -175,4 +175,5 @@
         android:fontFamily="@font/hanken_regular"
         android:textSize="13sp"
         android:visibility="gone" />
+
 </LinearLayout>

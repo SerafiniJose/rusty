@@ -34,7 +34,7 @@ object HomeAssistantFeature : Feature {
 
     override val id = FeatureId.HOME_ASSISTANT
     override val title = "Home Assistant"
-    override val iconRes = R.drawable.ic_home
+    override val iconRes = R.drawable.ic_mdi_home_assistant
     override fun isEnabled(prefs: SharedPreferences) = prefs.getBoolean(KEY_ENABLED, false)
     override fun createFragment(): Fragment = HomeAssistantFragment()
     override val settingsTab = SettingsTabKey.HOME_ASSISTANT
@@ -379,17 +379,19 @@ private class HomeAssistantSettingsPanel(
         android.widget.Toast.makeText(activity, msg, android.widget.Toast.LENGTH_SHORT).show()
     }
 
-    private fun showFeedback(view: TextView, message: String, kind: HaFeedbackKind) {
-        view.text = message
-        view.setTextColor(ContextCompat.getColor(view.context, haFeedbackColorRes(kind)))
-        view.visibility = View.VISIBLE
-    }
-
     private val PREFS_NAME = "spotify_receiver_prefs"
 }
 
 /** Brand-token feedback colors for the HA settings status line (replaces hardcoded hex). */
 internal enum class HaFeedbackKind { SUCCESS, NEUTRAL, ERROR }
+
+/** Writes a brand-tinted status line into a settings panel's feedback [TextView] and reveals it.
+ *  Shared by the HA panel and [DlnaPlayerSettingsPanel] — one feedback idiom, not two. */
+internal fun showFeedback(view: TextView, message: String, kind: HaFeedbackKind) {
+    view.text = message
+    view.setTextColor(ContextCompat.getColor(view.context, haFeedbackColorRes(kind)))
+    view.visibility = View.VISIBLE
+}
 
 @androidx.annotation.ColorRes
 internal fun haFeedbackColorRes(kind: HaFeedbackKind): Int = when (kind) {

@@ -49,4 +49,13 @@ interface ScreensaverTheme {
      * draw no chrome ignore it).
      */
     fun setChromeVisible(visible: Boolean) {}
+
+    /**
+     * Re-evaluate the saver's expandable-launcher toggle against the current enabled-feature set.
+     * The controller calls this when features are enabled/disabled while the saver is already showing
+     * — the launcher toggle is otherwise computed only at [createView] (mount), and an idle saver
+     * never re-mounts on its own, so without this the toggle stays stale (e.g. no way to reach a
+     * feature enabled after the saver came up). Default: no-op (themes without a launcher ignore it).
+     */
+    fun refreshLauncher() {}
 }
