@@ -72,12 +72,18 @@ dependencies {
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.coil)
+    // Pinned to 1.3.0 — the version Material 1.13.0 already resolves to transitively, and the
+    // newest one present in the offline Gradle cache this repo must build against. The line is
+    // explicit because the Immich filter picker uses RecyclerView directly; relying on a
+    // transitive dependency for direct API usage breaks silently if Material ever drops it.
+    implementation("androidx.recyclerview:recyclerview:1.3.0")
     implementation(libs.androidx.palette)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
     implementation(libs.protobuf.javalite)
+    implementation(libs.androidx.security.crypto)
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
     testImplementation(libs.kotlinx.coroutines.test)

@@ -23,4 +23,11 @@ class ScreensaverThemeIdTest {
     @Test fun canvasRoundTrips() {
         assertEquals(ScreensaverThemeId.CANVAS, ScreensaverThemeId.fromPrefValue("CANVAS"))
     }
+
+    @Test fun slideshowRoundTrips() {
+        assertEquals(
+            ScreensaverThemeId.SLIDESHOW,
+            ScreensaverThemeId.fromPrefValue(ScreensaverThemeId.SLIDESHOW.prefValue)
+        )
+    }
 }

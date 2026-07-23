@@ -5,11 +5,14 @@
     android:layout_height="wrap_content"
     android:orientation="vertical">
 
-    <!-- Theme: label and the two themes as side-by-side radio buttons, all on one line. -->
+    <!-- Theme: label on the left, the themes as a reflowing row of radio buttons on the right.
+         Deliberately NOT a RadioGroup: RadioGroup only auto-manages RadioButtons that are its
+         DIRECT children, and a Flow-positioned set is not that, so mutual exclusion would silently
+         break. Exclusivity is enforced in SettingsSheet.bindScreensaver instead. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
+        android:gravity="top"
         android:orientation="horizontal">
 
         <TextView
@@ -20,20 +23,39 @@
             android:textColor="@color/ink"
             android:textSize="16sp" />
 
-        <RadioGroup
-            android:id="@+id/rgScreensaverTheme"
-            android:layout_width="wrap_content"
+        <!-- Themes lay out on ONE row and wrap to a second only when the remaining width cannot
+             hold them (flow_wrapMode="chain"). The container takes the leftover width (0dp +
+             weight) rather than wrap_content, because that leftover IS the space Flow measures
+             against — with wrap_content it would never see a reason to wrap. Radios carry no
+             fixed minWidth: the old 2x2 grid needed one to align columns, a reflowing row does
+             not, and a fixed width would force a wrap earlier than necessary. A hidden radio
+             (Slideshow, when its feature is off) is skipped by Flow and consumes no space. -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="20dp"
-            android:orientation="horizontal">
+            android:layout_weight="1">
+
+            <androidx.constraintlayout.helper.widget.Flow
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:constraint_referenced_ids="rbThemeClock,rbThemeOled,rbThemeCanvas,rbThemeSlideshow"
+                app:flow_horizontalBias="0"
+                app:flow_horizontalGap="16dp"
+                app:flow_horizontalStyle="packed"
+                app:flow_verticalGap="6dp"
+                app:flow_wrapMode="chain"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
 
             <RadioButton
                 android:id="@+id/rbThemeClock"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:buttonTint="@color/accent_fallback"
-                android:foreground="@drawable/bg_tv_focus_switch"
                 android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
                 android:text="Clock"
                 android:textColor="@color/ink" />
 
@@ -41,24 +63,33 @@
                 android:id="@+id/rbThemeOled"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="24dp"
                 android:buttonTint="@color/accent_fallback"
-                android:foreground="@drawable/bg_tv_focus_switch"
                 android:fontFamily="@font/hanken_regular"
-                android:text="OLED (minimal)"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="OLED"
                 android:textColor="@color/ink" />
 
             <RadioButton
                 android:id="@+id/rbThemeCanvas"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="24dp"
                 android:buttonTint="@color/accent_fallback"
-                android:foreground="@drawable/bg_tv_focus_switch"
                 android:fontFamily="@font/hanken_regular"
-                android:text="Canvas"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="Spotify Canvas"
                 android:textColor="@color/ink" />
-        </RadioGroup>
+
+            <RadioButton
+                android:id="@+id/rbThemeSlideshow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:buttonTint="@color/accent_fallback"
+                android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="Immich Slideshow"
+                android:textColor="@color/ink"
+                android:visibility="gone" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
     </LinearLayout>
 
     <View

@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base">
+
+    <!-- Photo stage. The two alternating slide layers live in their own container so swapping which
+         one is on top (bringToFront) never reorders the chrome above it. -->
+    <FrameLayout
+        android:id="@+id/ifStage"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- Two alternating slide layers; the back one loads the next slide, then crossfades in. -->
+        <FrameLayout
+            android:id="@+id/ifLayerA"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <FrameLayout
+            android:id="@+id/ifLayerB"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="0" />
+    </FrameLayout>
+
+    <!-- Clock: bottom-left, compact. -->
+    <LinearLayout
+        android:id="@+id/ifClockGroup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/screensaver_chrome_margin"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <TextView
+            android:id="@+id/ssClock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/bricolage_regular"
+            android:includeFontPadding="false"
+            android:text="9:41"
+            android:textColor="@color/ink"
+            android:textSize="48sp"
+            android:shadowColor="#80000000"
+            android:shadowRadius="8" />
+
+        <TextView
+            android:id="@+id/ssDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:letterSpacing="0.14"
+            android:text="Tuesday · June 8"
+            android:textAllCaps="true"
+            android:textColor="@color/muted"
+            android:textSize="13sp"
+            android:shadowColor="#80000000"
+            android:shadowRadius="8" />
+    </LinearLayout>
+
+    <!-- Status line for unconfigured/error/empty states (centered on the dark base). -->
+    <TextView
+        android:id="@+id/ssStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/hanken_regular"
+        android:text=""
+        android:textColor="@color/muted_dim"
+        android:textSize="15sp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Transport overlay: three big bare icons centered in the screen thirds
+         (chevron / play-pause / chevron), no pill. The container spans the stage but is NOT
+         clickable, so a tap on empty space falls through to the stage — which toggles the overlay
+         away — while the buttons consume their own taps. Revealed by a tap on the photo stage,
+         auto-hides after 5 s while playing. -->
+    <LinearLayout
+        android:id="@+id/ifTransport"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:alpha="0"
+        android:baselineAligned="false"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1">
+
+            <ImageButton
+                android:id="@+id/ifBtnPrev"
+                android:layout_width="120dp"
+                android:layout_height="120dp"
+                android:layout_gravity="center"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Previous photo"
+                android:foreground="@drawable/bg_tv_focus"
+                android:padding="12dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_chevron_left"
+                android:tint="@color/ink" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1">
+
+            <ImageButton
+                android:id="@+id/ifBtnPlayPause"
+                android:layout_width="120dp"
+                android:layout_height="120dp"
+                android:layout_gravity="center"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Pause slideshow"
+                android:foreground="@drawable/bg_tv_focus"
+                android:padding="20dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_pause"
+                android:tint="@color/ink" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1">
+
+            <ImageButton
+                android:id="@+id/ifBtnNext"
+                android:layout_width="120dp"
+                android:layout_height="120dp"
+                android:layout_gravity="center"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Next photo"
+                android:foreground="@drawable/bg_tv_focus"
+                android:padding="12dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_chevron_right"
+                android:tint="@color/ink" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- Exit affordance for when the clock is hidden: same slot, same margin, so the way out always
+         lives bottom-start. Revealed and hidden together with the pill (a hidden clock means the
+         user wants a clean frame). With the clock shown this stays GONE — the clock exits instead. -->
+    <ImageButton
+        android:id="@+id/ifBtnExit"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_margin="@dimen/screensaver_chrome_margin"
+        android:alpha="0"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Exit screensaver"
+        android:foreground="@drawable/bg_tv_focus"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_close"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- Tap-catcher that dismisses the saver launcher; GONE unless the menu is open. Declared before
+         the chrome so the chrome row and the menu pills stay tappable above it while the menu is open. -->
+    <View
+        android:id="@+id/ssLauncherScrim"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clickable="true"
+        android:focusable="false"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Settings/Info chrome, matching the idle face (bottom-end, dimmed) -->
+    <LinearLayout
+        android:id="@+id/ssChrome"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/screensaver_chrome_margin"
+        android:alpha="0.55"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ImageButton
+            android:id="@+id/ssBtnSettings"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Receiver settings"
+            android:foreground="@drawable/bg_tv_focus"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_settings" />
+
+        <ImageButton
+            android:id="@+id/ssBtnInfo"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Session and receiver health"
+            android:foreground="@drawable/bg_tv_focus"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_info" />
+
+        <!-- Launcher toggle. GONE unless 2+ features are enabled (FeatureLauncher.refresh() decides). -->
+        <ImageButton
+            android:id="@+id/ssBtnLauncher"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Open menu"
+            android:foreground="@drawable/bg_tv_focus"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_apps"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Expandable launcher menu: feature pills stack upward above the saver chrome. Built at runtime. -->
+    <LinearLayout
+        android:id="@+id/ssLauncherMenu"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="@dimen/screensaver_chrome_margin"
+        android:layout_marginBottom="8dp"
+        android:gravity="end"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/ssChrome"
+        app:layout_constraintEnd_toEndOf="parent" />
+</androidx.constraintlayout.widget.ConstraintLayout>

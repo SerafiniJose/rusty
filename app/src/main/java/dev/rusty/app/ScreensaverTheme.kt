@@ -14,6 +14,13 @@ interface ScreensaverHost {
      * Empty/one-entry means the saver chrome shows no launcher (nothing to navigate to).
      */
     fun launcherEntries(): List<LauncherEntry>
+
+    /**
+     * Leave the saver and return to the dashboard. For themes whose own surface owns the exit
+     * gesture (Slideshow's clock/✕) — the controller's tap-anywhere wake path can't serve them,
+     * because a clickable child consumes its touch before the overlay listener ever sees it.
+     */
+    fun requestExit()
 }
 
 /**
@@ -34,6 +41,21 @@ interface ScreensaverTheme {
      * return false to request the bloom-exit to the dashboard. Default: exit immediately.
      */
     fun onWakeGesture(): Boolean = false
+
+    /**
+     * True while this theme owns the remote: the shell routes D-pad LEFT/RIGHT/CENTER/ENTER to
+     * [onNavKey], BACK/UP exit, and every other key is a consumed no-op. Default false: all keys
+     * fall through to the wake path (any-key-wakes — themes without their own remote surface must
+     * never trap a D-pad user; the v2.0.0 Shield rule).
+     */
+    fun ownsRemote(): Boolean = false
+
+    /**
+     * A shell-approved nav key (DPAD_LEFT/RIGHT/CENTER or ENTER — [ShellKeyRouting.isNavKey],
+     * initial press only) while [ownsRemote]. The shell enforces the key set; themes are not
+     * trusted to filter.
+     */
+    fun onNavKey(keyCode: Int) {}
 
     /**
      * Whether this theme paints its own ambient mesh. Drives the exit bloom: a mesh-less theme

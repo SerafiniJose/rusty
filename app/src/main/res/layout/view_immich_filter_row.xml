@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One category summary row: title + state line, up to 3 overlapping thumbs, chevron.
+     Included 3x from the panel; ids are looked up on the include root. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingVertical="11dp"
+    android:focusable="true"
+    android:clickable="true"
+    android:foreground="@drawable/bg_tv_focus">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvFilterRowTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_medium"
+            android:textColor="@color/ink"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/tvFilterRowState"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <!-- Populated in code with up to 3 26dp ImageViews, each after the first with a
+         -8dp start margin for the overlap. -->
+    <LinearLayout
+        android:id="@+id/layoutFilterRowThumbs"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:orientation="horizontal" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/hanken_regular"
+        android:importantForAccessibility="no"
+        android:text="›"
+        android:textColor="@color/muted_dim"
+        android:textSize="18sp" />
+</LinearLayout>

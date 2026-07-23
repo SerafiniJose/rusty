@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Search field in the Immich filter picker. bg_tv_focus alone (the usual focus treatment) is
+     fully transparent in its resting state, which is correct for a control that already has a
+     background but would leave this field invisible until focused — a touch user has nothing to
+     aim at. So this selector carries BOTH jobs: a 1dp surface_border box at rest, matching the
+     outlined look of the URL field in the connection section, and the same brand-green D-pad ring
+     bg_tv_focus draws when focused (Android TV must stay operable by remote). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="14dp" />
+            <stroke
+                android:width="2dp"
+                android:color="@color/accent_fallback" />
+            <solid android:color="#221ED760" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="14dp" />
+            <stroke
+                android:width="1dp"
+                android:color="@color/surface_border" />
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</selector>

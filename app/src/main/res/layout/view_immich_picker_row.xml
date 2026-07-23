@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One picker row: thumb, name (+count line for albums), trailing check indicator.
+     The check is a plain TextView styled in code (outlined circle vs filled accent ✓)
+     to avoid a drawable pair; the whole row is the toggle target. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingVertical="7dp"
+    android:focusable="true"
+    android:clickable="true"
+    android:foreground="@drawable/bg_tv_focus">
+
+    <ImageView
+        android:id="@+id/imgPickerThumb"
+        android:layout_width="38dp"
+        android:layout_height="38dp"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvPickerName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="@font/hanken_medium"
+            android:maxLines="1"
+            android:textColor="@color/ink"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tvPickerCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:textColor="@color/muted_dim"
+            android:textSize="12sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvPickerCheck"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:layout_marginStart="12dp"
+        android:gravity="center"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+</LinearLayout>
