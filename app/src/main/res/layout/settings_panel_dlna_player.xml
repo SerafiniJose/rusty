@@ -199,13 +199,16 @@
         android:layout_marginTop="14dp"
         android:background="@color/surface_border" />
 
-    <!-- Mix mode: what happens to Spotify audio while a DLNA message plays. -->
+    <!-- Mix mode: what happens to Spotify audio while a DLNA message plays. The choices reflow to a
+         second line when the card is too narrow (portrait / small window) instead of spilling off
+         the right edge — same ConstraintLayout Flow the Screensaver theme picker uses. Deliberately
+         NOT a RadioGroup: it only auto-manages its DIRECT children, and Flow-positioned radios are
+         not that, so mutual exclusion is enforced in DlnaPlayerSettingsPanel instead. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="14dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:orientation="vertical">
 
         <TextView
             android:layout_width="wrap_content"
@@ -215,12 +218,23 @@
             android:textColor="@color/ink"
             android:textSize="16sp" />
 
-        <RadioGroup
-            android:id="@+id/rgDlnaMixMode"
-            android:layout_width="wrap_content"
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="20dp"
-            android:orientation="horizontal">
+            android:layout_marginTop="8dp">
+
+            <androidx.constraintlayout.helper.widget.Flow
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:constraint_referenced_ids="rbMixPause,rbMixDuck"
+                app:flow_horizontalBias="0"
+                app:flow_horizontalGap="24dp"
+                app:flow_horizontalStyle="packed"
+                app:flow_verticalGap="6dp"
+                app:flow_wrapMode="chain"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
 
             <RadioButton
                 android:id="@+id/rbMixPause"
@@ -236,13 +250,12 @@
                 android:id="@+id/rbMixDuck"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="24dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"
                 android:text="Lower volume"
                 android:textColor="@color/ink" />
-        </RadioGroup>
+        </androidx.constraintlayout.widget.ConstraintLayout>
     </LinearLayout>
 
     <View
@@ -251,13 +264,13 @@
         android:layout_marginTop="14dp"
         android:background="@color/surface_border" />
 
-    <!-- Volume fade: how quickly Spotify fades out before a message and back in after it. -->
+    <!-- Volume fade: how quickly Spotify fades out before a message and back in after it. Reflows
+         to a second line on a narrow card, like the mix-mode row above (not a RadioGroup). -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="14dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:orientation="vertical">
 
         <TextView
             android:layout_width="wrap_content"
@@ -267,12 +280,23 @@
             android:textColor="@color/ink"
             android:textSize="16sp" />
 
-        <RadioGroup
-            android:id="@+id/rgDlnaFade"
-            android:layout_width="wrap_content"
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="20dp"
-            android:orientation="horizontal">
+            android:layout_marginTop="8dp">
+
+            <androidx.constraintlayout.helper.widget.Flow
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:constraint_referenced_ids="rbFadeOff,rbFadeShort,rbFadeMedium,rbFadeLong"
+                app:flow_horizontalBias="0"
+                app:flow_horizontalGap="16dp"
+                app:flow_horizontalStyle="packed"
+                app:flow_verticalGap="6dp"
+                app:flow_wrapMode="chain"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
 
             <RadioButton
                 android:id="@+id/rbFadeOff"
@@ -288,7 +312,6 @@
                 android:id="@+id/rbFadeShort"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"
@@ -299,7 +322,6 @@
                 android:id="@+id/rbFadeMedium"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"
@@ -310,13 +332,12 @@
                 android:id="@+id/rbFadeLong"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"
                 android:text="1s"
                 android:textColor="@color/ink" />
-        </RadioGroup>
+        </androidx.constraintlayout.widget.ConstraintLayout>
     </LinearLayout>
 
     <TextView

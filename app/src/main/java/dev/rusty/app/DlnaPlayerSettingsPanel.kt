@@ -4,7 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.view.View
-import android.widget.RadioGroup
+import android.widget.RadioButton
 import android.widget.TextView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
@@ -49,7 +49,6 @@ class DlnaPlayerSettingsPanel(private val ctx: SettingsPanelContext) : SettingsP
         val addressRow = panel.findViewById<View>(R.id.rowDlnaAddress)
         val addressValue = panel.findViewById<TextView>(R.id.tvDlnaAddressValue)
         val copyAddress = panel.findViewById<MaterialButton>(R.id.btnCopyDlnaAddress)
-        val mixGroup = panel.findViewById<RadioGroup>(R.id.rgDlnaMixMode)
         val feedback = panel.findViewById<TextView>(R.id.tvDlnaFeedback)
 
         fun showName() {
@@ -116,38 +115,63 @@ class DlnaPlayerSettingsPanel(private val ctx: SettingsPanelContext) : SettingsP
             showFeedback(feedback, "Address copied.", HaFeedbackKind.SUCCESS)
         }
 
-        mixGroup.check(
-            if (RendererPrefs.mixMode(store) == SpotifyInterruption.DUCK) R.id.rbMixDuck else R.id.rbMixPause
+        // The mix-mode and fade choices used to be RadioGroups, but they now reflow inside a
+        // ConstraintLayout Flow (so a narrow card wraps them instead of clipping them). Flow's
+        // radios are not a RadioGroup's direct children, so exclusivity is enforced here — the same
+        // idiom SettingsSheet.bindScreensaver uses for the theme picker.
+        bindRadioChoice(
+            options = listOf(
+                panel.findViewById<RadioButton>(R.id.rbMixPause) to SpotifyInterruption.PAUSE,
+                panel.findViewById<RadioButton>(R.id.rbMixDuck) to SpotifyInterruption.DUCK,
+            ),
+            selected = RendererPrefs.mixMode(store),
+            onSelect = { RendererPrefs.setMixMode(store, it) },
         )
-        mixGroup.setOnCheckedChangeListener { _, checkedId ->
-            RendererPrefs.setMixMode(
-                store,
-                if (checkedId == R.id.rbMixDuck) SpotifyInterruption.DUCK else SpotifyInterruption.PAUSE,
-            )
-        }
 
-        val fadeGroup = panel.findViewById<RadioGroup>(R.id.rgDlnaFade)
-        fadeGroup.check(
-            when (RendererPrefs.fadeMs(store)) {
-                0L -> R.id.rbFadeOff
-                250L -> R.id.rbFadeShort
-                1000L -> R.id.rbFadeLong
-                else -> R.id.rbFadeMedium
-            }
+        // 0.5s (DEFAULT_FADE_MS) is the "medium" choice and also the fallback for any stored value
+        // that doesn't match a preset, mirroring the previous RadioGroup mapping exactly.
+        bindRadioChoice(
+            options = listOf(
+                panel.findViewById<RadioButton>(R.id.rbFadeOff) to 0L,
+                panel.findViewById<RadioButton>(R.id.rbFadeShort) to 250L,
+                panel.findViewById<RadioButton>(R.id.rbFadeMedium) to RendererPrefs.DEFAULT_FADE_MS,
+                panel.findViewById<RadioButton>(R.id.rbFadeLong) to 1000L,
+            ),
+            selected = when (RendererPrefs.fadeMs(store)) {
+                0L -> 0L
+                250L -> 250L
+                1000L -> 1000L
+                else -> RendererPrefs.DEFAULT_FADE_MS
+            },
+            onSelect = { RendererPrefs.setFadeMs(store, it) },
         )
-        fadeGroup.setOnCheckedChangeListener { _, checkedId ->
-            RendererPrefs.setFadeMs(
-                store,
-                when (checkedId) {
-                    R.id.rbFadeOff -> 0L
-                    R.id.rbFadeShort -> 250L
-                    R.id.rbFadeLong -> 1000L
-                    else -> RendererPrefs.DEFAULT_FADE_MS
-                },
-            )
-        }
 
         return { RendererStatusPublisher.removeListener(statusListener) }
+    }
+
+    /**
+     * Wires a set of standalone [RadioButton]s as one mutually-exclusive choice. They are not in a
+     * RadioGroup (they are positioned by a Flow, so they are not its direct children), so this
+     * checks the option whose value equals [selected] and, on any user check, unchecks the siblings
+     * and reports the new value through [onSelect]. [suppress] stops the programmatic sibling
+     * unchecks from re-entering [onSelect].
+     */
+    private fun <T> bindRadioChoice(
+        options: List<Pair<RadioButton, T>>,
+        selected: T,
+        onSelect: (T) -> Unit,
+    ) {
+        options.forEach { (radio, value) -> radio.isChecked = value == selected }
+        var suppress = false
+        options.forEach { (radio, value) ->
+            radio.setOnCheckedChangeListener { _, isChecked ->
+                if (!isChecked || suppress) return@setOnCheckedChangeListener
+                suppress = true
+                options.forEach { (other, _) -> if (other !== radio) other.isChecked = false }
+                suppress = false
+                onSelect(value)
+            }
+        }
     }
 
     private companion object {
