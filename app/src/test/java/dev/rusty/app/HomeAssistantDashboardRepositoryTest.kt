@@ -437,4 +437,14 @@ class HomeAssistantDashboardRepositoryTest {
         // No new deliveries after removal
         assertEquals("No new deliveries after removeListener", sizeAfterAdd, received.size)
     }
+
+    @Test fun submitResultCarriesThemesIntoLoaded() {
+        val store = FakeStore()
+        val r = HomeAssistantDashboardRepository(store, SyncPoster(), FakeScheduler())
+        val gen = r.beginRefresh("http://ha.local")
+        r.submitResult(gen, """{"panels":{"lovelace":{"url_path":"lovelace","title":"Home"}},
+            "themes":{"Noctis":{},"Mushroom":{}}}""")
+        val state = r.state as HaDiscovery.Loaded
+        assertEquals(listOf("Mushroom", "Noctis"), state.themes)
+    }
 }

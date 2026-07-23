@@ -143,7 +143,11 @@ object HomeAssistantDashboards {
     fun isCacheFresh(currentBase: String?, cachedOrigin: String?): Boolean =
         !currentBase.isNullOrBlank() && currentBase == cachedOrigin
 
-    data class HaDiscoveryResult(val dashboards: List<HaDashboard>, val account: HaAccount?)
+    data class HaDiscoveryResult(
+        val dashboards: List<HaDashboard>,
+        val account: HaAccount?,
+        val themes: List<String> = emptyList(),
+    )
 
     /** Friendly labels for HA's built-in panels whose API title is null/i18n-key. */
     private val BUILTIN_TITLES = mapOf(
@@ -235,7 +239,11 @@ object HomeAssistantDashboards {
                 val name = u.stringOrNull("name") ?: return@let null
                 HaAccount(name = name, isAdmin = u.optBoolean("is_admin", false))
             }
-            HaDiscoveryResult(merged.values.toList(), account)
+            // 4. Themes (name→definition map from frontend/get_themes; keys are the theme names).
+            val themes = root.optJSONObject("themes")?.let { obj ->
+                obj.keys().asSequence().map { it.trim() }.filter { it.isNotEmpty() }.sorted().toList()
+            } ?: emptyList()
+            HaDiscoveryResult(merged.values.toList(), account, themes)
         }.getOrNull()
     }
 

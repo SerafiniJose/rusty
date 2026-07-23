@@ -188,6 +188,22 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
                 // "always_hidden" BEFORE its app bundle reads it, so HA never docks the sidebar.
                 if (HomeAssistantUrl.isSameOrigin(url, trustedOrigin)) {
                     view?.evaluateJavascript(DOCK_HIDDEN_JS, null)
+                    view?.evaluateJavascript(
+                        HomeAssistantNav.selectedThemeJs(
+                            prefs.getString(HomeAssistantFeature.KEY_SELECTED_THEME, null),
+                            prefs.getString(HomeAssistantFeature.KEY_SELECTED_THEME_MODE, null)),
+                        null)
+                }
+                // Boot the HA frontend signed-in: seed its hassTokens localStorage entry (only when
+                // absent — hassTokensJs guards) with the tokens minted by the settings sign-in.
+                // Origin-gated twice: HaAuthStore only returns tokens for the SAVED origin, and we
+                // only inject when this page IS that origin, so tokens can never leak to a redirect target.
+                val savedOrigin = HomeAssistantUrl.origin(
+                    HomeAssistantUrl.normalize(prefs.getString(HomeAssistantFeature.KEY_URL, null)))
+                if (savedOrigin != null && HomeAssistantUrl.isSameOrigin(url, savedOrigin)) {
+                    HaAuthStore.tokensFor(prefs, SecretStore.of(requireContext()), savedOrigin)?.let { tokens ->
+                        view?.evaluateJavascript(HaAuth.hassTokensJs(savedOrigin, tokens), null)
+                    }
                 }
             }
 
@@ -207,6 +223,11 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
                 if (!HomeAssistantNav.isAuthPath(url)) frontendReady = true
                 runDiscovery(force = false)
                 view?.evaluateJavascript(KIOSK_JS, null)
+                // Match the shell to HA's theme: tint the reserved strips (top clock clearance / bottom
+                // chrome clearance) to HA's background so they stop reading as black bands, and tint the
+                // floating chrome (clock, settings, app-selector) to HA's text colour so it stays legible.
+                // The frontend samples both and reports via RustyHaBridge.onBackgroundColor/onTextColor.
+                view?.evaluateJavascript(HomeAssistantNav.reportThemeColorsJs(), null)
                 // White-screen mitigation: when HA is shown by switching away from a Spotify session
                 // that had an active SurfaceView (album art / ambient mesh), the freshly-shown WebView
                 // can present a blank/white first frame until something invalidates the view tree — a
@@ -260,6 +281,9 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
     private fun showSetup(prefill: String?, error: String?) {
         webView.visibility = View.GONE
         setup.visibility = View.VISIBLE
+        // Restore the app base background: a prior dashboard may have tinted root to HA's (possibly light)
+        // theme colour, which the dark setup form is not styled for.
+        root.setBackgroundResource(R.color.bg_base)
         urlInput.setText(prefill ?: prefs.getString(HomeAssistantFeature.KEY_URL, null) ?: "")
         if (urlInput.text.isNullOrBlank()) urlInput.setText(HomeAssistantDashboards.DEFAULT_URL)
         errorText.text = error.orEmpty()
@@ -295,6 +319,9 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         edit.apply()
 
         if (originChanged) {
+            // Pre-sign-in surface: no revoke here (the settings-panel path revokes when it changes
+            // the URL). Just drop any stale token for the old origin so it isn't carried forward.
+            HaAuthStore.clear(prefs, SecretStore.of(requireContext()))
             // Reset repo to Idle so stale Loaded dashboards don't linger in the chip bar and a
             // pending old-origin generation is invalidated before render()/hydrate().
             RustyApp.haRepository(requireContext()).reset()
@@ -348,9 +375,10 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
                 return Promise.all([
                   conn.sendMessagePromise({type:'get_panels'}),
                   opt('lovelace/dashboards/list'),
-                  opt('auth/current_user')
+                  opt('auth/current_user'),
+                  opt('frontend/get_themes')
                 ]).then(function(p){
-                  if(window.RustyHaBridge) RustyHaBridge.onDiscovery(gen, JSON.stringify({panels:p[0],dashboards:p[1],user:p[2]}));
+                  if(window.RustyHaBridge) RustyHaBridge.onDiscovery(gen, JSON.stringify({panels:p[0],dashboards:p[1],user:p[2],themes:(p[3]&&p[3].themes)||null}));
                 });
               }).catch(function(e){
                 if(window.RustyHaBridge) RustyHaBridge.onDiscoveryError(gen, ''+(e&&e.message||(e&&e.error&&e.error.message)||(e&&e.code)||JSON.stringify(e)));
@@ -480,6 +508,25 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         @android.webkit.JavascriptInterface
         fun onDiscoveryError(generation: Long, reason: String) {
             repo.fail(generation, HomeAssistantDashboards.friendlyError(reason))
+        }
+
+        /** HA's own theme background colour, reported by [HomeAssistantNav.reportBackgroundColorJs] so
+         *  the reserved top/bottom shell strips can match it instead of the static near-black bg_base.
+         *  Called on the WebView's background JavaBridge thread — hop to the UI thread and only touch the
+         *  view while the fragment is still attached. */
+        @android.webkit.JavascriptInterface
+        fun onBackgroundColor(css: String) {
+            val argb = HomeAssistantNav.parseCssColorToArgb(css) ?: return
+            webView.post { if (isAdded) root.setBackgroundColor(argb) }
+        }
+
+        /** HA's own primary text colour — used to tint the shell chrome (clock, settings, app-selector)
+         *  that floats over the themed strips so it stays legible. Applied only while HA is foreground;
+         *  the shell restores its defaults when another feature takes over. UI-thread + attach-guarded. */
+        @android.webkit.JavascriptInterface
+        fun onTextColor(css: String) {
+            val argb = HomeAssistantNav.parseCssColorToArgb(css) ?: return
+            webView.post { if (isAdded) (activity as? ShellHost)?.applyHaChromeColor(argb) }
         }
     }
 

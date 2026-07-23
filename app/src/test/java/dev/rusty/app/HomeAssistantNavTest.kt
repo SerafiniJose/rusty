@@ -2,6 +2,7 @@ package dev.rusty.app
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -81,5 +82,94 @@ class HomeAssistantNavTest {
         // A path can't normally contain a raw quote, but the builder must never break out of the string.
         val js = HomeAssistantNav.navigateScript("/a'b")
         assertTrue(js.contains("""/a\'b"""))
+    }
+
+    // ---- HomeAssistantNav.selectedThemeJs -----------------------------------
+
+    @Test fun selectedThemeJsRemovesWhenDefaultAuto() {
+        // No theme + auto mode = truly backend-selected → remove the override entirely.
+        val remove = "try{localStorage.removeItem('selectedTheme');}catch(e){}"
+        assertEquals(remove, HomeAssistantNav.selectedThemeJs(null, null))
+        assertEquals(remove, HomeAssistantNav.selectedThemeJs("   ", HomeAssistantNav.MODE_AUTO))
+    }
+
+    @Test fun selectedThemeJsSetsThemeObjectForCustomName() {
+        // HA reads selectedTheme as a {theme,dark} object (bare names still work via HA back-compat,
+        // but the object form is what lets us also carry the light/dark flag).
+        assertEquals(
+            "try{localStorage.setItem('selectedTheme',JSON.stringify({\"theme\":\"Noctis\"}));}catch(e){}",
+            HomeAssistantNav.selectedThemeJs("Noctis", HomeAssistantNav.MODE_AUTO))
+    }
+
+    @Test fun selectedThemeJsDefaultThemeForcedDark() {
+        // "Default" theme (no name) with Dark mode forces HA's built-in default theme dark.
+        assertEquals(
+            "try{localStorage.setItem('selectedTheme',JSON.stringify({\"theme\":\"default\",\"dark\":true}));}catch(e){}",
+            HomeAssistantNav.selectedThemeJs(null, HomeAssistantNav.MODE_DARK))
+    }
+
+    @Test fun selectedThemeJsDefaultThemeForcedLight() {
+        assertEquals(
+            "try{localStorage.setItem('selectedTheme',JSON.stringify({\"theme\":\"default\",\"dark\":false}));}catch(e){}",
+            HomeAssistantNav.selectedThemeJs(null, HomeAssistantNav.MODE_LIGHT))
+    }
+
+    @Test fun selectedThemeJsCustomThemeForcedDark() {
+        assertEquals(
+            "try{localStorage.setItem('selectedTheme',JSON.stringify({\"theme\":\"Noctis\",\"dark\":true}));}catch(e){}",
+            HomeAssistantNav.selectedThemeJs("Noctis", HomeAssistantNav.MODE_DARK))
+    }
+
+    @Test fun selectedThemeJsEscapesQuotesInName() {
+        // A name containing a quote must stay valid JS (JSONObject.quote escapes it).
+        val js = HomeAssistantNav.selectedThemeJs("My \"Dark\" Theme", HomeAssistantNav.MODE_AUTO)
+        assertTrue(js.contains("{\"theme\":\"My \\\"Dark\\\" Theme\"}"))
+    }
+
+    // ---- parseCssColorToArgb ------------------------------------------------
+
+    @Test fun parseCssColor_rgb() {
+        // 0x0B0A0C — HA's near-black default background reported as rgb by the WebView.
+        assertEquals(0xFF0B0A0C.toInt(), HomeAssistantNav.parseCssColorToArgb("rgb(11, 10, 12)"))
+    }
+
+    @Test fun parseCssColor_rgbNoSpaces() {
+        assertEquals(0xFFFFFFFF.toInt(), HomeAssistantNav.parseCssColorToArgb("rgb(255,255,255)"))
+    }
+
+    @Test fun parseCssColor_rgbaDropsAlphaToOpaque() {
+        // A translucent report must still yield a fully opaque strip (alpha forced to FF).
+        assertEquals(0xFF102030.toInt(), HomeAssistantNav.parseCssColorToArgb("rgba(16, 32, 48, 0.5)"))
+    }
+
+    @Test fun parseCssColor_hexLong() {
+        assertEquals(0xFF1C1C1E.toInt(), HomeAssistantNav.parseCssColorToArgb("#1c1c1e"))
+    }
+
+    @Test fun parseCssColor_hexShortExpands() {
+        assertEquals(0xFFFFFFFF.toInt(), HomeAssistantNav.parseCssColorToArgb("#fff"))
+        assertEquals(0xFF112233.toInt(), HomeAssistantNav.parseCssColorToArgb("#123"))
+    }
+
+    @Test fun parseCssColor_rejectsGarbage() {
+        assertNull(HomeAssistantNav.parseCssColorToArgb(null))
+        assertNull(HomeAssistantNav.parseCssColorToArgb(""))
+        assertNull(HomeAssistantNav.parseCssColorToArgb("   "))
+        assertNull(HomeAssistantNav.parseCssColorToArgb("transparent"))
+        assertNull(HomeAssistantNav.parseCssColorToArgb("#12"))
+        assertNull(HomeAssistantNav.parseCssColorToArgb("rgb(1, 2)"))
+    }
+
+    // ---- reportThemeColorsJs ------------------------------------------------
+
+    @Test fun reportThemeColorsJs_reportsBothColorsAndIsSelfContained() {
+        val js = HomeAssistantNav.reportThemeColorsJs()
+        // Reports background + text through the discovery bridge, from HA's theme tokens.
+        assertTrue(js.contains("RustyHaBridge.onBackgroundColor"))
+        assertTrue(js.contains("RustyHaBridge.onTextColor"))
+        assertTrue(js.contains("--primary-background-color"))
+        assertTrue(js.contains("--primary-text-color"))
+        // Never throws into the bridge.
+        assertTrue(js.contains("catch"))
     }
 }

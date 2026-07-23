@@ -1,37 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- HA settings panel: three collapsible sections (Server / Dashboards / Apps). Section headers are
+     view_settings_section_header includes driven by HomeAssistantSettingsPanel; bodies toggle GONE.
+     Root is a plain LinearLayout — bottom_sheet_settings.xml hosts the scrolling. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical">
 
-    <!-- CONNECTION (hidden once signed in). marginBottom carries the gap to the account card; a GONE
-         view drops its margins, so hiding this removes the gap automatically (no runtime margin toggle). -->
+    <!-- SERVER -->
+    <include android:id="@+id/headHaServer"
+        layout="@layout/view_settings_section_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
     <LinearLayout
-        android:id="@+id/haConnectionSection"
+        android:id="@+id/bodyHaServer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="14dp"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingBottom="14dp">
 
-        <TextView
-            style="@style/Widget.Rusty.SectionHeader"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="HA Server" />
-
+        <!-- Connection form (hidden once signed in, exactly as before). -->
         <LinearLayout
+            android:id="@+id/haConnectionSection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:orientation="vertical">
 
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:textColorHint="@color/muted_dim"
                 app:boxStrokeColor="@color/accent_fallback"
                 app:hintTextColor="@color/muted_dim">
@@ -42,138 +42,408 @@
                     android:layout_height="wrap_content"
                     android:fontFamily="@font/hanken_regular"
                     android:hint="http://homeassistant.local:8123"
+                    android:imeOptions="actionNext"
                     android:inputType="textUri"
                     android:maxLines="1"
                     android:textColor="@color/ink" />
             </com.google.android.material.textfield.TextInputLayout>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnHaClearUrl"
-                style="@style/Widget.Rusty.Button.Secondary"
-                android:layout_width="wrap_content"
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:foreground="@drawable/bg_tv_focus"
-                android:text="Clear" />
+                android:layout_marginTop="10dp"
+                android:textColorHint="@color/muted_dim"
+                app:boxStrokeColor="@color/accent_fallback"
+                app:hintTextColor="@color/muted_dim">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnHaSaveUrl"
-                style="@style/Widget.Rusty.Button.Secondary"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:foreground="@drawable/bg_tv_focus"
-                android:text="Save" />
-        </LinearLayout>
-    </LinearLayout>
-
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/haAccountCard"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        app:cardBackgroundColor="@color/surface_raised"
-        app:cardCornerRadius="@dimen/settings_card_radius"
-        app:cardElevation="0dp"
-        app:strokeColor="@color/surface_border"
-        app:strokeWidth="1dp">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:padding="14dp">
-
-            <TextView
-                android:id="@+id/haAccountAvatar"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/bg_avatar"
-                android:gravity="center"
-                android:fontFamily="@font/hanken_medium"
-                android:textColor="@color/ink"
-                android:textSize="18sp" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/haAccountName"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="@font/hanken_medium"
-                    android:textColor="@color/ink"
-                    android:textSize="15sp" />
-
-                <TextView
-                    android:id="@+id/haAccountSub"
-                    android:layout_width="wrap_content"
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etHaUsername"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:fontFamily="@font/hanken_regular"
-                    android:textColor="@color/muted_dim"
-                    android:textSize="12sp" />
+                    android:hint="Username"
+                    android:imeOptions="actionNext"
+                    android:inputType="text"
+                    android:maxLines="1"
+                    android:textColor="@color/ink" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textColorHint="@color/muted_dim"
+                app:boxStrokeColor="@color/accent_fallback"
+                app:endIconMode="password_toggle"
+                app:endIconTint="@color/muted_dim"
+                app:hintTextColor="@color/muted_dim">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etHaPassword"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_regular"
+                    android:hint="Password — never stored"
+                    android:imeOptions="actionDone"
+                    android:inputType="textPassword"
+                    android:maxLines="1"
+                    android:textColor="@color/ink" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- Two-factor code: revealed only when the server's login flow asks for it. -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/layoutHaMfa"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textColorHint="@color/muted_dim"
+                android:visibility="gone"
+                app:boxStrokeColor="@color/accent_fallback"
+                app:hintTextColor="@color/muted_dim">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etHaMfaCode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_regular"
+                    android:hint="Two-factor code"
+                    android:imeOptions="actionDone"
+                    android:inputType="number"
+                    android:maxLines="1"
+                    android:textColor="@color/ink" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnHaSaveUrl"
+                    style="@style/Widget.Rusty.Button.Secondary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:foreground="@drawable/bg_tv_focus"
+                    android:text="Save" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnHaTestConnection"
+                    style="@style/Widget.Rusty.Button.Secondary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:foreground="@drawable/bg_tv_focus"
+                    android:text="Test connection" />
             </LinearLayout>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnHaAccountAction"
-                style="@style/Widget.Rusty.Button.Secondary"
-                android:layout_width="wrap_content"
+            <!-- Same advisory as the Immich section: plain-http means the password/token travel
+                 unencrypted. Shown while the SAVED address is http. -->
+            <TextView
+                android:id="@+id/tvHaCleartextWarning"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:foreground="@drawable/bg_tv_focus" />
+                android:layout_marginTop="10dp"
+                android:fontFamily="@font/hanken_regular"
+                android:text="This server uses http, so your password and sign-in token are sent unencrypted over your network. Use https if your server supports it."
+                android:textColor="@color/muted_dim"
+                android:textSize="12sp"
+                android:visibility="gone" />
         </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
 
-    <View
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/haAccountCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            app:cardBackgroundColor="@color/surface_raised"
+            app:cardCornerRadius="@dimen/settings_card_radius"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/surface_border"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="14dp">
+
+                <TextView
+                    android:id="@+id/haAccountAvatar"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_avatar"
+                    android:gravity="center"
+                    android:fontFamily="@font/hanken_medium"
+                    android:textColor="@color/ink"
+                    android:textSize="18sp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/haAccountName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/hanken_medium"
+                        android:textColor="@color/ink"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:id="@+id/haAccountSub"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/hanken_regular"
+                        android:textColor="@color/muted_dim"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <!-- Spinner shown beside Refresh while a user-initiated discovery is in flight. -->
+                <ProgressBar
+                    android:id="@+id/haRefreshSpinner"
+                    style="?android:attr/progressBarStyleSmall"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginEnd="10dp"
+                    android:indeterminateTint="@color/accent_fallback"
+                    android:visibility="gone" />
+
+                <!-- Refresh re-runs HA discovery (dashboards + themes in one call). Lives here next to
+                     Sign in/out; disabled until signed in. Replaces the per-section Refresh buttons. -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnHaRefresh"
+                    style="@style/Widget.Rusty.Button.Secondary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:foreground="@drawable/bg_tv_focus"
+                    android:text="Refresh" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnHaAccountAction"
+                    style="@style/Widget.Rusty.Button.Secondary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:foreground="@drawable/bg_tv_focus" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <TextView
+            android:id="@+id/tvHaFeedback"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:fontFamily="@font/hanken_regular"
+            android:textSize="13sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- DASHBOARDS -->
+    <include android:id="@+id/headHaDash"
+        layout="@layout/view_settings_section_header"
         android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginTop="16dp"
-        android:background="@color/surface_border" />
-
-    <!-- DASHBOARDS & APPS -->
-    <TextView
-        style="@style/Widget.Rusty.SectionHeader"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Dashboards &amp; apps" />
-
-    <TextView
-        android:id="@+id/tvHaDashboardsHint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:fontFamily="@font/hanken_regular"
-        android:text="Choose what appears in Rusty."
-        android:textColor="@color/muted_dim"
-        android:textSize="13sp" />
+        android:layout_height="wrap_content" />
 
     <LinearLayout
-        android:id="@+id/haDashboardsList"
+        android:id="@+id/bodyHaDash"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:orientation="vertical" />
+        android:orientation="vertical"
+        android:paddingBottom="14dp">
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnHaRefreshDashboards"
-        style="@style/Widget.Rusty.Button.Secondary"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:foreground="@drawable/bg_tv_focus"
-        android:text="Refresh" />
+        <TextView
+            android:id="@+id/tvHaDashboardsHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:text="Choose what appears in Rusty."
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
 
-    <TextView
-        android:id="@+id/tvHaFeedback"
+        <LinearLayout
+            android:id="@+id/haDashGrid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical" />
+    </LinearLayout>
+
+    <!-- APPS -->
+    <include android:id="@+id/headHaApps"
+        layout="@layout/view_settings_section_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    <LinearLayout
+        android:id="@+id/bodyHaApps"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:fontFamily="@font/hanken_regular"
-        android:textSize="13sp"
-        android:visibility="gone" />
+        android:orientation="vertical">
 
+        <TextView
+            android:id="@+id/tvHaAppsHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:text="Apps appear here after you sign in."
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:id="@+id/haAppsGrid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical" />
+    </LinearLayout>
+
+    <!-- APPEARANCE -->
+    <include android:id="@+id/headHaAppearance"
+        layout="@layout/view_settings_section_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    <LinearLayout
+        android:id="@+id/bodyHaAppearance"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingBottom="14dp">
+
+        <TextView
+            android:id="@+id/tvHaThemeHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:text="Sign in to Home Assistant to choose a theme."
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
+
+        <!-- Theme + Mode selectors mirror the Screensaver theme picker: an inline label with a
+             reflowing row of radio buttons (Flow, NOT a RadioGroup — exclusivity is set in code).
+             Theme radios are added at runtime (discovered custom themes + built-in Default); Mode
+             radios are the fixed Auto/Light/Dark set. Hidden until signed in. -->
+        <LinearLayout
+            android:id="@+id/haAppearanceControls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="top"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="60dp"
+                    android:paddingTop="2dp"
+                    android:fontFamily="@font/hanken_medium"
+                    android:text="Theme"
+                    android:textColor="@color/ink"
+                    android:textSize="16sp" />
+
+                <androidx.constraintlayout.widget.ConstraintLayout
+                    android:id="@+id/haThemeFlowContainer"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="18dp"
+                    android:layout_weight="1">
+
+                    <androidx.constraintlayout.helper.widget.Flow
+                        android:id="@+id/haThemeFlow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:flow_horizontalBias="0"
+                        app:flow_horizontalGap="16dp"
+                        app:flow_horizontalStyle="packed"
+                        app:flow_verticalGap="6dp"
+                        app:flow_wrapMode="chain"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent" />
+                </androidx.constraintlayout.widget.ConstraintLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="top"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="60dp"
+                    android:paddingTop="2dp"
+                    android:fontFamily="@font/hanken_medium"
+                    android:text="Mode"
+                    android:textColor="@color/ink"
+                    android:textSize="16sp" />
+
+                <androidx.constraintlayout.widget.ConstraintLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="18dp"
+                    android:layout_weight="1">
+
+                    <androidx.constraintlayout.helper.widget.Flow
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:constraint_referenced_ids="rbHaModeAuto,rbHaModeLight,rbHaModeDark"
+                        app:flow_horizontalBias="0"
+                        app:flow_horizontalGap="16dp"
+                        app:flow_horizontalStyle="packed"
+                        app:flow_verticalGap="6dp"
+                        app:flow_wrapMode="chain"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent" />
+
+                    <RadioButton
+                        android:id="@+id/rbHaModeAuto"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent_fallback"
+                        android:fontFamily="@font/hanken_regular"
+                        android:foreground="@drawable/bg_tv_focus_switch"
+                        android:text="Auto"
+                        android:textColor="@color/ink" />
+
+                    <RadioButton
+                        android:id="@+id/rbHaModeLight"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent_fallback"
+                        android:fontFamily="@font/hanken_regular"
+                        android:foreground="@drawable/bg_tv_focus_switch"
+                        android:text="Light"
+                        android:textColor="@color/ink" />
+
+                    <RadioButton
+                        android:id="@+id/rbHaModeDark"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent_fallback"
+                        android:fontFamily="@font/hanken_regular"
+                        android:foreground="@drawable/bg_tv_focus_switch"
+                        android:text="Dark"
+                        android:textColor="@color/ink" />
+                </androidx.constraintlayout.widget.ConstraintLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>

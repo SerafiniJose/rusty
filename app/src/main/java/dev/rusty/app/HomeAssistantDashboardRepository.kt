@@ -37,6 +37,7 @@ sealed interface HaDiscovery {
     data class Loaded(
         val dashboards: List<HomeAssistantDashboards.HaDashboard>,
         val account: HomeAssistantDashboards.HaAccount? = null,
+        val themes: List<String> = emptyList(),
     ) : HaDiscovery
     data class Error(val reason: String) : HaDiscovery
 }
@@ -153,7 +154,7 @@ class HomeAssistantDashboardRepository(
         val existing: PersistedHa? = origin?.let { store.load(it) }
         val existingPaths = existing?.selectedPaths ?: listOf(HomeAssistantDashboards.OVERVIEW_PATH)
         val pruned = HomeAssistantDashboards.normalizeSelection(existingPaths, available)
-        val next = HaDiscovery.Loaded(parsed, result.account)
+        val next = HaDiscovery.Loaded(parsed, result.account, result.themes)
         // store.save, _state assignment, and pendingTimeout capture are ALL inside ONE lock block so
         // that a racing beginRefresh cannot interleave between the guard re-check and the persist/
         // transition steps. This atomicity guarantee is what prevents the stale-save race described

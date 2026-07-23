@@ -109,4 +109,21 @@ class HaDiscoveryParseTest {
         assertFalse("JSON-null title redirect excluded", paths.contains("_my_redirect"))
         assertFalse("literal \"null\" title (Android artifact) excluded", paths.contains("app"))
     }
+
+    @Test fun parseReadsSortedThemeNames() {
+        val json = """{"panels":{"lovelace":{"url_path":"lovelace","title":"Home"}},
+            "themes":{"Noctis":{},"iOS Dark Mode":{},"Mushroom":{}}}"""
+        val result = HomeAssistantDashboards.parseDiscoveryOrNull(json)
+        assertEquals(listOf("Mushroom", "Noctis", "iOS Dark Mode"), result?.themes)
+    }
+
+    @Test fun parseThemesEmptyWhenAbsent() {
+        val json = """{"panels":{"lovelace":{"url_path":"lovelace","title":"Home"}}}"""
+        assertEquals(emptyList<String>(), HomeAssistantDashboards.parseDiscoveryOrNull(json)?.themes)
+    }
+
+    @Test fun parseThemesEmptyWhenNull() {
+        val json = """{"panels":{"lovelace":{"url_path":"lovelace","title":"Home"}},"themes":null}"""
+        assertEquals(emptyList<String>(), HomeAssistantDashboards.parseDiscoveryOrNull(json)?.themes)
+    }
 }
