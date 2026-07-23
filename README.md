@@ -18,7 +18,7 @@ Runs great on always-on screens like the Amazon Echo Show, and on any Android 8.
 
 ## Showcase
 
-[![Watch the 50-second Rusty showcase](screenshots/showcase-poster.png)](https://github.com/SerafiniJose/rusty/releases/download/v2.3.0/rusty-showcase-evening.mp4)
+https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 
 ---
 
