@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One collapsible-section header row: title + live summary + rotating chevron (and an optional
+     avatar for the HA Server section). Same idiom as view_immich_filter_row so the sheet keeps a
+     single visual language. Included per section; ids are looked up on the include root. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingVertical="12dp"
+    android:focusable="true"
+    android:clickable="true"
+    android:foreground="@drawable/bg_tv_focus">
+
+    <TextView
+        android:id="@+id/tvSectionAvatar"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_marginEnd="10dp"
+        android:background="@drawable/bg_avatar"
+        android:gravity="center"
+        android:fontFamily="@font/hanken_medium"
+        android:textColor="@color/ink"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvSectionTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_medium"
+            android:textColor="@color/ink"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/tvSectionSummary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvSectionChevron"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:fontFamily="@font/hanken_regular"
+        android:importantForAccessibility="no"
+        android:text="›"
+        android:textColor="@color/muted_dim"
+        android:textSize="18sp" />
+</LinearLayout>

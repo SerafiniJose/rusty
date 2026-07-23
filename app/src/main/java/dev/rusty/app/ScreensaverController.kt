@@ -189,6 +189,14 @@ class ScreensaverController(
     /** A key while showing routes through the same wake path as a touch. */
     fun onWakeKey() = onWakeGesture()
 
+    /** True while the active theme owns the remote (a slideshow actually running photos). */
+    fun themeOwnsRemote(): Boolean = isShowing && !exiting && activeTheme?.ownsRemote() == true
+
+    /** Forwards a shell-approved nav key (LEFT/RIGHT/CENTER/ENTER only) to the owning theme. */
+    fun onNavKey(keyCode: Int) {
+        activeTheme?.onNavKey(keyCode)
+    }
+
     /**
      * Switch-from-saver: the shell has already committed the new foreground feature underneath us;
      * crossfade the saver out to reveal it. No bloom — the destination (e.g. HA) isn't a
@@ -270,10 +278,16 @@ class ScreensaverController(
         ScreensaverThemeId.CLOCK -> ClockTheme()
         ScreensaverThemeId.OLED -> OledTheme()
         ScreensaverThemeId.CANVAS -> CanvasTheme()
+        ScreensaverThemeId.SLIDESHOW -> SlideshowTheme()
     }
 
-    private fun currentThemeId(): ScreensaverThemeId =
-        ScreensaverThemeId.fromPrefValue(prefs.getString(KEY_THEME, null))
+    // Resolved through the shared disable policy so an anomalous stored SLIDESHOW (settings
+    // restore, interrupted disable, or any other writer of the theme pref) never mounts a theme
+    // whose feature is off — the settings binder isn't the only path that can heal this.
+    private fun currentThemeId(): ScreensaverThemeId {
+        val stored = ScreensaverThemeId.fromPrefValue(prefs.getString(KEY_THEME, null))
+        return SlideshowDisable.initialTheme(stored, SlideshowSettings.isEnabled(prefs))
+    }
 
     private fun currentTimeout(): ScreensaverTimeout =
         ScreensaverTimeout.fromPrefSeconds(prefs.getInt(KEY_TIMEOUT_SECONDS, ScreensaverTimeout.DEFAULT.prefSeconds))

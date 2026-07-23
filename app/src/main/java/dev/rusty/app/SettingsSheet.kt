@@ -10,14 +10,15 @@ import android.view.Window
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.RadioGroup
+import android.widget.RadioButton
 import android.widget.TextView
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.tabs.TabLayout
 
 /**
- * The shell-owned tabbed settings card (General · Screensaver · DLNA Player · Spotify · Home Assistant).
+ * The shell-owned tabbed settings card
+ * (General · Screensaver · Slideshow · DLNA Player · Spotify · Home Assistant).
  *
  * Replaces the old flat per-feature sheet. The shell ([HomeActivity]) opens this and lands it on
  * the active feature's tab; each tab inflates its own panel layout and binds the controls that used
@@ -42,6 +43,7 @@ object SettingsSheet {
     private fun shellTabSpecFor(key: SettingsTabKey): Tab = when (key) {
         SettingsTabKey.GENERAL -> Tab(key, "General", R.drawable.ic_mdi_cog, R.layout.settings_panel_general)
         SettingsTabKey.SCREENSAVER -> Tab(key, "Screensaver", R.drawable.ic_mdi_weather_night, R.layout.settings_panel_screensaver)
+        SettingsTabKey.SLIDESHOW -> Tab(key, "Slideshow", R.drawable.ic_mdi_image, R.layout.settings_panel_slideshow)
         SettingsTabKey.DLNA_PLAYER -> Tab(key, "DLNA Player", R.drawable.ic_mdi_dlna, R.layout.settings_panel_dlna_player)
         SettingsTabKey.SPOTIFY -> Tab(key, "Spotify", R.drawable.ic_mdi_spotify, R.layout.settings_panel_spotify)
         SettingsTabKey.HOME_ASSISTANT -> Tab(key, "Home Assistant", R.drawable.ic_mdi_home_assistant, R.layout.settings_panel_home_assistant)
@@ -63,7 +65,8 @@ object SettingsSheet {
         val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         fun currentSpecs(): List<Tab> {
             val featureTabs = FeatureRegistry.enabledIds(prefs).map { FeatureRegistry.byId(it).settingsTab }
-            return settingsTabsFor(featureTabs).map { shellTabSpecFor(it) }
+            return settingsTabsFor(featureTabs, SlideshowSettings.isEnabled(prefs))
+                .map { shellTabSpecFor(it) }
         }
         var specs = currentSpecs()
 
@@ -101,6 +104,7 @@ object SettingsSheet {
                 SettingsTabKey.SPOTIFY -> SpotifyFeature.settingsPanel(panelCtx)
                 SettingsTabKey.HOME_ASSISTANT -> HomeAssistantFeature.settingsPanel(panelCtx)
                 SettingsTabKey.DLNA_PLAYER -> DlnaPlayerSettingsPanel(panelCtx)
+                SettingsTabKey.SLIDESHOW -> SlideshowSettingsPanel(panelCtx)
                 SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER -> null
             }
 
@@ -210,28 +214,57 @@ object SettingsSheet {
             activity.setDlnaFeatureEnabled(isChecked)
             onFeatureTabsChanged()
         }
+
+        val slideshowSwitch = panel.findViewById<SwitchMaterial>(R.id.switchSlideshow)
+        slideshowSwitch.isChecked = activity.isSlideshowEnabled
+        slideshowSwitch.setOnCheckedChangeListener { _, isChecked ->
+            activity.setSlideshowEnabled(isChecked)
+            onFeatureTabsChanged()
+        }
         return {}
     }
 
     // ---- Screensaver binder -------------------------------------------------
 
-    private fun bindScreensaver(activity: HomeActivity, panel: View): () -> Unit {
-        // Theme selector — two side-by-side radio buttons (Clock / OLED).
-        val themeGroup = panel.findViewById<RadioGroup>(R.id.rgScreensaverTheme)
-        themeGroup.check(
-            when (activity.currentScreensaverThemeId) {
-                ScreensaverThemeId.OLED -> R.id.rbThemeOled
-                ScreensaverThemeId.CANVAS -> R.id.rbThemeCanvas
-                ScreensaverThemeId.CLOCK -> R.id.rbThemeClock
+    private fun bindScreensaver(
+        activity: HomeActivity,
+        panel: View,
+    ): () -> Unit {
+        // Theme selector — a reflowing row of radio buttons (Clock / OLED / Canvas / Slideshow),
+        // positioned by a ConstraintLayout Flow that wraps only when the width runs out. They are
+        // NOT inside a RadioGroup (it only auto-manages direct children, and Flow-positioned
+        // children are not that), so exclusivity is enforced here:
+        // checking one unchecks the others. [suppressThemeCallback] stops the programmatic
+        // re-check below (and the sibling unchecks) from looping back into applyScreensaverTheme.
+        val themeRadios: List<Pair<RadioButton, ScreensaverThemeId>> = listOf(
+            R.id.rbThemeClock to ScreensaverThemeId.CLOCK,
+            R.id.rbThemeOled to ScreensaverThemeId.OLED,
+            R.id.rbThemeCanvas to ScreensaverThemeId.CANVAS,
+            R.id.rbThemeSlideshow to ScreensaverThemeId.SLIDESHOW,
+        ).map { (viewId, themeId) -> panel.findViewById<RadioButton>(viewId) to themeId }
+        var suppressThemeCallback = false
+        fun checkTheme(themeId: ScreensaverThemeId) {
+            suppressThemeCallback = true
+            themeRadios.forEach { (radio, id) -> radio.isChecked = id == themeId }
+            suppressThemeCallback = false
+        }
+
+        val slideshowRadio = themeRadios.first { it.second == ScreensaverThemeId.SLIDESHOW }.first
+        slideshowRadio.visibility = if (activity.isSlideshowEnabled) View.VISIBLE else View.GONE
+        // A stored Slideshow theme with the feature off would check a GONE radio and leave the row
+        // looking empty; heal it through the same disable policy so pref and picker always agree.
+        val storedTheme = activity.currentScreensaverThemeId
+        val initialTheme = SlideshowDisable.initialTheme(storedTheme, activity.isSlideshowEnabled)
+        if (initialTheme != storedTheme) activity.applyScreensaverTheme(initialTheme)
+        checkTheme(initialTheme)
+        themeRadios.forEach { (radio, themeId) ->
+            radio.setOnCheckedChangeListener { _, isChecked ->
+                if (!isChecked || suppressThemeCallback) return@setOnCheckedChangeListener
+                suppressThemeCallback = true
+                themeRadios.forEach { (other, _) -> if (other !== radio) other.isChecked = false }
+                suppressThemeCallback = false
+                activity.applyScreensaverTheme(themeId)
             }
-        )
-        themeGroup.setOnCheckedChangeListener { _, checkedId ->
-            val id = when (checkedId) {
-                R.id.rbThemeOled -> ScreensaverThemeId.OLED
-                R.id.rbThemeCanvas -> ScreensaverThemeId.CANVAS
-                else -> ScreensaverThemeId.CLOCK
-            }
-            activity.applyScreensaverTheme(id)
         }
 
         // Idle-timeout picker — a stepped slider mirroring the Spotify bitrate control. The slider

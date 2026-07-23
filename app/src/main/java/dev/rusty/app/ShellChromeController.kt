@@ -2,6 +2,7 @@ package dev.rusty.app
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.ColorStateList
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import androidx.core.content.ContextCompat
@@ -19,9 +20,10 @@ import androidx.core.content.ContextCompat
  * @param prefs    The shared prefs instance that stores HA URL/dashboards/selection.
  * @param tvClock  The shared clock TextView that floats above every feature.
  * @param btnInfo  The info button in the shell chrome (hidden when not on Spotify).
+ * @param btnSettings  The settings (gear) button in the shell chrome — HA-tinted with the clock/toggle.
  * @param haChipBar  The full chip-bar container (visibility toggled by the controller).
  * @param haChipGroup  The ChipGroup inside the bar (chips inflated here).
- * @param toggle   The launcher toggle ImageButton.
+ * @param toggle   The launcher toggle (app-selector) ImageButton.
  * @param launcherMenu  The launcher pill column LinearLayout.
  * @param launcherScrim The tap-catching scrim behind the open launcher.
  * @param currentFeatureId  Lambda that returns the currently-visible [FeatureId] (delegated to
@@ -37,9 +39,10 @@ class ShellChromeController(
     private val prefs: SharedPreferences,
     private val tvClock: android.widget.TextView,
     private val btnInfo: android.widget.ImageButton,
+    private val btnSettings: android.widget.ImageButton,
     private val haChipBar: View,
     private val haChipGroup: com.google.android.material.chip.ChipGroup,
-    toggle: android.widget.ImageButton,
+    private val toggle: android.widget.ImageButton,
     launcherMenu: android.widget.LinearLayout,
     launcherScrim: View,
     private val currentFeatureId: () -> FeatureId,
@@ -56,6 +59,16 @@ class ShellChromeController(
     /** Inflate-once colors for the launcher. */
     private val activeTint = ContextCompat.getColor(context, R.color.accent_fallback)
     private val inactiveTint = ContextCompat.getColor(context, R.color.ink)
+
+    // ---- HA chrome tint -----------------------------------------------------
+    // The floating chrome (clock, settings, app-selector) is tinted to HA's theme text colour while HA
+    // is foreground so it stays legible over the themed strips, and restored to these captured defaults
+    // on switch-away. Captured now, before any HA tint is ever applied.
+    private val defaultClockColors: ColorStateList = tvClock.textColors
+    private val defaultSettingsTint: ColorStateList? = btnSettings.imageTintList
+    private val defaultToggleTint: ColorStateList? = toggle.imageTintList
+    /** Last HA text colour reported by the frontend; re-applied when HA returns to the foreground. */
+    private var haChromeColor: Int? = null
 
     val launcher: FeatureLauncher = FeatureLauncher(
         toggle = toggle,
@@ -96,6 +109,34 @@ class ShellChromeController(
         launcher.refresh()
         refreshDashboardChips()
         updateClock(id, animate = animate)
+        // Tint the floating chrome to HA's text colour over HA; restore defaults everywhere else.
+        if (id == FeatureId.HOME_ASSISTANT) haChromeColor?.let(::tintChrome) else restoreChrome()
+    }
+
+    // ---- HA chrome tint -----------------------------------------------------
+
+    /**
+     * Records HA's reported theme text colour and, when HA is the foreground feature, tints the floating
+     * chrome (clock, settings, app-selector) to it so it stays legible over the themed strips. Reported
+     * asynchronously by the HA frontend (see [HomeAssistantNav.reportThemeColorsJs]); stored so a later
+     * return to HA re-applies it immediately, before the frontend re-reports.
+     */
+    fun applyHaTextColor(color: Int) {
+        haChromeColor = color
+        if (currentFeatureId() == FeatureId.HOME_ASSISTANT) tintChrome(color)
+    }
+
+    private fun tintChrome(color: Int) {
+        val tint = ColorStateList.valueOf(color)
+        tvClock.setTextColor(color)
+        btnSettings.imageTintList = tint
+        toggle.imageTintList = tint
+    }
+
+    private fun restoreChrome() {
+        tvClock.setTextColor(defaultClockColors)
+        btnSettings.imageTintList = defaultSettingsTint
+        toggle.imageTintList = defaultToggleTint
     }
 
     // ---- Dashboard chips ----------------------------------------------------

@@ -20,6 +20,11 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.commitNow
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.TimeZone
 
@@ -52,6 +57,10 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         override fun openInfo() {
             currentFeatureContribution()?.showInfo()
         }
+
+        // The Immich clock/✕ own their exit gesture; a clickable child never reaches the
+        // controller's tap-anywhere wake path, so the theme asks for the exit explicitly.
+        override fun requestExit() = screensaver.dismissToForeground()
 
         // Features-only launcher entries for the saver chrome (no Lock — you're already in the saver).
         // Reverse ring order so the first enabled feature sits nearest the toggle, matching the shell.
@@ -157,6 +166,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             prefs = prefs,
             tvClock = tvClock,
             btnInfo = findViewById(R.id.btnInfo),
+            btnSettings = findViewById(R.id.btnSettings),
             haChipBar = findViewById(R.id.haChipBar),
             haChipGroup = findViewById(R.id.haChipGroup),
             toggle = findViewById(R.id.btnLauncher),
@@ -279,20 +289,66 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     }
 
     /**
-     * While the screensaver is up, the first key dismisses it (and is consumed so it doesn't
-     * leak to a control beneath). Otherwise any key re-arms the idle timer, then transitional
-     * key delegation to the active fragment (e.g. transport keys) runs as before.
+     * Hardware-key contract (spec 2026-07-22): system keys (assistant, volume) are NEVER
+     * consumed — the system owns them; media transport keys mean MUSIC from anywhere — through
+     * any saver theme without waking it, and from any foreground feature via the fallback below;
+     * the D-pad means PHOTOS while a slideshow owns the remote (BACK/UP exit, the rest are dead
+     * keys); every non-system key still wakes a non-owning saver so a D-pad user is never trapped
+     * (the v2.0.0 Shield rule). The whole decision table lives in [ShellKeyRouting]; this method
+     * only executes it.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (ShellKeyRouting.isSystemKey(event.keyCode)) {
+            if (!screensaver.isShowing) screensaver.resetIdleTimer()
+            return super.dispatchKeyEvent(event)
+        }
         if (screensaver.isShowing) {
-            if (event.action == KeyEvent.ACTION_DOWN) screensaver.onWakeKey()
-            return true
+            val action = ShellKeyRouting.routeWhileSaverShowing(
+                keyCode = event.keyCode,
+                slideshowOwnsRemote = screensaver.themeOwnsRemote(),
+                spotifyActive = store.snapshot.state.visualState() == VisualState.ACTIVE,
+            )
+            return when (action) {
+                SaverKeyAction.SPOTIFY_TRANSPORT -> spotifyTransportKey(event)
+                SaverKeyAction.SLIDESHOW_NAV -> {
+                    if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                        screensaver.onNavKey(event.keyCode)
+                    }
+                    true
+                }
+                SaverKeyAction.WAKE -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) screensaver.onWakeKey()
+                    true
+                }
+                SaverKeyAction.CONSUME -> true
+            }
         }
         screensaver.resetIdleTimer()
         val active = featureNavigator.currentFragment
         if (active is KeyEventTarget && active.onKeyEvent(event)) return true
+        // Media keys mean music from ANY foreground feature (HA, DLNA, …): the fragment got first
+        // refusal above, so this only fires for features that don't handle transport themselves.
+        if (store.snapshot.state.visualState() == VisualState.ACTIVE && spotifyTransportKey(event)) return true
         return super.dispatchKeyEvent(event)
     }
+
+    /**
+     * Routes a transport key to the receiver. Returns false for non-transport keys; consumes both
+     * the down and the up of a transport key, acting once on the initial press ([TvRemote]).
+     */
+    private fun spotifyTransportKey(event: KeyEvent): Boolean =
+        TvRemote.dispatchTransportKey(
+            event,
+            onPlayPause = {
+                if (ShellKeyRouting.togglesToPause(store.snapshot.state.status)) {
+                    NativeBridge.pause()
+                } else {
+                    NativeBridge.play()
+                }
+            },
+            onNext = { NativeBridge.nextTrack() },
+            onPrevious = { NativeBridge.previousTrack() },
+        )
 
     /** Any touch re-arms the idle timer (the overlay itself handles dismiss while showing). */
     override fun onUserInteraction() {
@@ -324,6 +380,8 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     override fun showScreensaver() = screensaver.show()
 
     override fun sharedClock(): android.widget.TextView = tvClock
+
+    override fun applyHaChromeColor(textColor: Int) = shellChrome.applyHaTextColor(textColor)
 
     /**
      * Renames the receiver.
@@ -553,6 +611,61 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         }
         shellChrome.onFeatureChanged(currentFeatureId(), animate = false)
         screensaver.onEnabledFeaturesChanged()
+    }
+
+    /** Whether the Slideshow screensaver feature is enabled (General → Features switch). */
+    val isSlideshowEnabled: Boolean
+        get() = SlideshowSettings.isEnabled(prefs)
+
+    /**
+     * Persists the Slideshow flag. Toggling the flag either way heals a stored Slideshow theme to
+     * Clock via the normal applyScreensaverTheme path (which also live-swaps a mounted saver): while
+     * off it must not resolve to a disabled theme, and on re-enable the two-step flow requires the
+     * user to re-pick Slideshow rather than have it auto-restored. So the picker and the stored pref
+     * can never disagree, from any entry point.
+     */
+    fun setSlideshowEnabled(enabled: Boolean) {
+        SlideshowSettings.setEnabled(prefs, enabled)
+        // A stored Slideshow theme must never survive a toggle of its own feature. themeAfterDisable
+        // heals SLIDESHOW→Clock and is a no-op for any other theme. This heal used to live in the
+        // Screensaver-tab binder (which ran before its co-located switch could flip); with the switch
+        // moved to General → Features, enabling no longer passes through that binder, so heal here.
+        val healed = SlideshowDisable.themeAfterDisable(currentScreensaverThemeId)
+        if (healed != currentScreensaverThemeId) applyScreensaverTheme(healed)
+        if (!enabled) {
+            // Turning the feature off should not leave the user's photos on disk. invalidate()
+            // performs blocking disk IO, so it never runs on the main thread; NonCancellable (the
+            // same guard the connection path uses) keeps an activity teardown racing the toggle from
+            // leaving the photos half-deleted.
+            val app = applicationContext
+            lifecycleScope.launch {
+                withContext(Dispatchers.IO + NonCancellable) { ImmichImages.invalidate(app) }
+            }
+        }
+    }
+
+    /**
+     * A saved Immich connection/filter change must reach a MOUNTED idle saver immediately —
+     * "retry on next show" never comes when the device sits idle with the saver up. Remounting
+     * via onThemeChanged() cancels the old slideshow generation and reloads the new config.
+     */
+    fun onSlideshowConfigChanged() {
+        if (currentScreensaverThemeId == ScreensaverThemeId.SLIDESHOW) screensaver.onThemeChanged()
+    }
+
+    /**
+     * A saved connection change: drop every cached Immich image (old credentials must
+     * never be served), THEN live-reload a mounted saver. Runs in the activity scope so a
+     * settings tab-switch/dismissal mid-flight can't clear the cache but lose the reload.
+     */
+    fun onImmichConnectionChanged() {
+        val app = applicationContext
+        ImmichConnectionSwap.launch(
+            scope = lifecycleScope,
+            io = Dispatchers.IO,
+            invalidate = { ImmichImages.invalidate(app) },
+            reload = { onSlideshowConfigChanged() },
+        )
     }
 
     /** Whether start-on-boot is enabled, for the General toggle's initial state. */

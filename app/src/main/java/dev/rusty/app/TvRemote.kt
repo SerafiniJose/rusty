@@ -16,7 +16,7 @@ import android.view.KeyEvent
  */
 object TvRemote {
 
-    private fun isTransportKey(code: Int): Boolean = when (code) {
+    internal fun isTransportKey(code: Int): Boolean = when (code) {
         KeyEvent.KEYCODE_MEDIA_PLAY,
         KeyEvent.KEYCODE_MEDIA_PAUSE,
         KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
@@ -39,10 +39,26 @@ object TvRemote {
         onPlayPause: () -> Unit,
         onNext: () -> Unit,
         onPrevious: () -> Unit,
+    ): Boolean = dispatchTransportKey(
+        event.keyCode, event.action, event.repeatCount, onPlayPause, onNext, onPrevious,
+    )
+
+    /**
+     * The whole decision, in primitives. Split out from the [KeyEvent] overload so it can be unit
+     * tested: under plain JVM unit tests KeyEvent's METHODS are unmocked stubs that throw, while
+     * its `static final int` constants inline normally and stay usable.
+     */
+    fun dispatchTransportKey(
+        keyCode: Int,
+        action: Int,
+        repeatCount: Int,
+        onPlayPause: () -> Unit,
+        onNext: () -> Unit,
+        onPrevious: () -> Unit,
     ): Boolean {
-        if (!isTransportKey(event.keyCode)) return false
-        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-            when (event.keyCode) {
+        if (!isTransportKey(keyCode)) return false
+        if (action == KeyEvent.ACTION_DOWN && repeatCount == 0) {
+            when (keyCode) {
                 KeyEvent.KEYCODE_MEDIA_NEXT,
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> onNext()
                 KeyEvent.KEYCODE_MEDIA_PREVIOUS,

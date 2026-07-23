@@ -11,7 +11,7 @@ class SettingsTabsTest {
         // (contributed via DlnaPlayerFeature.settingsTab only when the feature is enabled).
         assertEquals(
             listOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER),
-            settingsTabsFor(emptyList())
+            settingsTabsFor(emptyList(), slideshowEnabled = false)
         )
     }
 
@@ -23,13 +23,13 @@ class SettingsTabsTest {
                 SettingsTabKey.SPOTIFY,
                 SettingsTabKey.HOME_ASSISTANT,
             ),
-            settingsTabsFor(listOf(SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT))
+            settingsTabsFor(listOf(SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT), slideshowEnabled = false)
         )
     }
 
     @Test fun dlnaPlayerTabHiddenWhenItsFeatureIsDisabled() {
         // Feature off -> its tab isn't in the contributed list -> absent (gated like Home Assistant).
-        val tabs = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT))
+        val tabs = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT), slideshowEnabled = false)
         assertFalse(SettingsTabKey.DLNA_PLAYER in tabs)
     }
 
@@ -37,7 +37,8 @@ class SettingsTabsTest {
         // Feature on contributes DLNA_PLAYER; it lands in ring order among the feature tabs, after the
         // app-wide General/Screensaver, exactly once.
         val tabs = settingsTabsFor(
-            listOf(SettingsTabKey.DLNA_PLAYER, SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT))
+            listOf(SettingsTabKey.DLNA_PLAYER, SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT),
+            slideshowEnabled = false)
         assertEquals(
             listOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER, SettingsTabKey.DLNA_PLAYER,
                 SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT),

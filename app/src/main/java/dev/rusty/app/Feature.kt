@@ -117,6 +117,10 @@ interface ShellHost {
     fun showScreensaver()
     /** The single shell-owned clock, handed to the Spotify fragment so its bloom can morph it. */
     fun sharedClock(): android.widget.TextView
+    /** Tint the floating shell chrome (clock, settings, app-selector) to HA's theme text colour so it
+     *  stays legible over the themed strips. Applied only while HA is foreground; the shell restores its
+     *  defaults on switch-away. No-op contribution from non-HA features. */
+    fun applyHaChromeColor(textColor: Int)
     fun startReceiver()
     fun stopReceiver()
     fun applyReceiverName(newName: String)

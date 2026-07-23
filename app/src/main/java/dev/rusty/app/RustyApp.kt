@@ -32,6 +32,16 @@ class RustyApp : Application() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val deviceName = prefs.getString(KEY_DEVICE_NAME, DEFAULT_DEVICE_NAME) ?: DEFAULT_DEVICE_NAME
 
+        // Sweep a plaintext API key into encrypted storage at startup. SecretStore migrates
+        // lazily on first use, but "first use" only happens if the user opens the Slideshow
+        // settings tab or the theme mounts — until then the plaintext value would sit on disk
+        // indefinitely, which is the exact exposure this is meant to remove. Guarded on the key
+        // actually being present so normal startups never pay for building the KeyStore-backed
+        // store; the guard is a single prefs lookup and the whole path runs once, ever.
+        if (!prefs.getString(SlideshowSettings.KEY_API_KEY, null).isNullOrBlank()) {
+            SecretStore.of(this)
+        }
+
         val mainHandler = Handler(mainLooper)
         receiverStore = ReceiverStateStore(
             initial = ReceiverDashboardState.waiting(deviceName),
