@@ -16,6 +16,12 @@ Runs great on always-on screens like the Amazon Echo Show, and on any Android 8.
 
 ---
 
+## Showcase
+
+[![Watch the 50-second Rusty showcase](screenshots/showcase-poster.png)](https://github.com/SerafiniJose/rusty/releases/download/v2.3.0/rusty-showcase-evening.mp4)
+
+---
+
 ## Screenshots
 
 | Now playing | Synced lyrics | Screensaver · Clock |
@@ -140,15 +146,20 @@ cargo ndk -t armeabi-v7a -t arm64-v8a --platform 26 \
 
 ## How it works
 
-```
-Spotify client ──Connect/zeroconf──▶  Rusty — a feature shell (Kotlin · HomeActivity)
-(same network)                           ├─ Spotify         now playing · lyrics · idle
-                                         ├─ Screensaver     Clock / OLED / Canvas / Immich Slideshow
-                                         └─ Home Assistant  kiosk WebView → your HA instance
-                                              │  JNI  (Spotify feature)
-                                              ▼
-                                   Rust core (librespot 0.8)
-                                   session · player · audio backend
+```mermaid
+flowchart TD
+    client["Spotify client<br/>phone · desktop · web — same Wi-Fi"]
+    client -- "Connect / zeroconf" --> shell
+
+    subgraph shell["Rusty · feature shell — Kotlin (HomeActivity)"]
+        direction LR
+        spotify["Spotify<br/>now playing · lyrics · idle"]
+        dlna["DLNA player<br/>TTS / radio from Home Assistant"]
+        screensaver["Screensaver<br/>Clock · OLED · Canvas · Immich Slideshow"]
+        homeassistant["Home Assistant<br/>kiosk WebView → your instance"]
+    end
+
+    spotify -- "JNI (Spotify feature only)" --> core["Rust core — librespot 0.8<br/>session · player · audio backend"]
 ```
 
 - The app is a small **feature shell** (`HomeActivity`) that hosts switchable, full-screen
@@ -171,6 +182,10 @@ Spotify client ──Connect/zeroconf──▶  Rusty — a feature shell (Kotli
   webfont by the [Pictogrammers](https://pictogrammers.com/) group (fonts under the Apache 2.0 license).
 - The **Home Assistant** screen embeds your own [Home Assistant](https://www.home-assistant.io/)
   instance (an open-source home-automation platform; this project is not affiliated with it).
+- The **Immich Slideshow** connects to your own self-hosted **[Immich](https://immich.app)** server
+  ([source](https://github.com/immich-app/immich)) — an open-source, self-hosted photo and video
+  library. Rusty reads your photos through Immich's API with a read-only key and bundles none of its
+  code; this project is not affiliated with it.
 
 ## Disclaimer
 
