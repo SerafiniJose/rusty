@@ -47,8 +47,9 @@ Runs great on always-on screens like the Amazon Echo Show, and on any Android 8.
 - **Live device rename** — change the receiver's broadcast name from Settings; it re-advertises immediately, no restart.
 - **Tunable** — pick streaming bitrate (96 / 160 / 320 kbps), a fullscreen "hide system bars" mode, and 12/24-hour clock.
 - **Shows your Spotify display name** while connected.
-- **Screensaver** — after an idle timeout (or a tap on the clock) Rusty shows a full-screen idle face and gently wakes back to now-playing. Pick a clean **Clock** face, an **OLED**-burn-in-safe drifting face, or a **Canvas** face that plays the track's looping Spotify Canvas video.
-- **Home Assistant dashboard** — an optional second screen: sign in once and Rusty shows your Home Assistant dashboards full-screen in a kiosk-style view, with switcher chips to jump between them. It auto-discovers your dashboards and sidebar apps.
+- **Screensaver** — after an idle timeout (or a tap on the clock) Rusty shows a full-screen idle face and gently wakes back to now-playing. Pick a clean **Clock** face, an **OLED**-burn-in-safe drifting face, a **Spotify Canvas** face that plays the track's looping Canvas video, or an **Immich Slideshow** face.
+- **Immich Slideshow** — turn the idle screen into your own photo frame: point Rusty at a self-hosted [Immich](https://immich.app) server and it shows your library, or just the albums, people or tags you pick, with slow Ken Burns motion, a blurred fill, an optional clock and photo info, and pause / next / previous from the screen or a remote. The key it needs is read-only — see [Immich API key permissions](#immich-api-key-permissions).
+- **Home Assistant dashboard** — an optional second screen: sign in from Rusty's settings (or through the dashboard's own login) and Rusty shows your Home Assistant dashboards full-screen in a kiosk-style view, with switcher chips to jump between them. It auto-discovers your dashboards and sidebar apps, and can tint its own chrome to match your dashboard theme.
 - **Home Assistant media renderer** — optionally expose Rusty as a DLNA media player that Home Assistant auto-discovers as a `media_player` entity (nothing to install on the HA side). Speak TTS announcements ("the wash is done", a doorbell chime, a morning briefing) or stream internet radio to it from automations, scripts, or a dashboard card — Rusty pauses or fades Spotify while the message plays and resumes it afterwards.
 - **Spotify Canvas in now-playing** — optionally fill the now-playing screen with the track's looping Canvas video instead of static album art.
 - **On-screen launcher** — an expandable button jumps between Spotify, Home Assistant, and the screensaver.
@@ -62,8 +63,28 @@ Runs great on always-on screens like the Amazon Echo Show, and on any Android 8.
 - A **64-bit (arm64-v8a)** or **32-bit ARM (armeabi-v7a)** device. (No x86 builds are shipped.)
 - The receiver and the controlling Spotify client must be on the **same local network**.
 - **Home Assistant mode (optional)** needs a Home Assistant instance reachable on the same local network.
+- **Immich Slideshow (optional)** needs a self-hosted [Immich](https://immich.app) server reachable on the same local network, plus an API key (see below).
 
 > Tested on an Amazon Echo Show 8 running LineageOS 18.1 (Android 11) and on a Lenovo Tab M10 (TB-X606FA).
+
+### Immich API key permissions
+
+Create the key in Immich under **Account settings → API keys**, and grant it these
+read permissions:
+
+```
+album.read
+album.statistics
+asset.view
+asset.read
+asset.statistics
+face.read
+memory.read
+person.read
+person.statistics
+tag.read
+user.read
+```
 
 ## Install
 
@@ -122,7 +143,7 @@ cargo ndk -t armeabi-v7a -t arm64-v8a --platform 26 \
 ```
 Spotify client ──Connect/zeroconf──▶  Rusty — a feature shell (Kotlin · HomeActivity)
 (same network)                           ├─ Spotify         now playing · lyrics · idle
-                                         ├─ Screensaver     Clock / OLED / Canvas
+                                         ├─ Screensaver     Clock / OLED / Canvas / Immich Slideshow
                                          └─ Home Assistant  kiosk WebView → your HA instance
                                               │  JNI  (Spotify feature)
                                               ▼

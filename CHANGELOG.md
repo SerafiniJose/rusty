@@ -10,6 +10,43 @@ user-facing.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-07-23
+
+### Added
+- Immich Slideshow screensaver. A new screensaver face that shows photos from your
+  own Immich server. Enter the server address and an API key, then pick what it
+  shows — your whole library, or a selection of albums, people or tags chosen from a
+  searchable picker with thumbnails. Photos change on a timer (10 seconds to 5
+  minutes) with a slow Ken Burns drift and a blurred fill behind them, plus an
+  optional clock, optional photo info (date, place, people), and an optional split
+  view that pairs two portrait photos side by side. Tap the photo for pause, next
+  and previous; a remote's media keys work too. The API key needs read-only access;
+  the exact Immich permissions to enable are listed in the project README.
+- Sign in to Home Assistant from settings. Enter your Home Assistant address,
+  username and password — and a two-factor code if you use one — right in Rusty's
+  settings, instead of only through the dashboard's web page. Rusty stays signed in
+  across restarts.
+- Home Assistant theme. Choose which of your Home Assistant dashboard themes Rusty
+  uses; it tints its own top and bottom bars to match so the screen looks like one
+  piece.
+
+### Changed
+- The screensaver faces are now named Clock, OLED, Spotify Canvas and Immich
+  Slideshow.
+- Password and API-key fields have a show/hide button.
+
+### Security
+- API keys and your Home Assistant sign-in are kept in encrypted storage, and
+  nothing Rusty stores leaves the device: cloud backup and device-to-device transfer
+  are both switched off. Settings warns when a server address is plain http, since
+  the credential then crosses your network unencrypted.
+
+### Fixed
+- Popup cards (settings, filter pickers) re-size when the device rotates instead of
+  overflowing off the screen.
+- Home Assistant player: the mix-mode and fade options no longer overflow a narrow
+  settings card.
+
 ## [2.2.0] - 2026-07-17
 
 ### Added
