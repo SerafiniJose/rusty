@@ -26,9 +26,14 @@
         android:name="android.hardware.faketouch"
         android:required="false" />
 
+    <!-- Backups are off because they are how credentials leave the device: `adb backup` and cloud
+         auto-backup copy shared_prefs verbatim, and an encrypted secrets file restored onto another
+         device is undecryptable anyway (its master key is device-bound). The app stores only
+         settings a user can re-enter, so there is nothing worth backing up. -->
     <application
         android:name=".RustyApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:banner="@drawable/tv_banner"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
