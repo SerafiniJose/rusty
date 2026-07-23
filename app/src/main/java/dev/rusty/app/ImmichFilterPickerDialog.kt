@@ -188,9 +188,9 @@ class ImmichFilterPickerDialog(
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
                     WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN,
             )
-            val metrics = activity.resources.displayMetrics
-            setLayout((metrics.widthPixels * 0.72f).toInt(), (metrics.heightPixels * 0.80f).toInt())
         }
+        // Re-sizes on rotation too — this card outlives a configuration change (see followDisplaySize).
+        d.followDisplaySize(activity, heightFraction = 0.80f)
 
         root.findViewById<TextView>(R.id.tvPickerTitle).text = "Choose ${kind.title.lowercase()}"
         val search = root.findViewById<EditText>(R.id.etPickerSearch)

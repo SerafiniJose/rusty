@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * The app shell. SP0: hosts exactly one feature fragment (Spotify) in [R.id.featureContainer].
@@ -278,7 +279,9 @@ class HomeActivity : AppCompatActivity(), ShellHost {
      *  2. the orientation-sensitive Spotify and DLNA Player fragments' views (each has `layout-port`/
      *     `values-port`), rebuilt in place — HA and the screensaver are not orientation-qualified, so
      *     they are left untouched and keep their live state;
-     *  3. the clock park / chrome layout for the new window dimensions.
+     *  3. the clock park / chrome layout for the new window dimensions;
+     *  4. anything registered through [addConfigurationChangeListener] — open popup cards, whose
+     *     window width is a pixel count that would otherwise stay sized for the old orientation.
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -286,6 +289,22 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         featureNavigator.recreateFeatureView(FeatureId.SPOTIFY)
         featureNavigator.recreateFeatureView(FeatureId.DLNA)
         shellChrome.onFeatureChanged(featureNavigator.current, animate = false)
+        configurationListeners.forEach { it() }
+    }
+
+    /**
+     * Shell-scoped configuration-change listeners, for views the activity does not own but which
+     * must still react to rotation (see [followDisplaySize]). Copy-on-write so a listener may
+     * unregister itself from inside the dispatch.
+     */
+    private val configurationListeners = CopyOnWriteArrayList<() -> Unit>()
+
+    fun addConfigurationChangeListener(listener: () -> Unit) {
+        configurationListeners.add(listener)
+    }
+
+    fun removeConfigurationChangeListener(listener: () -> Unit) {
+        configurationListeners.remove(listener)
     }
 
     /**

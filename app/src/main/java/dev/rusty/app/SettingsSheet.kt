@@ -7,7 +7,6 @@ import android.graphics.drawable.ColorDrawable
 import android.view.KeyEvent
 import android.view.View
 import android.view.Window
-import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.RadioButton
@@ -304,11 +303,10 @@ object SettingsSheet {
         val dialog = Dialog(activity)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(view)
-        dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            val width = (activity.resources.displayMetrics.widthPixels * 0.72f).toInt()
-            setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
-        }
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        // Rotating with the card open must re-size it: the shell absorbs configuration changes, so
+        // nothing here is re-created and a landscape-width card would overflow a portrait screen.
+        dialog.followDisplaySize(activity)
         return dialog
     }
 
