@@ -27,6 +27,12 @@ interface ControlRuntime {
     fun immichList(kind: String): ControlImmichResult
 
     fun controlPageHtml(): String
+
+    /** May block on a (TTL-cached) GitHub fetch — pool threads only, like [immichList]. */
+    fun updateCheck(): ControlUpdateCheck
+
+    /** Kicks off the async APK download+install; returns immediately with the outcome class. */
+    fun startUpdateInstall(): ControlInstallStart
 }
 
 sealed class ControlImmichResult {
@@ -140,6 +146,12 @@ object ControlProtocol {
                 if (kind in IMMICH_KINDS) handleImmichList(kind, rt) else errorResponse(404, "Not Found", "not found")
             }
 
+            req.method == "GET" && path == "/api/update" ->
+                jsonOk(rt.updateCheck().toJson())
+
+            req.method == "POST" && path == "/api/update/install" ->
+                writeGuarded(req) { handleUpdateInstall(rt) }
+
             req.method == "GET" && path == "/" ->
                 HttpResponse(200, "OK", listOf("Content-Type" to HTML_CONTENT_TYPE), rt.controlPageHtml())
 
@@ -252,6 +264,22 @@ object ControlProtocol {
             ControlImmichResult.NotConfigured -> errorResponse(404, "Not Found", "immich not configured")
             ControlImmichResult.Unauthorized -> errorResponse(502, "Bad Gateway", "immich unauthorized")
             ControlImmichResult.Unreachable -> errorResponse(502, "Bad Gateway", "immich unreachable")
+        }
+
+    // -------------------------------------------------------------------
+    // /api/update/install
+    // -------------------------------------------------------------------
+
+    /** The request body is intentionally unread: an install request carries no parameters,
+     *  but the standard write guards (size cap, JSON content type) still apply so a plain
+     *  cross-origin `<form>` POST can't trigger the device's install prompt. */
+    private fun handleUpdateInstall(rt: ControlRuntime): HttpResponse =
+        when (rt.startUpdateInstall()) {
+            ControlInstallStart.STARTED ->
+                HttpResponse(202, "Accepted", listOf("Content-Type" to JSON_CONTENT_TYPE), """{"status":"started"}""")
+            ControlInstallStart.NO_UPDATE -> errorResponse(409, "Conflict", "no update available")
+            ControlInstallStart.BUSY -> errorResponse(409, "Conflict", "install already in progress")
+            ControlInstallStart.NO_APK -> errorResponse(503, "Service Unavailable", "release has no APK asset")
         }
 
     // -------------------------------------------------------------------

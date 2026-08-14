@@ -21,6 +21,7 @@ function createMockServer(config) {
   const state = deepClone(config.state);
   const requests = [];
   const putBodies = []; // { body, ts } for PUT /api/slideshow/filters
+  let updateInstallPosted = false; // flips the /api/update answer to config.updateAfterInstall
   const immichDoneAt = {}; // kind -> timestamp the response was flushed
 
   function snapshotState() {
@@ -123,6 +124,25 @@ function createMockServer(config) {
       putBodies.push({ body, ts: Date.now() });
       const result = config.filtersPutResponder(body);
       sendJSON(res, result.status, result.body);
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/update') {
+      // Default: quiet up-to-date answer so scenarios written before the Update card ignore it.
+      // After a POST to /api/update/install, `updateAfterInstall` (when configured) answers
+      // instead, letting a scenario watch the page render download progress.
+      const spec = (updateInstallPosted && config.updateAfterInstall) || config.update || {
+        status: 200,
+        body: { current: state.device.version, status: 'up_to_date', install: { phase: 'idle' } }
+      };
+      sendJSON(res, spec.status, spec.body);
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/update/install') {
+      updateInstallPosted = true;
+      const spec = config.updateInstall || { status: 409, body: { error: 'no update available' } };
+      sendJSON(res, spec.status, spec.body);
       return;
     }
 

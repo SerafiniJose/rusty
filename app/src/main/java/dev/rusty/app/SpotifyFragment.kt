@@ -35,6 +35,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.palette.graphics.Palette
 import coil.dispose
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import coil.load
@@ -697,7 +698,13 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
                         whatsNew.text = latest.notes
                     }
                     downloadButton.visibility = View.VISIBLE
-                    downloadButton.setOnClickListener { openUrl(latest.releaseUrl) }
+                    val apkUrl = latest.apkUrl
+                    if (apkUrl == null) {
+                        // Release without an APK asset — the browser is all we can offer.
+                        downloadButton.setOnClickListener { openUrl(latest.releaseUrl) }
+                    } else {
+                        bindDirectInstall(dialog, downloadButton, statusLine, apkUrl, latest.releaseUrl)
+                    }
                 }
                 UpdateRepository.UpdateStatus.UP_TO_DATE ->
                     statusLine.text = "You're on the latest version."
@@ -710,6 +717,62 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         // "Source & releases" is always present; the Download button only appears once an update
         // is found, so the source row is the reliable initial focus target.
         requestInitialFocus(sourceRow)
+    }
+
+    /**
+     * Wires the About sheet's Download button to the in-app installer instead of the browser:
+     * download → system confirm dialog on this screen, no browser round-trip (which on a TV
+     * meant a D-pad fight with a download manager).
+     *
+     * A 500 ms poll — not a listener — drives the label, because the installer is shared with
+     * the remote-control API: an install started from the control page may already be running
+     * when this sheet opens, and the poll picks that up with zero extra wiring. The loop lives
+     * in [androidx.lifecycle.lifecycleScope] and additionally stops with the dialog.
+     *
+     * After a failure the button becomes a browser fallback to [releaseUrl] — whatever broke
+     * the in-app path (disk, network, installer refusal), the release page always works.
+     */
+    private fun bindDirectInstall(
+        dialog: Dialog,
+        button: MaterialButton,
+        statusLine: TextView,
+        apkUrl: String,
+        releaseUrl: String,
+    ) {
+        val installer = ApkInstall.installer(requireContext())
+        button.setOnClickListener {
+            if (installer.snapshot().phase == InstallPhase.ERROR) {
+                openUrl(releaseUrl)
+            } else {
+                installer.start(apkUrl)
+            }
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            while (isAdded && dialog.isShowing) {
+                val snap = installer.snapshot()
+                when (snap.phase) {
+                    InstallPhase.IDLE -> {
+                        button.isEnabled = true
+                        button.text = "Download"
+                    }
+                    InstallPhase.DOWNLOADING -> {
+                        button.isEnabled = false
+                        button.text = snap.progress?.let { "Downloading… $it%" } ?: "Downloading…"
+                    }
+                    InstallPhase.AWAITING_CONFIRM -> {
+                        button.isEnabled = false
+                        button.text = "Confirm on screen"
+                    }
+                    InstallPhase.ERROR -> {
+                        button.isEnabled = true
+                        button.text = "Open release page"
+                        statusLine.visibility = View.VISIBLE
+                        statusLine.text = "Install failed: ${snap.error}"
+                    }
+                }
+                delay(500)
+            }
+        }
     }
 
     /** Opens [url] in a browser, ignoring the (unlikely) no-browser case rather than crashing. */

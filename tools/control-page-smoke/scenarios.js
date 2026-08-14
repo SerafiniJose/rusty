@@ -67,7 +67,10 @@ function buildConfig(html, overrides) {
     immich,
     screenResponder: overrides.screenResponder || defaultScreenResponder,
     volumeResponder: overrides.volumeResponder || defaultVolumeResponder,
-    filtersPutResponder: overrides.filtersPutResponder || defaultFiltersPutResponder
+    filtersPutResponder: overrides.filtersPutResponder || defaultFiltersPutResponder,
+    update: overrides.update,
+    updateInstall: overrides.updateInstall,
+    updateAfterInstall: overrides.updateAfterInstall
   };
 }
 
@@ -522,6 +525,52 @@ function getScenarios(html) {
           assert(hidden === false, '#volume-error should be visible after a 409');
           const text = await page.evaluate(textExpr('volume-error'));
           assert(text.includes('volume is fixed'), 'expected the 409 error message to surface, got "' + text + '"');
+        } finally {
+          await page.close();
+          await mock.stop();
+        }
+      }
+    },
+
+    {
+      name: '12. Update flow (available → install → downloading)',
+      async run({ browser }) {
+        const available = {
+          current: '2.4.0',
+          status: 'update_available',
+          latest: { version: '2.5.0', notes: '• Remote updates', url: 'https://example.com/rel', hasApk: true },
+          install: { phase: 'idle' }
+        };
+        const mock = createMockServer(
+          buildConfig(html, {
+            update: { status: 200, body: available },
+            updateInstall: { status: 202, body: { status: 'started' } },
+            updateAfterInstall: {
+              status: 200,
+              body: Object.assign({}, available, { install: { phase: 'downloading', progress: 37 } })
+            }
+          })
+        );
+        const { url } = await mock.start();
+        const page = await browser.newPage();
+        try {
+          await page.navigate(url);
+          await page.waitFor(notDisabledExpr('update-button'), 5000, 'Update button enabled once an update is known');
+
+          assert((await page.evaluate(hiddenExpr('update-button'))) === false, 'Update button should be visible');
+          assert((await page.evaluate(hiddenExpr('update-notes'))) === false, 'release notes should be visible');
+          const status = await page.evaluate(textExpr('update-status'));
+          assert(status.includes('2.5.0'), 'status should name the new version, got "' + status + '"');
+
+          await page.evaluate(clickExpr('update-button'));
+          await page.waitFor(
+            `document.getElementById('update-status').textContent.indexOf('Downloading') !== -1`,
+            5000,
+            'status shows download progress after Update is clicked'
+          );
+          const downloading = await page.evaluate(textExpr('update-status'));
+          assert(downloading.includes('37%'), 'progress percentage should render, got "' + downloading + '"');
+          assert((await page.evaluate(disabledExpr('update-button'))) === true, 'Update button should be disabled while downloading');
         } finally {
           await page.close();
           await mock.stop();

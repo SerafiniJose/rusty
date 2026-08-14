@@ -37,7 +37,9 @@ import java.util.concurrent.Executors
  * no Activity ever created. `foregroundServiceType="connectedDevice"` is chosen deliberately — its
  * prerequisite permission (`CHANGE_WIFI_MULTICAST_STATE`) is already declared for SSDP, and unlike
  * `mediaPlayback` (see [BootStartSupport]) it is NOT among the types Android 15+ forbids starting
- * from `BOOT_COMPLETED`, which is exactly what makes start-on-boot work here.
+ * from `BOOT_COMPLETED`, which is exactly what makes start-on-boot work here. Being a foreground
+ * service means holding a notification — Android allows no way around that — so the notification
+ * is shaped like its siblings': a "Listening at ip:port" subtitle and a Stop action.
  *
  * Status is published to [ControlServerStatus], never back into the preference: a failed bind
  * leaves the toggle ON and is retried by the next start. That retry is why a bind failure calls
@@ -51,11 +53,17 @@ class ControlService : Service() {
 
         /** Distinct from SpotifyService (1), MediaRendererService (2) and the group summary (3). */
         private const val NOTIFICATION_ID = 4
-        private const val NOTIFICATION_CHANNEL_ID = "control_service_channel"
+
+        /** Fresh id: the legacy channel was IMPORTANCE_LOW, and a channel's importance cannot be
+         *  lowered programmatically once created — see [buildNotification], which deletes it. */
+        private const val NOTIFICATION_CHANNEL_ID = "control_service_channel_min"
+        private const val LEGACY_CHANNEL_ID = "control_service_channel"
 
         private const val NOTIFICATION_TITLE = "Remote control"
         private const val STARTING_TEXT = "Starting…"
-        private const val ACTIVE_TEXT = "Active"
+
+        /** Shade Stop action — mirrors [dev.rusty.app.renderer.MediaRendererService.ACTION_STOP]. */
+        const val ACTION_STOP = "dev.rusty.app.control.ACTION_STOP"
 
         // Duplicated from ControlServiceRuntime/HomeActivity/RustyApp/etc. rather than shared —
         // matches how this device-name key is already kept local to every file that reads it.
@@ -126,8 +134,8 @@ class ControlService : Service() {
      * Without it, a toggle-off landing inside the bind window loses the race in a way that outlives
      * the service: `onDestroy` publishes `Stopped` while `bindServer` is mid-bind, then `bindServer`
      * succeeds and publishes `Running(url)` — so the settings row (and Task 10's advertisement)
-     * would keep pointing at a dead endpoint, and the "Active" notification it posts after the FGS
-     * has already been torn down has nothing left to cancel it.
+     * would keep pointing at a dead endpoint, and the notification it posts after the FGS has
+     * already been torn down has nothing left to cancel it.
      */
     private val lifecycleLock = Any()
 
@@ -138,8 +146,9 @@ class ControlService : Service() {
      *  under [lifecycleLock] at bind time; 0 until then. */
     private var boundPort = 0
 
-    /** For [deviceName] and the device id [reconcileNsd] hands to [nsdAdvertiser]. `by lazy` is
-     *  fine here: first touched from [bindServer], well after the Service is attached. */
+    /** For [deviceName], the device id [reconcileNsd] hands to [nsdAdvertiser], and the shade
+     *  Stop's toggle write. `by lazy` is fine here: first touched from [onStartCommand] or
+     *  [bindServer], well after the Service is attached. */
     private val prefs: SharedPreferences by lazy { getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
 
     /** Owns the NSD registration for this service instance. See [reconcileNsd] for when it is
@@ -158,6 +167,14 @@ class ControlService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            // A shade-stop must behave exactly like the settings toggle: clear the pref FIRST so
+            // the service does not resurrect on the next boot or app start (same rule as
+            // MediaRendererService's ACTION_STOP).
+            ControlSettings.setEnabled(prefs, false)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (started) {
             // Re-delivered start (app-launch re-sync, START_STICKY restart of a live instance).
             // Re-publishing Starting here would be permanent: nothing would rebind to move it on.
@@ -167,6 +184,10 @@ class ControlService : Service() {
         started = true
 
         // FGS promotion first — Android's deadline is short and the bind may block on the network.
+        // The foreground status is kept for the service's whole life: demoting to drop the
+        // notification was tried and rejected — a background service only survives while another
+        // FGS or an Activity keeps the app in the foreground, which silently kills the server the
+        // moment every other feature is off.
         startForeground(NOTIFICATION_ID, buildNotification(STARTING_TEXT))
         ServiceNotifications.started(this, ServiceNotifications.Kind.CONTROL)
         ControlServerStatus.publish(ControlServerStatus.State.Starting)
@@ -207,8 +228,8 @@ class ControlService : Service() {
         serverExecutor.shutdown()
         ServiceNotifications.stopped(this, ServiceNotifications.Kind.CONTROL)
         // Belt and braces: the framework removes an FGS notification with the service, but this
-        // one is also posted from a background thread, so cancel it explicitly rather than rely on
-        // the ordering.
+        // one is also re-posted from background threads ([publishRunningLocked]), so cancel it
+        // explicitly rather than rely on the ordering.
         runCatching { getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID) }
         // A FAILED status is the one thing the settings row still needs after teardown (the bind
         // failure path stops this service on purpose); an unconditional Stopped would erase it.
@@ -294,12 +315,17 @@ class ControlService : Service() {
     }
 
     /**
-     * Publishes the running status + notification for [url]. MUST be called holding [lifecycleLock]
-     * with [destroyed] false — that is what keeps it from racing teardown.
+     * Publishes the running status + notification subtitle for [url]. MUST be called holding
+     * [lifecycleLock] with [destroyed] false — that is what keeps it from racing teardown.
+     * The subtitle mirrors SpotifyService's "Listening as …" wording; with no LAN address yet
+     * (boot before Wi-Fi) there is no "ip:port" fact to show, so it falls back to the bare port.
      */
     private fun publishRunningLocked(url: String) {
         ControlServerStatus.publish(ControlServerStatus.State.Running(url))
-        postNotification(if (url.isEmpty()) ACTIVE_TEXT else "Active — $url")
+        postNotification(
+            if (url.isEmpty()) "Listening on port $boundPort"
+            else "Listening at ${url.removePrefix("http://")}"
+        )
     }
 
     // -- address changes -----------------------------------------------------------------
@@ -458,19 +484,40 @@ class ControlService : Service() {
         }
     }
 
+    /**
+     * Held for the service's whole life, because Android requires a foreground service to hold
+     * one. Shaped like the sibling services' notifications: same group, tap-to-open, a
+     * "Listening at ip:port" subtitle ([publishRunningLocked]) and a Stop action that flips the
+     * settings toggle off. The channel is requested at IMPORTANCE_MIN — the OS clamps FGS
+     * channels up to LOW, which lands it at the same level as the siblings.
+     */
     private fun buildNotification(text: String): Notification {
+        val manager = getSystemService(NotificationManager::class.java)
+        // The pre-existing LOW channel from older installs would keep the notification visible —
+        // importance can only be lowered by the user, never by code — so retire it. (Recreating the
+        // SAME id would restore its old settings; hence the new channel id.)
+        manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
             "Remote control service",
-            NotificationManager.IMPORTANCE_LOW,
+            NotificationManager.IMPORTANCE_MIN,
         )
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        manager.createNotificationChannel(channel)
 
         val openIntent = PendingIntent.getActivity(
             this, 4,
             Intent(this, HomeActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             },
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        // getForegroundService, not getService: a shade tap arrives with the app in the
+        // background, where a plain startService is forbidden on API 26+ (same choice as
+        // SpotifyService's Stop). The ACTION_STOP branch runs before the duplicate-start guard,
+        // so the re-delivered command is never swallowed.
+        val stopIntent = PendingIntent.getForegroundService(
+            this, 5,
+            Intent(this, ControlService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE,
         )
 
@@ -481,6 +528,7 @@ class ControlService : Service() {
             .setGroup(ServiceNotifications.GROUP_KEY)
             .setOngoing(true)
             .setContentIntent(openIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopIntent)
             .build()
     }
 }
@@ -634,6 +682,36 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
     override fun immichList(kind: String): ControlImmichResult = immich.list(kind)
 
     override fun controlPageHtml(): String = pageHtml
+
+    // -- update check / install ----------------------------------------------------------
+
+    /** Blocking GitHub fetch on a server pool thread — same cost class as the Immich proxy
+     *  routes, and bounded by [UpdateRepository]'s 15-minute cache. */
+    override fun updateCheck(): ControlUpdateCheck {
+        val check = UpdateRepository.check(BuildConfig.VERSION_NAME)
+        return ControlUpdateCheck(
+            current = check.currentVersion,
+            status = when (check.status) {
+                UpdateRepository.UpdateStatus.UP_TO_DATE -> "up_to_date"
+                UpdateRepository.UpdateStatus.UPDATE_AVAILABLE -> "update_available"
+                UpdateRepository.UpdateStatus.ERROR -> "error"
+            },
+            latest = check.latest?.let {
+                ControlUpdateLatest(it.versionName, it.notes, it.releaseUrl, hasApk = it.apkUrl != null)
+            },
+            install = ApkInstall.installer(context).snapshot(),
+        )
+    }
+
+    override fun startUpdateInstall(): ControlInstallStart {
+        // Normally answered from cache (the page GETs /api/update right before POSTing), but a
+        // cold cache blocks on the fetch here — acceptable for the same reason as updateCheck().
+        val check = UpdateRepository.check(BuildConfig.VERSION_NAME)
+        if (check.status != UpdateRepository.UpdateStatus.UPDATE_AVAILABLE) return ControlInstallStart.NO_UPDATE
+        val apkUrl = check.latest?.apkUrl ?: return ControlInstallStart.NO_APK
+        return if (ApkInstall.installer(context).start(apkUrl)) ControlInstallStart.STARTED
+        else ControlInstallStart.BUSY
+    }
 
     // -- volume helpers ------------------------------------------------------------------
 

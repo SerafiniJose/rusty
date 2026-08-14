@@ -112,6 +112,11 @@ browser on the same network and you get a single page with:
 - **Playing** — whether the Spotify receiver or the DLNA player is currently playing.
 - **Slideshow filters** — the same album / person / tag checklists as the in-app picker, so you
   can re-aim the photo frame from the sofa.
+- **Update** — see whether a newer Rusty release exists and start the download from your sofa.
+  The device fetches the APK itself and hands it to Android's installer; **Android always asks
+  for confirmation on the device screen** (a sideloaded app can't update itself silently), so
+  the last step is one OK on the device — by touch or D-pad. The very first time, Android also
+  shows a one-time **"allow installs from this source"** screen for Rusty.
 
 The port is fixed at **8765**. Nothing needs to be installed on the other device — it's one
 self-contained page, no accounts, no cloud.
@@ -139,7 +144,10 @@ lives on a home network, and it means:
 - **Any client on your local network can control this device**: switch the screen on or off,
   change brightness and media volume, and change the Slideshow filters. It can also **read the
   names of your Immich albums, people and tags** (names only — no photos are served through this
-  API, and your Immich API key never leaves the device).
+  API, and your Immich API key never leaves the device). It can also start an app update —
+  the worst that does is pop the system's install prompt on the device screen, because the APK
+  always comes from Rusty's own GitHub Releases (the URL is pinned in the app, not taken from
+  the request) and nothing installs without the on-device confirmation.
 - **Any app already installed on the device** that holds the `INTERNET` permission can do the
   same, because `localhost`/`127.0.0.1` are deliberately accepted as valid hosts (that is what
   makes `adb forward` debugging work). This isn't a new class of exposure — a local app could

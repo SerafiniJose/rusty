@@ -259,6 +259,14 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 0.8rem;
   }
+
+  /* Release notes arrive as plain text with newline-separated bullets; keep them a <pre>
+     so the line structure survives, but wrap like body text on narrow screens. */
+  .update-notes {
+    font-family: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
 </style>
 </head>
 <body>
@@ -340,6 +348,16 @@
       <button id="filters-save" type="button" disabled>Save Filters</button>
     </div>
   </section>
+
+  <section id="update-card" class="card" aria-labelledby="update-heading">
+    <h2 id="update-heading">Update</h2>
+    <pre id="update-notes" class="notice update-notes" hidden></pre>
+    <p id="update-error" class="error" hidden></p>
+    <div class="row">
+      <p id="update-status" class="status" role="status" aria-live="polite">Checking for updates…</p>
+      <button id="update-button" type="button" hidden>Update</button>
+    </div>
+  </section>
 </main>
 
 <script>
@@ -362,7 +380,8 @@
       "volume-card", "volume-range", "volume-value", "volume-error",
       "pill-spotify", "pill-dlna",
       "albums-list", "albums-error", "people-list", "people-error", "tags-list", "tags-error",
-      "filters-save", "filters-status"
+      "filters-save", "filters-status",
+      "update-status", "update-notes", "update-error", "update-button"
     ].forEach(function (id) {
       el[id] = document.getElementById(id);
     });
@@ -725,6 +744,100 @@
       });
   }
 
+  // ---- update check / install ----
+
+  // Fast poll renders download progress; slow poll watches AWAITING_CONFIRM so a user
+  // declining the on-device dialog re-enables the button here without a page reload.
+  var UPDATE_POLL_FAST_MS = 1000;
+  var UPDATE_POLL_SLOW_MS = 5000;
+
+  var updatePollTimer = null;
+  var updatePollMs = 0;
+
+  function ensureUpdatePolling(ms) {
+    if (updatePollTimer !== null && updatePollMs === ms) return;
+    stopUpdatePolling();
+    updatePollMs = ms;
+    updatePollTimer = setInterval(refreshUpdate, ms);
+  }
+
+  function stopUpdatePolling() {
+    if (updatePollTimer !== null) {
+      clearInterval(updatePollTimer);
+      updatePollTimer = null;
+      updatePollMs = 0;
+    }
+  }
+
+  function renderUpdate(data) {
+    var install = data.install || { phase: "idle" };
+
+    if (install.phase === "downloading") {
+      el["update-status"].textContent = typeof install.progress === "number"
+        ? "Downloading… " + install.progress + "%"
+        : "Downloading…";
+      el["update-button"].hidden = false;
+      el["update-button"].disabled = true;
+      setNotice(el["update-error"], null);
+      ensureUpdatePolling(UPDATE_POLL_FAST_MS);
+      return;
+    }
+    if (install.phase === "awaiting_confirm") {
+      el["update-status"].textContent = "Confirm the install on the device screen.";
+      el["update-button"].hidden = false;
+      el["update-button"].disabled = true;
+      setNotice(el["update-error"], null);
+      ensureUpdatePolling(UPDATE_POLL_SLOW_MS);
+      return;
+    }
+
+    stopUpdatePolling();
+    setNotice(el["update-error"], install.phase === "error" ? (install.error || "Install failed.") : null);
+
+    if (data.status === "update_available" && data.latest) {
+      el["update-status"].textContent = "Update available · " + data.latest.version;
+      if (data.latest.notes) {
+        el["update-notes"].textContent = data.latest.notes;
+        el["update-notes"].hidden = false;
+      }
+      // Without an APK asset there is nothing the device could install — leave only the
+      // status text; the release still shows up in the app's About sheet with a link.
+      el["update-button"].hidden = !data.latest.hasApk;
+      el["update-button"].disabled = false;
+    } else if (data.status === "up_to_date") {
+      el["update-status"].textContent = "Up to date.";
+      el["update-notes"].hidden = true;
+      el["update-button"].hidden = true;
+    } else {
+      el["update-status"].textContent = "Couldn't check for updates.";
+      el["update-notes"].hidden = true;
+      el["update-button"].hidden = true;
+    }
+  }
+
+  function refreshUpdate() {
+    return getJSON("/api/update")
+      .then(renderUpdate)
+      .catch(function (err) {
+        stopUpdatePolling();
+        el["update-status"].textContent = "Couldn't check for updates: " + err.message;
+        el["update-button"].hidden = true;
+      });
+  }
+
+  function onUpdateClick() {
+    el["update-button"].disabled = true;
+    setNotice(el["update-error"], null);
+    el["update-status"].textContent = "Starting download…";
+    writeJSON("/api/update/install", "POST", {})
+      .catch(function (err) {
+        setNotice(el["update-error"], err.message);
+      })
+      .then(function () {
+        return refreshUpdate();
+      });
+  }
+
   // ---- wiring ----
 
   function init() {
@@ -734,11 +847,13 @@
     el["brightness-range"].addEventListener("change", onBrightnessChange);
     el["volume-range"].addEventListener("change", onVolumeChange);
     el["filters-save"].addEventListener("click", onSaveFilters);
+    el["update-button"].addEventListener("click", onUpdateClick);
     trackDragging(el["brightness-range"]);
     trackDragging(el["volume-range"]);
 
     refresh();
     loadFilters();
+    refreshUpdate();
     setInterval(refresh, REFRESH_INTERVAL_MS);
   }
 

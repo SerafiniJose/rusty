@@ -8,8 +8,10 @@ import java.net.URL
 /**
  * Checks GitHub for a newer release than the running build. Parsing and version
  * comparison are pure (split from I/O) so they're unit-testable on the JVM, mirroring
- * [LyricsRepository]. The latest [check] result is cached for the process lifetime so
- * reopening the About sheet is instant and doesn't re-hit the network.
+ * [LyricsRepository]. The latest [check] result is cached for [CACHE_TTL_MS] so reopening
+ * the About sheet is instant, while a long-running receiver (weeks between restarts)
+ * still notices new releases — the remote-control page's update check goes through
+ * [check] too and must not be pinned to a boot-time answer.
  */
 object UpdateRepository {
     private const val TAG = "UpdateRepository"
@@ -22,7 +24,14 @@ object UpdateRepository {
 
     enum class UpdateStatus { UP_TO_DATE, UPDATE_AVAILABLE, ERROR }
 
-    data class ReleaseInfo(val versionName: String, val notes: String, val releaseUrl: String)
+    /** [apkUrl]: direct download URL of the release's APK asset, or null when the release
+     *  ships none (installers must then fall back to opening [releaseUrl]). */
+    data class ReleaseInfo(
+        val versionName: String,
+        val notes: String,
+        val releaseUrl: String,
+        val apkUrl: String? = null
+    )
 
     data class UpdateCheck(
         val status: UpdateStatus,
@@ -30,8 +39,15 @@ object UpdateRepository {
         val latest: ReleaseInfo?
     )
 
+    const val CACHE_TTL_MS = 15 * 60 * 1000L
+
     @Volatile
-    private var cached: UpdateCheck? = null
+    private var cached: Pair<Long, UpdateCheck>? = null
+
+    /** Pure: whether a check cached at [cachedAtMs] is still current at [nowMs]. A cachedAt
+     *  in the future (wall-clock reset) counts as stale rather than fresh-forever. */
+    fun isCacheFresh(cachedAtMs: Long, nowMs: Long): Boolean =
+        nowMs >= cachedAtMs && nowMs - cachedAtMs < CACHE_TTL_MS
 
     /** Pure: maps a GitHub `releases/latest` JSON body to a [ReleaseInfo], or null if unusable. */
     fun parseRelease(json: String): ReleaseInfo? {
@@ -43,10 +59,21 @@ object UpdateRepository {
             val version = tag.removePrefix("v").removePrefix("V")
             val notes = cleanNotes(root.optString("body"))
             val url = root.optString("html_url").trim().ifEmpty { RELEASES_URL }
-            ReleaseInfo(versionName = version, notes = notes, releaseUrl = url)
+            ReleaseInfo(versionName = version, notes = notes, releaseUrl = url, apkUrl = apkAssetUrl(root))
         } catch (e: Exception) {
             null
         }
+    }
+
+    /** First asset named `*.apk` (release.yml uploads exactly one, `rusty-vX.Y.Z.apk`). */
+    private fun apkAssetUrl(root: JSONObject): String? {
+        val assets = root.optJSONArray("assets") ?: return null
+        for (i in 0 until assets.length()) {
+            val asset = assets.optJSONObject(i) ?: continue
+            if (!asset.optString("name").endsWith(".apk", ignoreCase = true)) continue
+            return asset.optString("browser_download_url").trim().ifEmpty { null }
+        }
+        return null
     }
 
     private val mdHeader = Regex("""^#{1,6}\s+""")
@@ -97,11 +124,13 @@ object UpdateRepository {
 
     /**
      * I/O: fetches the latest release and compares it to [currentVersion]. Network or
-     * parse failures yield [UpdateStatus.ERROR] — never throws. Cached after the first
-     * successful or failed call for the process lifetime.
+     * parse failures yield [UpdateStatus.ERROR] — never throws. Definitive answers are
+     * cached for [CACHE_TTL_MS]; errors are never cached so the next call retries.
      */
     fun check(currentVersion: String): UpdateCheck {
-        cached?.let { return it }
+        cached?.let { (at, check) ->
+            if (isCacheFresh(at, System.currentTimeMillis())) return check
+        }
         var conn: HttpURLConnection? = null
         val result = try {
             conn = (URL(API_URL).openConnection() as HttpURLConnection).apply {
@@ -135,7 +164,7 @@ object UpdateRepository {
             conn?.disconnect()
         }
         // Only cache a definitive answer; let transient errors retry on next open.
-        if (result.status != UpdateStatus.ERROR) cached = result
+        if (result.status != UpdateStatus.ERROR) cached = System.currentTimeMillis() to result
         return result
     }
 }

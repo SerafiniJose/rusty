@@ -85,3 +85,52 @@ data class ControlSnapshot(
         return root.toString()
     }
 }
+
+/** Router-level outcome of a remote install request; maps 1:1 to an HTTP status. */
+enum class ControlInstallStart { STARTED, NO_UPDATE, BUSY, NO_APK }
+
+/** The newest published release, as the control page needs it. [hasApk]: whether the
+ *  release ships an installable APK asset (without one the Update button is pointless). */
+data class ControlUpdateLatest(
+    val version: String,
+    val notes: String,
+    val url: String,
+    val hasApk: Boolean,
+)
+
+/**
+ * Combined answer for `GET /api/update`: the (cached) GitHub release check plus the live
+ * installer state, so one endpoint serves both the initial render and install polling.
+ * [status] is the wire string: "up_to_date" | "update_available" | "error".
+ */
+data class ControlUpdateCheck(
+    val current: String,
+    val status: String,
+    val latest: ControlUpdateLatest?,
+    val install: InstallSnapshot,
+) {
+    /** Encodes as JSON for the `GET /api/update` contract. `latest` is omitted (not null)
+     *  when absent; `install.progress`/`install.error` likewise. */
+    fun toJson(): String {
+        val root = JSONObject()
+        root.put("current", current)
+        root.put("status", status)
+
+        latest?.let {
+            val latestObj = JSONObject()
+            latestObj.put("version", it.version)
+            latestObj.put("notes", it.notes)
+            latestObj.put("url", it.url)
+            latestObj.put("hasApk", it.hasApk)
+            root.put("latest", latestObj)
+        }
+
+        val installObj = JSONObject()
+        installObj.put("phase", install.phase.name.lowercase())
+        install.progress?.let { installObj.put("progress", it) }
+        install.error?.let { installObj.put("error", it) }
+        root.put("install", installObj)
+
+        return root.toString()
+    }
+}

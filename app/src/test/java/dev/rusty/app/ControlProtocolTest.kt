@@ -53,6 +53,23 @@ private class FakeControlRuntime : ControlRuntime {
 
     var html = "<html><body>control page</body></html>"
     override fun controlPageHtml(): String = html
+
+    var updateCheckResult = ControlUpdateCheck(
+        current = "2.3.0", status = "up_to_date", latest = null,
+        install = InstallSnapshot(InstallPhase.IDLE, null, null),
+    )
+    var updateCheckCalls = 0
+    override fun updateCheck(): ControlUpdateCheck {
+        updateCheckCalls++
+        return updateCheckResult
+    }
+
+    var installStartResult = ControlInstallStart.STARTED
+    var installStartCalls = 0
+    override fun startUpdateInstall(): ControlInstallStart {
+        installStartCalls++
+        return installStartResult
+    }
 }
 
 class ControlProtocolTest {
@@ -457,6 +474,71 @@ class ControlProtocolTest {
         // (Content-Length, Connection), so assert the CORS absence on the WIRE bytes too.
         val rendered = route(req("GET", "/api/state")).render()
         assertTrue(!rendered.contains("Access-Control-", ignoreCase = true))
+    }
+
+    // -- GET /api/update --------------------------------------------------------
+
+    @Test fun getUpdate_returnsCheckJson() {
+        val rt = FakeControlRuntime()
+        rt.updateCheckResult = ControlUpdateCheck(
+            current = "2.3.0", status = "update_available",
+            latest = ControlUpdateLatest("2.4.0", "• notes", "https://x/rel", hasApk = true),
+            install = InstallSnapshot(InstallPhase.DOWNLOADING, 7, null),
+        )
+        val res = route(req("GET", "/api/update"), rt)
+        assertEquals(200, res.status)
+        assertTrue(res.headers.any { it.first == "Content-Type" && it.second.contains("application/json") })
+        assertEquals(rt.updateCheckResult.toJson(), res.body)
+        assertEquals(1, rt.updateCheckCalls)
+    }
+
+    @Test fun getUpdate_disallowedHost_403_runtimeNotCalled() {
+        val rt = FakeControlRuntime()
+        val res = route(req("GET", "/api/update", host = "evil.example.com"), rt)
+        assertEquals(403, res.status)
+        assertEquals(0, rt.updateCheckCalls)
+    }
+
+    // -- POST /api/update/install ------------------------------------------------
+
+    @Test fun postInstall_started_202() {
+        val rt = FakeControlRuntime()
+        rt.installStartResult = ControlInstallStart.STARTED
+        val res = route(req("POST", "/api/update/install", body = "{}"), rt)
+        assertEquals(202, res.status)
+        assertEquals("started", JSONObject(res.body).getString("status"))
+        assertEquals(1, rt.installStartCalls)
+    }
+
+    @Test fun postInstall_noUpdate_409() {
+        val rt = FakeControlRuntime()
+        rt.installStartResult = ControlInstallStart.NO_UPDATE
+        assertEquals(409, route(req("POST", "/api/update/install", body = "{}"), rt).status)
+    }
+
+    @Test fun postInstall_busy_409() {
+        val rt = FakeControlRuntime()
+        rt.installStartResult = ControlInstallStart.BUSY
+        assertEquals(409, route(req("POST", "/api/update/install", body = "{}"), rt).status)
+    }
+
+    @Test fun postInstall_noApk_503() {
+        val rt = FakeControlRuntime()
+        rt.installStartResult = ControlInstallStart.NO_APK
+        assertEquals(503, route(req("POST", "/api/update/install", body = "{}"), rt).status)
+    }
+
+    @Test fun postInstall_withoutJsonContentType_415_notStarted() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/update/install", body = "{}", contentType = "text/plain"), rt)
+        assertEquals(415, res.status)
+        assertEquals(0, rt.installStartCalls)
+    }
+
+    @Test fun getOnInstallPath_404() {
+        val rt = FakeControlRuntime()
+        assertEquals(404, route(req("GET", "/api/update/install"), rt).status)
+        assertEquals(0, rt.installStartCalls)
     }
 
     // -- OPTIONS: no preflight is ever answered ---------------------------------

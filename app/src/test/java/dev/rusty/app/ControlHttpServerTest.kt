@@ -36,6 +36,11 @@ private class FakeControlHttpRuntime : ControlRuntime {
     override fun setFilters(f: ImmichFilters) {}
     override fun immichList(kind: String): ControlImmichResult = ControlImmichResult.Ok(emptyList())
     override fun controlPageHtml(): String = "<html></html>"
+    override fun updateCheck(): ControlUpdateCheck = ControlUpdateCheck(
+        current = "2.3.0", status = "up_to_date", latest = null,
+        install = InstallSnapshot(InstallPhase.IDLE, null, null),
+    )
+    override fun startUpdateInstall(): ControlInstallStart = ControlInstallStart.NO_UPDATE
 }
 
 /** Real loopback sockets, no Android APIs — runs on the JVM, mirroring
