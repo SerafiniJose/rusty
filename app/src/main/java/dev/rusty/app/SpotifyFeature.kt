@@ -1,9 +1,13 @@
 package dev.rusty.app
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
+import android.provider.Settings
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.TextView
@@ -174,8 +178,80 @@ private class SpotifySettingsPanel(
             activity.setCanvasEnabled(isChecked)
         }
 
-        // No subscriptions to release.
-        return {}
+        // ---- Playback takeover -------------------------------------------------
+        val takeoverPageSwitch = panel.findViewById<SwitchMaterial>(R.id.switchTakeoverPage)
+        takeoverPageSwitch.isChecked = activity.isTakeoverPageEnabled
+        takeoverPageSwitch.setOnCheckedChangeListener { _, isChecked ->
+            activity.setTakeoverPageEnabled(isChecked)
+        }
+
+        val takeoverWakeSwitch = panel.findViewById<SwitchMaterial>(R.id.switchTakeoverWake)
+        takeoverWakeSwitch.isChecked = activity.isTakeoverWakeEnabled
+        takeoverWakeSwitch.setOnCheckedChangeListener { _, isChecked ->
+            activity.setTakeoverWakeEnabled(isChecked)
+        }
+
+        val takeoverFrontSwitch = panel.findViewById<SwitchMaterial>(R.id.switchTakeoverFront)
+        val frontSubtitle = panel.findViewById<TextView>(R.id.tvTakeoverFrontSubtitle)
+        val overlayPermissionRow = panel.findViewById<View>(R.id.rowOverlayPermission)
+
+        fun overlayIntent() = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:${activity.packageName}"),
+        )
+
+        // Three states: granted / grantable-but-not-granted / not grantable at all. Many
+        // TV and Fire OS builds ship no "Display over other apps" screen (the manifest
+        // <queries> entry makes this resolveActivity reliable under Android 11+ package
+        // visibility) — a dead switch there would look broken, so it disables with a why.
+        fun refreshOverlayPermissionUi() {
+            val granted = Settings.canDrawOverlays(activity)
+            val grantable = overlayIntent().resolveActivity(activity.packageManager) != null
+            when {
+                granted -> {
+                    takeoverFrontSwitch.isEnabled = true
+                    frontSubtitle.text = "Open over other apps when a cast starts"
+                    overlayPermissionRow.visibility = View.GONE
+                }
+                grantable -> {
+                    takeoverFrontSwitch.isEnabled = true
+                    frontSubtitle.text = "Needs the “Display over other apps” permission"
+                    overlayPermissionRow.visibility =
+                        if (takeoverFrontSwitch.isChecked) View.VISIBLE else View.GONE
+                }
+                else -> {
+                    takeoverFrontSwitch.isEnabled = false
+                    frontSubtitle.text = "Unavailable — this device has no “Display over other apps” setting"
+                    overlayPermissionRow.visibility = View.GONE
+                }
+            }
+        }
+
+        takeoverFrontSwitch.isChecked = activity.isTakeoverFrontEnabled
+        takeoverFrontSwitch.setOnCheckedChangeListener { _, isChecked ->
+            activity.setTakeoverFrontEnabled(isChecked)
+            // Turning it on without the grant goes straight to the system screen — the
+            // missing-activity case must degrade to a no-op, not a crash.
+            if (isChecked && !Settings.canDrawOverlays(activity)) {
+                runCatching { activity.startActivity(overlayIntent()) }
+            }
+            refreshOverlayPermissionUi()
+        }
+        overlayPermissionRow.setOnClickListener {
+            runCatching { activity.startActivity(overlayIntent()) }
+        }
+        refreshOverlayPermissionUi()
+
+        // The dialog has no onResume; window focus returning (e.g. back from the system
+        // grant screen) is the re-check signal — same pattern as the General binder.
+        val overlayFocusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (hasFocus) refreshOverlayPermissionUi()
+        }
+        panel.viewTreeObserver.addOnWindowFocusChangeListener(overlayFocusListener)
+
+        return {
+            panel.viewTreeObserver.removeOnWindowFocusChangeListener(overlayFocusListener)
+        }
     }
 
     private fun showFeedback(view: TextView, message: String, color: Int) {

@@ -54,6 +54,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         override fun handleOnBackPressed() = shellChrome.launcher.collapse()
     }
     private lateinit var screensaver: ScreensaverController
+    private lateinit var takeover: PlaybackTakeoverCoordinator
 
     private val screensaverHost = object : ScreensaverHost {
         // From the screensaver chrome → open straight to the Screensaver tab (not the active
@@ -135,6 +136,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         setContentView(R.layout.activity_home)
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        takeover = (application as RustyApp).takeoverCoordinator
         deviceName = prefs.getString(KEY_DEVICE_NAME, DEFAULT_DEVICE_NAME) ?: DEFAULT_DEVICE_NAME
         bitrateKbps = prefs.getInt(KEY_BITRATE_KBPS, DEFAULT_BITRATE_KBPS)
             .takeIf { it in SUPPORTED_BITRATES_KBPS }
@@ -284,11 +286,17 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             scheduleAutoHide()
         }
         screensaver.onResume()
+        // After screensaver.onResume(): attaching can deliver a pending takeover synchronously,
+        // and the saver dismissal inside it needs the controller resumed.
+        takeover.attachPageConsumer { onPlaybackTakeover() }
         applyKeepScreenOn()
     }
 
     override fun onPause() {
         super.onPause()
+        // Before anything else: past this point the navigator's commitNow is no longer safe,
+        // so no takeover page switch may be delivered.
+        takeover.detachPageConsumer()
         handler.removeCallbacks(autoHideBarsTick)
         screensaver.onPause()
     }
@@ -612,6 +620,23 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         if (featureNavigator.current != FeatureId.SPOTIFY) shellChrome.parkClockInCorner(animate = true)
     }
 
+    /**
+     * A playback-start takeover: land on the Spotify page and clear any saver above it.
+     * The explicit dismiss is required — a saver shown over a non-Spotify feature is
+     * AMBIENT and never auto-blooms on the track-start edge (same pattern as the saver
+     * launcher's switch-then-dismiss at [screensaverHost.launcherEntries]).
+     */
+    private fun onPlaybackTakeover() {
+        switchTo(FeatureId.SPOTIFY)
+        screensaver.dismissToForeground()
+    }
+
+    /** Takeover launches arrive as SINGLE_TOP|CLEAR_TOP re-deliveries; keep the intent fresh. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
     // ---- Test hooks (instrumentation only) ----------------------------------
 
     /** Switches to [id] (drives the retained add/hide/show path). Test-only handle on the private switch. */
@@ -764,6 +789,30 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     /** Persists the Canvas enabled flag (read by [SpotifyFragment] during playback). */
     fun setCanvasEnabled(enabled: Boolean) {
         CanvasSettings.setEnabled(prefs, enabled)
+    }
+
+    /** Whether a playback start switches the visible page to Spotify. Default OFF. */
+    val isTakeoverPageEnabled: Boolean
+        get() = PlaybackTakeoverSettings.isSwitchPageEnabled(prefs)
+
+    fun setTakeoverPageEnabled(enabled: Boolean) {
+        PlaybackTakeoverSettings.setSwitchPage(prefs, enabled)
+    }
+
+    /** Whether a playback start brings the app over other apps. Default OFF. */
+    val isTakeoverFrontEnabled: Boolean
+        get() = PlaybackTakeoverSettings.isBringToFrontEnabled(prefs)
+
+    fun setTakeoverFrontEnabled(enabled: Boolean) {
+        PlaybackTakeoverSettings.setBringToFront(prefs, enabled)
+    }
+
+    /** Whether a playback start wakes the screen. Default OFF. */
+    val isTakeoverWakeEnabled: Boolean
+        get() = PlaybackTakeoverSettings.isWakeScreenEnabled(prefs)
+
+    fun setTakeoverWakeEnabled(enabled: Boolean) {
+        PlaybackTakeoverSettings.setWakeScreen(prefs, enabled)
     }
 
     // ---- Fullscreen / immersive --------------------------------------------

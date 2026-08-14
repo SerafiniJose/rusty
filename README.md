@@ -59,6 +59,7 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 - **Home Assistant media renderer** — optionally expose Rusty as a DLNA media player that Home Assistant auto-discovers as a `media_player` entity (nothing to install on the HA side). Speak TTS announcements ("the wash is done", a doorbell chime, a morning briefing) or stream internet radio to it from automations, scripts, or a dashboard card — Rusty pauses or fades Spotify while the message plays and resumes it afterwards.
 - **Spotify Canvas in now-playing** — optionally fill the now-playing screen with the track's looping Canvas video instead of static album art.
 - **Remote control** — an optional, off-by-default web page and HTTP API the device serves itself: turn the screen on/off, set brightness and media volume, see what's playing, and edit the Slideshow's album/person/tag filters from your phone or laptop. While it's on, the device announces itself on the network so a Home Assistant integration can discover it. See [Remote control](#remote-control).
+- **Playback takeover** — optionally have Rusty react when a phone or laptop starts playing on this receiver: switch the app to the Spotify page, bring it to the front over other apps, and/or wake the screen. Three independent toggles in **Settings → Spotify**, all off by default. See [Playback takeover](#playback-takeover).
 - **On-screen launcher** — an expandable button jumps between Spotify, Home Assistant, and the screensaver.
 - **Start on boot & Keep screen on** — optional toggles to launch Rusty when the device powers on and to hold the display awake while it's in front.
 - **Tabbed settings** — each feature gets its own settings page.
@@ -151,6 +152,25 @@ lives on a home network, and it means:
 So: leave it off unless you want it, and don't enable it on a network you don't trust — a guest
 Wi-Fi, a shared flat, a café. If you need it reachable from outside your home, put it behind your
 own VPN rather than forwarding port 8765.
+
+### Playback takeover
+
+**Settings → Spotify** has three independent toggles, each off by default: **Switch to Spotify on
+playback**, **Bring app to front on playback**, and **Wake screen on playback**. All three react
+only to a genuine new play started from another device — renaming the receiver, changing bitrate,
+or a plain pause/resume won't trigger them.
+
+**Bring app to front** needs Android's **Display over other apps** permission
+(`SYSTEM_ALERT_WINDOW`). Its settings row opens the system grant screen directly; on devices that
+ship no such screen — common on Android TV and Fire OS builds — the toggle disables itself with an
+explanation instead.
+
+Holding that permission is a documented background-activity-launch exemption on Android 10–15, but
+Android 14–16 have progressively hardened background launches, and some OEM builds ignore the
+exemption regardless. A blocked launch is swallowed silently by the platform — there is no way for
+Rusty to detect it — so on an affected device the toggle quietly degrades to the same page switch
+as the first toggle: the Spotify page is simply ready and waiting the next time you open the app,
+and the existing media notification remains the manual way to bring it forward.
 
 ## Install
 

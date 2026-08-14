@@ -2,8 +2,11 @@ package dev.rusty.app
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.os.Handler
+import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.Settings
 
 /**
  * Process-wide bootstrap for the receiver state store and HA dashboard repository.
@@ -24,6 +27,10 @@ class RustyApp : Application() {
 
     /** Process-wide HA dashboard repository. Reach it via [haRepository]. */
     lateinit var haRepository: HomeAssistantDashboardRepository
+        private set
+
+    /** Process-wide playback-takeover driver. See [PlaybackTakeoverCoordinator]. */
+    lateinit var takeoverCoordinator: PlaybackTakeoverCoordinator
         private set
 
     override fun onCreate() {
@@ -87,12 +94,59 @@ class RustyApp : Application() {
         // service to the toggle, which is the retry the bind-failure status model promises. Last,
         // because the service's runtime reads [receiverStore] and must not see it uninitialised.
         ControlService.syncFromPrefs(this)
+
+        // Last: the takeover coordinator reads receiverStore and ScreenControlModel state.
+        takeoverCoordinator = PlaybackTakeoverCoordinator(
+            store = receiverStore,
+            clock = MonotonicClock { SystemClock.elapsedRealtime() },
+            toggles = { PlaybackTakeoverSettings.toggles(prefs) },
+            canDrawOverlays = { Settings.canDrawOverlays(this) },
+            screenDesiredOn = { ScreenControlModel.desired().on },
+            wakeScreen = { fakeOffActive ->
+                if (fakeOffActive) {
+                    // The fake-off is a remote-control command; clearing it must go through
+                    // the model so the API snapshot (and any open control page) sees it. But the
+                    // desired state outlives this Activity (see HomeActivity.onStart), so a
+                    // fake-off that has been sitting behind a stopped/hidden window has already
+                    // let the panel really sleep — flipping the model to "on" alone launches a
+                    // renderer callback that a real display-off has no way to act on. The wake
+                    // lock below is what actually relights the hardware in that case, so it is
+                    // unconditional rather than an alternative to this branch.
+                    ScreenControlModel.set(on = true, brightness = null)
+                }
+                val pm = getSystemService(POWER_SERVICE) as PowerManager
+                @Suppress("DEPRECATION") // the only wake-without-activity mechanism
+                pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                        PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                        PowerManager.ON_AFTER_RELEASE,
+                    "Rusty::PlaybackWake",
+                ).acquire(PLAYBACK_WAKE_TIMEOUT_MS)
+                // ON_AFTER_RELEASE pokes the user-activity timer on release, not just at
+                // acquire: without it the display-off timeout is evaluated against whatever
+                // user activity last happened — possibly long before the device went to sleep —
+                // so the panel can drop straight back to black the instant this 5s lock expires.
+            },
+            launchHome = {
+                // SAW holders are exempt from background-activity-launch blocks on most
+                // builds; where an OEM blocks it anyway the failure is silent — accepted
+                // (documented residual risk), so no fallback attempt here.
+                val intent = Intent(this, HomeActivity::class.java).addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                )
+                runCatching { startActivity(intent) }
+            },
+        )
+        takeoverCoordinator.start()
     }
 
     companion object {
         private const val PREFS_NAME = "spotify_receiver_prefs"
         private const val KEY_DEVICE_NAME = "device_name"
         private const val DEFAULT_DEVICE_NAME = "Rusty Speaker"
+        private const val PLAYBACK_WAKE_TIMEOUT_MS = 5_000L
 
         /** The process-wide store, reachable from any [Context]. */
         fun from(context: Context): ReceiverStateStore =
