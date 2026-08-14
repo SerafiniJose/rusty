@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One foreground-service row on the Services & status page: icon, name, status dot + runtime
+     label, identity, and one context line. Taller than a feature row because it carries the runtime
+     truth. Inflated into llInfoServices with attachToRoot=false, so layout_marginTop here is the
+     inter-row gap. Tapping the row opens the matching settings tab.
+
+     NARROW variant (the default). The status sits on its OWN line under the title rather than beside
+     it. The card is 72% of the display width, so on a 360dp portrait phone the title row has only
+     ~119dp of usable width — less than "Waiting for network" needs on its own at 14sp. Side by side,
+     LinearLayout hands the whole overflow to the single weighted child and measures the title at
+     exactly 0dp: the service name disappears and the status label is clipped rather than ellipsized.
+     res/layout-w600dp/ keeps the concept's single-line header for TV, tablets and landscape, where
+     both fit. Both variants expose the same ids — InfoSheet binds by id. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:background="@drawable/bg_info_row"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="@drawable/bg_tv_focus"
+    android:gravity="center_vertical"
+    android:minHeight="64dp"
+    android:orientation="horizontal"
+    android:paddingStart="14dp"
+    android:paddingTop="12dp"
+    android:paddingEnd="14dp"
+    android:paddingBottom="12dp">
+
+    <ImageView
+        android:id="@+id/ivInfoServiceIcon"
+        android:layout_width="26dp"
+        android:layout_height="26dp"
+        android:importantForAccessibility="no"
+        android:scaleType="centerInside" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="14dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvInfoServiceTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="@font/hanken_semibold"
+            android:maxLines="1"
+            android:text="Spotify Connect"
+            android:textColor="@color/ink"
+            android:textSize="16sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- Tinted at runtime via backgroundTintList; never the only signal — the label beside it
+                 carries the same state in words. -->
+            <View
+                android:id="@+id/viewInfoServiceDot"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:background="@drawable/bg_status_dot" />
+
+            <TextView
+                android:id="@+id/tvInfoServiceStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_medium"
+                android:maxLines="1"
+                android:text="Running"
+                android:textColor="@color/muted"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvInfoServiceIdentity"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:fontFamily="@font/hanken_regular"
+            android:maxLines="1"
+            android:text="Living Room"
+            android:textColor="@color/muted"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tvInfoServiceDetail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:ellipsize="end"
+            android:fontFamily="@font/hanken_regular"
+            android:maxLines="2"
+            android:text="Listening for Spotify · 320 kbps"
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
+    </LinearLayout>
+</LinearLayout>

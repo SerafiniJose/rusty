@@ -32,6 +32,7 @@ object SlideshowSettings {
     const val KEY_TAG_IDS = "immich_tag_ids"
     const val KEY_ACCOUNT_NAME = "immich_account_name"
     const val KEY_VERIFIED = "immich_verified"
+    const val KEY_VERIFY_FAILED = "immich_verify_failed"
     const val KEY_INTERVAL_SECONDS = "immich_interval_seconds"
     const val KEY_SHOW_CLOCK = "immich_show_clock"
     const val KEY_SHOW_INFO = "immich_show_info"
@@ -89,6 +90,18 @@ object SlideshowSettings {
     fun setVerified(prefs: SharedPreferences, verified: Boolean) =
         prefs.edit().putBoolean(KEY_VERIFIED, verified).apply()
 
+    /**
+     * True when the MOST RECENT explicit verification attempt against the STORED server/key failed
+     * (wrong key, or the host didn't answer) — the signal for a red "Connection issue". False means
+     * the last attempt succeeded OR none was ever made, which is the grey "Needs setup" case:
+     * [isVerified] alone cannot tell those two apart, since it is false for both. Cleared by
+     * [saveConnection] on a connection change so a fresh server never inherits the old one's failure.
+     */
+    fun lastVerifyFailed(prefs: SharedPreferences): Boolean = prefs.getBoolean(KEY_VERIFY_FAILED, false)
+
+    fun setLastVerifyFailed(prefs: SharedPreferences, failed: Boolean) =
+        prefs.edit().putBoolean(KEY_VERIFY_FAILED, failed).apply()
+
     /** True when the configured server is plain http, i.e. the API key crosses the LAN in the
      *  clear on every request. Surfaced as a warning in settings rather than blocked: self-hosted
      *  Immich on a LAN commonly has no certificate. */
@@ -120,7 +133,8 @@ object SlideshowSettings {
         secrets.put(KEY_API_KEY, key)
         val edit = prefs.edit().putString(KEY_URL, normalized)
         if (changed) {
-            listOf(KEY_ALBUM_IDS, KEY_PERSON_IDS, KEY_TAG_IDS, KEY_ACCOUNT_NAME, KEY_VERIFIED).forEach { edit.remove(it) }
+            listOf(KEY_ALBUM_IDS, KEY_PERSON_IDS, KEY_TAG_IDS, KEY_ACCOUNT_NAME, KEY_VERIFIED,
+                KEY_VERIFY_FAILED).forEach { edit.remove(it) }
             edit.putInt(KEY_CONNECTION_GEN, connectionGeneration(prefs) + 1)
         }
         edit.apply()

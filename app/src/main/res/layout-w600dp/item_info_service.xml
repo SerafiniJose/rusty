@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- WIDE variant (available screen width >= 600dp: TV, tablets, landscape phones). Keeps the
+     concept's single-line header — title ● status — which only fits once the 72%-wide card has room
+     for both. The default res/layout/ variant stacks the status onto its own line instead; see the
+     comment there. Both variants MUST expose the same ids, since InfoSheet binds by id. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:background="@drawable/bg_info_row"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="@drawable/bg_tv_focus"
+    android:gravity="center_vertical"
+    android:minHeight="64dp"
+    android:orientation="horizontal"
+    android:paddingStart="14dp"
+    android:paddingTop="12dp"
+    android:paddingEnd="14dp"
+    android:paddingBottom="12dp">
+
+    <ImageView
+        android:id="@+id/ivInfoServiceIcon"
+        android:layout_width="26dp"
+        android:layout_height="26dp"
+        android:importantForAccessibility="no"
+        android:scaleType="centerInside" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="14dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- The title carries the weight so it is the one that shrinks: at 72% of a 360dp-wide
+             portrait screen the title + dot + status do not fit side by side, and an un-weighted
+             title would push the runtime label off the card instead of ellipsizing. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tvInfoServiceTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_semibold"
+                android:maxLines="1"
+                android:text="Spotify Connect"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <!-- Tinted at runtime via backgroundTintList; never the only signal — the label below
+                 carries the same state in words. -->
+            <View
+                android:id="@+id/viewInfoServiceDot"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/bg_status_dot" />
+
+            <TextView
+                android:id="@+id/tvInfoServiceStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_medium"
+                android:maxLines="1"
+                android:text="Running"
+                android:textColor="@color/muted"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvInfoServiceIdentity"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:fontFamily="@font/hanken_regular"
+            android:maxLines="1"
+            android:text="Living Room"
+            android:textColor="@color/muted"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tvInfoServiceDetail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:ellipsize="end"
+            android:fontFamily="@font/hanken_regular"
+            android:maxLines="2"
+            android:text="Listening for Spotify · 320 kbps"
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
+    </LinearLayout>
+</LinearLayout>

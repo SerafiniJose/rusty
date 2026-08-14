@@ -8,6 +8,21 @@ import android.view.WindowManager
 /** Fraction of the display width every popup card spans. */
 const val CARD_DIALOG_WIDTH_FRACTION = 0.72f
 
+/** Fraction of the display height the Services & status card's content may grow to before it scrolls. */
+const val INFO_CARD_MAX_HEIGHT_FRACTION = 0.82f
+
+/**
+ * The pixel ceiling for a card's scrolling content, or 0 for "no ceiling".
+ *
+ * This is deliberately NOT [cardDialogSizePx]'s `heightFraction`: that pins the WINDOW to a fixed
+ * height, so a short card on a tall TV would keep a large transparent dead band inside its own window
+ * — and since no card sets `setCanceledOnTouchOutside`, a tap in that band lands inside the window and
+ * does not dismiss. A cap applied to the scroll container instead lets a short page wrap and a long one
+ * scroll, which is what "cap content height at roughly 82% of the display" actually asks for.
+ */
+fun maxCardContentHeightPx(displayHeightPx: Int, fraction: Float): Int =
+    if (fraction <= 0f || displayHeightPx <= 0) 0 else (displayHeightPx * fraction).toInt()
+
 /**
  * The window size a popup card should have on a display of [displayWidthPx] x [displayHeightPx].
  *

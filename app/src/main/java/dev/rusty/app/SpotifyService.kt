@@ -242,7 +242,7 @@ class SpotifyService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
-                "Spotify Receiver Service",
+                "Receiver service",
                 NotificationManager.IMPORTANCE_LOW
             )
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -263,9 +263,9 @@ class SpotifyService : Service() {
         )
 
         return NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Spotify receiver")
+            .setContentTitle("Rusty receiver")
             .setContentText("Listening as \"$currentDeviceName\"")
-            .setSmallIcon(R.drawable.ic_mdi_spotify)
+            .setSmallIcon(R.drawable.ic_stat_receiver)
             .setGroup(ServiceNotifications.GROUP_KEY)
             .setOngoing(true)
             .setContentIntent(openIntent)

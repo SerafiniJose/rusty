@@ -19,7 +19,8 @@ import androidx.core.content.ContextCompat
  * @param context  Used for color resolution and layout inflation (Activity context is fine).
  * @param prefs    The shared prefs instance that stores HA URL/dashboards/selection.
  * @param tvClock  The shared clock TextView that floats above every feature.
- * @param btnInfo  The info button in the shell chrome (hidden when not on Spotify).
+ * @param btnInfo  The info button in the shell chrome (app-wide: Services & status is not
+ *                 feature-specific, so it stays visible on every feature and is HA-tinted).
  * @param btnSettings  The settings (gear) button in the shell chrome — HA-tinted with the clock/toggle.
  * @param haChipBar  The full chip-bar container (visibility toggled by the controller).
  * @param haChipGroup  The ChipGroup inside the bar (chips inflated here).
@@ -67,6 +68,9 @@ class ShellChromeController(
     private val defaultClockColors: ColorStateList = tvClock.textColors
     private val defaultSettingsTint: ColorStateList? = btnSettings.imageTintList
     private val defaultToggleTint: ColorStateList? = toggle.imageTintList
+    // btnInfo carries no XML tint (its vector bakes its own grey), so the captured default is null —
+    // restoring null puts the icon back to exactly the look it has everywhere else.
+    private val defaultInfoTint: ColorStateList? = btnInfo.imageTintList
     /** Last HA text colour reported by the frontend; re-applied when HA returns to the foreground. */
     private var haChromeColor: Int? = null
 
@@ -101,8 +105,9 @@ class ShellChromeController(
      *                  false = cold start / config-change restore).
      */
     fun onFeatureChanged(id: FeatureId, animate: Boolean = false) {
-        // Info button is only relevant over Spotify.
-        btnInfo.visibility = if (id == FeatureId.SPOTIFY) View.VISIBLE else View.GONE
+        // Services & status reports all three foreground services and both integrations, so it is
+        // relevant on every feature — no longer Spotify-only.
+        btnInfo.visibility = View.VISIBLE
         // D-pad routing for the clock lives in SpotifyFragment; over other features remove it from
         // the focus graph so it cannot trap D-pad navigation (it remains touch-tappable).
         if (id != FeatureId.SPOTIFY) tvClock.isFocusable = false
@@ -130,12 +135,17 @@ class ShellChromeController(
         val tint = ColorStateList.valueOf(color)
         tvClock.setTextColor(color)
         btnSettings.imageTintList = tint
+        btnInfo.imageTintList = tint
         toggle.imageTintList = tint
+        // The dashboard chips share the floating chrome's surface, so they follow the same ink.
+        // (No restore counterpart: the chip row is cleared on switch-away and rebuilt on return.)
+        tintChips(color)
     }
 
     private fun restoreChrome() {
         tvClock.setTextColor(defaultClockColors)
         btnSettings.imageTintList = defaultSettingsTint
+        btnInfo.imageTintList = defaultInfoTint
         toggle.imageTintList = defaultToggleTint
     }
 
@@ -169,12 +179,17 @@ class ShellChromeController(
         selected.forEach { dashboard ->
             val chip = inflater.inflate(R.layout.view_dashboard_chip, haChipGroup, false)
                 as com.google.android.material.chip.Chip
-            chip.text = dashboard.title
             // Render the dashboard icon from the bundled full MDI font (falls back to a vector for
-            // non-MDI/brand icons). Size to the chip's chipIconSize (16dp) so it matches the layout.
-            val iconSizePx = (16f * haChipGroup.resources.displayMetrics.density).toInt()
+            // non-MDI/brand icons). Size to the chip's chipIconSize (22dp) so it matches the layout.
+            val iconSizePx = (22f * haChipGroup.resources.displayMetrics.density).toInt()
             chip.chipIcon = HaIcons.iconDrawable(haChipGroup.context, dashboard.icon, iconSizePx)
             chip.isChecked = dashboard.urlPath == activePath
+            // Icon-only pill by default; the active chip carries its title, and a D-pad-focused one
+            // shows it too so a TV user can read what a click would select. The title always stays
+            // available to accessibility.
+            chip.contentDescription = dashboard.title
+            styleChipLabel(chip, dashboard.title)
+            chip.setOnFocusChangeListener { _, _ -> styleChipLabel(chip, dashboard.title) }
             // showDashboard() re-marks the row itself (it owns the optimistic active-path write), so
             // a follow-up refresh here would only rebuild every chip a second time per tap.
             chip.setOnClickListener {
@@ -182,7 +197,35 @@ class ShellChromeController(
             }
             haChipGroup.addView(chip)
         }
+        // A rebuild resets every chip to its XML colors, so the HA theme ink (if reported) has to be
+        // re-applied here — refreshes arrive from chip taps and repo events, not just onFeatureChanged.
+        haChromeColor?.let(::tintChips)
         haChipBar.visibility = View.VISIBLE
+    }
+
+    /** Applies [DashboardChipStyle.label] to [chip] and collapses/expands the text paddings with it,
+     *  so a label-less chip is a circular 44dp icon pill rather than a lopsided one. */
+    private fun styleChipLabel(chip: com.google.android.material.chip.Chip, title: String) {
+        val label = DashboardChipStyle.label(title, active = chip.isChecked, focused = chip.isFocused)
+        chip.text = label
+        val density = chip.resources.displayMetrics.density
+        chip.textStartPadding = if (label.isEmpty()) 0f else 6f * density
+        chip.textEndPadding = if (label.isEmpty()) 0f else 2f * density
+    }
+
+    /** Tints the chips' icon + label ink to HA's reported theme text colour (the active chip keeps
+     *  its accent), matching what [tintChrome] does for the clock/settings/app-selector — a fixed
+     *  near-white ink was unreadable over a light HA theme. */
+    private fun tintChips(color: Int) {
+        val tint = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+            intArrayOf(activeTint, color),
+        )
+        for (i in 0 until haChipGroup.childCount) {
+            val chip = haChipGroup.getChildAt(i) as? com.google.android.material.chip.Chip ?: continue
+            chip.chipIconTint = tint
+            chip.setTextColor(tint)
+        }
     }
 
     // ---- Clock visibility + parking -----------------------------------------

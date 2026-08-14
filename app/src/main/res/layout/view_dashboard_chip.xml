@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- One HA dashboard switcher chip: a round 44dp icon-only pill matching the settings /
+     app-selector buttons beside it. ShellChromeController expands it with its title text while it
+     is the active dashboard or holds D-pad focus (DashboardChipStyle.label), and adjusts the text
+     paddings accordingly — the 11dp symmetric paddings below are the icon-only (circular) shape. -->
 <com.google.android.material.chip.Chip
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -10,9 +14,17 @@
     android:focusable="true"
     android:fontFamily="@font/hanken_regular"
     android:textColor="@color/chip_text_color"
+    app:chipSurfaceColor="@android:color/transparent"
     app:chipBackgroundColor="@color/chip_background_color"
     app:chipStrokeColor="@color/chip_stroke_color"
     app:chipStrokeWidth="1dp"
+    app:chipMinHeight="44dp"
+    app:chipStartPadding="11dp"
+    app:chipEndPadding="11dp"
+    app:iconStartPadding="0dp"
+    app:iconEndPadding="0dp"
+    app:textStartPadding="0dp"
+    app:textEndPadding="0dp"
     app:chipIconVisible="true"
     app:chipIconTint="@color/chip_icon_tint"
-    app:chipIconSize="16dp" />
+    app:chipIconSize="22dp" />

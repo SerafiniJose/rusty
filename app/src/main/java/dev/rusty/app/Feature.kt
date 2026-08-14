@@ -12,7 +12,6 @@ import androidx.fragment.app.Fragment
  * Every method has a safe default so the shell can call through without checking which feature is
  * active. Features implement only the capabilities they actually support.
  *
- *  - [showInfo]             — Spotify: opens the Info bottom sheet. No-op on other features.
  *  - [applyTimeFormat]      — Spotify: re-renders the clock immediately after a 24h toggle.
  *                             No-op on features that don't own a clock view.
  *  - [activeDashboardPath]  — Home Assistant: the url_path currently shown in the WebView, used
@@ -23,7 +22,6 @@ import androidx.fragment.app.Fragment
  *  - [reloadUrl]            — Home Assistant: reloads the WebView at the configured URL. No-op on others.
  */
 interface ShellContribution {
-    fun showInfo() {}
     fun applyTimeFormat(is24Hour: Boolean) {}
     val activeDashboardPath: String? get() = null
     fun showDashboard(dashboard: HomeAssistantDashboards.HaDashboard) {}

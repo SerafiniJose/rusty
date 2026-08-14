@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Only the active chip draws a ring; inactive pills are borderless like the chrome buttons
+     beside them (a fixed dark hairline read as a ring over a light HA theme). -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_checked="true" android:color="@color/accent_fallback" />
-    <item android:color="@color/surface_border" />
+    <item android:color="@android:color/transparent" />
 </selector>

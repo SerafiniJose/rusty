@@ -1,16 +1,12 @@
 package dev.rusty.app
 
-import android.app.Dialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.ColorStateList
-import android.graphics.Color
-import android.net.Uri
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
@@ -21,26 +17,17 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
-import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.palette.graphics.Palette
 import coil.dispose
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import coil.load
-import coil.transform.CircleCropTransformation
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import androidx.annotation.VisibleForTesting
 import java.util.Locale
@@ -112,24 +99,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     // Last visual state we moved D-pad focus for, so we only re-home focus on an idle⇄active
     // edge (not on every per-second render, which would yank focus away from the user).
     private var lastFocusVisual: VisualState? = null
-    private var infoDialog: Dialog? = null
-
-    /** All card dialogs currently open; used to dismiss them on view-destroy. */
-    private val openDialogs = mutableListOf<Dialog>()
-
-    @VisibleForTesting
-    fun openDialogCount(): Int = openDialogs.size
-
     private val handler = Handler(Looper.getMainLooper())
-
-    /** Running build's versionName (e.g. "1.1.0"), read once from the package manager. */
-    private val appVersionName: String by lazy {
-        try {
-            requireContext().packageManager.getPackageInfo(requireContext().packageName, 0).versionName ?: "unknown"
-        } catch (e: Exception) {
-            "unknown"
-        }
-    }
 
     private val store: ReceiverStateStore by lazy { RustyApp.from(requireContext()) }
 
@@ -245,10 +215,6 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         loadedCoverUrl = null
         lastFocusVisual = null
         firstRender = true
-        // Dismiss all open card dialogs so they de-register via their composed listener.
-        openDialogs.toList().forEach { if (it.isShowing) it.dismiss() }
-        openDialogs.clear()
-        infoDialog = null
         canvasController?.stop()
         canvasController = null
         canvasPlayer.animate().cancel()
@@ -483,8 +449,6 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         // genuinely-idle clock.
         clockText.isFocusable = visual == VisualState.ACTIVE
         homeFocusFor(visual)
-
-        infoDialog?.takeIf { it.isShowing }?.let { bindInfoSheet(it, state) }
     }
 
     /**
@@ -515,12 +479,6 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         if (!::rootView.isInitialized || rootView.isInTouchMode) return
         lastFocusVisual = null
         homeFocusFor(dashboardState.visualState())
-    }
-
-    /** Gives a freshly-opened sheet's first control D-pad focus (no-op when opened by touch). */
-    private fun requestInitialFocus(target: View) {
-        if (target.isInTouchMode) return
-        target.post { target.requestFocus() }
     }
 
     /** Transport is actionable only once a controller is connected. */
@@ -603,7 +561,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         }
     }
 
-    /** Maps receiver state to a (status label, dot color) pair for the header and info card. */
+    /** Maps receiver state to a (status label, dot color) pair for the now-playing header. */
     private fun statusInfo(state: ReceiverDashboardState): Pair<String, Int> = when {
         state.status == STATUS_PLAYING -> "Playing" to DOT_GREEN
         state.sessionUser != null -> (if (state.status == "Paused") "Paused" else "Connected") to DOT_AMBER
@@ -627,233 +585,6 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         updateClock()
     }
 
-    // ---- Info sheet ---------------------------------------------------------
-
-    /** Public entry for the screensaver's Info chrome (routed via the shell). */
-    override fun showInfo() = showInfoSheet()
-
-    private fun showInfoSheet() {
-        val view = layoutInflater.inflate(R.layout.bottom_sheet_info, null)
-        val dialog = createCardDialog(view, onDismiss = { infoDialog = null })
-        bindInfoSheet(dialog, dashboardState)
-
-        // About & updates row: shows the running version, opens the About sheet, and lights
-        // an "Update" badge if a newer release is found. The check runs off the main thread
-        // and is cached, so it's cheap on reopen.
-        val updateBadge = view.findViewById<TextView>(R.id.tvUpdateBadge)
-        val aboutRow = view.findViewById<View>(R.id.rowAbout)
-        view.findViewById<TextView>(R.id.tvAboutValue).text = "Version $appVersionName"
-        aboutRow.setOnClickListener { showAboutSheet() }
-        // withContext(IO) cancels UI application when the view is destroyed, but a blocking
-        // network call may still run to its timeout — guard with isAdded + dialog null-check
-        // + isShowing before touching any view.
-        viewLifecycleOwner.lifecycleScope.launch {
-            val check = withContext(Dispatchers.IO) { UpdateRepository.check(appVersionName) }
-            if (!isAdded) return@launch
-            if (infoDialog != null && dialog.isShowing &&
-                check.status == UpdateRepository.UpdateStatus.UPDATE_AVAILABLE) {
-                updateBadge.visibility = View.VISIBLE
-            }
-        }
-
-        infoDialog = dialog
-        dialog.show()
-        requestInitialFocus(aboutRow)
-    }
-
-    // ---- About / updates sheet ---------------------------------------------
-
-    private fun showAboutSheet() {
-        val view = layoutInflater.inflate(R.layout.bottom_sheet_about, null)
-        val dialog = createCardDialog(view)
-
-        val versionLine = view.findViewById<TextView>(R.id.tvAboutVersion)
-        val banner = view.findViewById<View>(R.id.cardUpdateBanner)
-        val bannerText = view.findViewById<TextView>(R.id.tvUpdateBannerText)
-        val statusLine = view.findViewById<TextView>(R.id.tvUpdateStatus)
-        val whatsNewTitle = view.findViewById<TextView>(R.id.tvWhatsNewTitle)
-        val whatsNew = view.findViewById<TextView>(R.id.tvWhatsNew)
-        val downloadButton = view.findViewById<MaterialButton>(R.id.btnDownload)
-        val sourceRow = view.findViewById<View>(R.id.rowSource)
-
-        versionLine.text = "Version $appVersionName"
-        sourceRow.setOnClickListener { openUrl(UpdateRepository.REPO_URL) }
-
-        // withContext(IO) cancels UI application when the view is destroyed, but a blocking
-        // network call may still run to its timeout — guard with isAdded + dialog null-check
-        // + isShowing before touching any view.
-        viewLifecycleOwner.lifecycleScope.launch {
-            val check = withContext(Dispatchers.IO) { UpdateRepository.check(appVersionName) }
-            if (!isAdded) return@launch
-            if (!dialog.isShowing) return@launch
-            when (check.status) {
-                UpdateRepository.UpdateStatus.UPDATE_AVAILABLE -> {
-                    val latest = check.latest!!
-                    statusLine.visibility = View.GONE
-                    banner.visibility = View.VISIBLE
-                    bannerText.text = "Update available · ${latest.versionName}"
-                    if (latest.notes.isNotEmpty()) {
-                        whatsNewTitle.visibility = View.VISIBLE
-                        whatsNew.visibility = View.VISIBLE
-                        whatsNew.text = latest.notes
-                    }
-                    downloadButton.visibility = View.VISIBLE
-                    val apkUrl = latest.apkUrl
-                    if (apkUrl == null) {
-                        // Release without an APK asset — the browser is all we can offer.
-                        downloadButton.setOnClickListener { openUrl(latest.releaseUrl) }
-                    } else {
-                        bindDirectInstall(dialog, downloadButton, statusLine, apkUrl, latest.releaseUrl)
-                    }
-                }
-                UpdateRepository.UpdateStatus.UP_TO_DATE ->
-                    statusLine.text = "You're on the latest version."
-                UpdateRepository.UpdateStatus.ERROR ->
-                    statusLine.text = "Couldn't check for updates. Tap “Source & releases” to check manually."
-            }
-        }
-
-        dialog.show()
-        // "Source & releases" is always present; the Download button only appears once an update
-        // is found, so the source row is the reliable initial focus target.
-        requestInitialFocus(sourceRow)
-    }
-
-    /**
-     * Wires the About sheet's Download button to the in-app installer instead of the browser:
-     * download → system confirm dialog on this screen, no browser round-trip (which on a TV
-     * meant a D-pad fight with a download manager).
-     *
-     * A 500 ms poll — not a listener — drives the label, because the installer is shared with
-     * the remote-control API: an install started from the control page may already be running
-     * when this sheet opens, and the poll picks that up with zero extra wiring. The loop lives
-     * in [androidx.lifecycle.lifecycleScope] and additionally stops with the dialog.
-     *
-     * After a failure the button becomes a browser fallback to [releaseUrl] — whatever broke
-     * the in-app path (disk, network, installer refusal), the release page always works.
-     */
-    private fun bindDirectInstall(
-        dialog: Dialog,
-        button: MaterialButton,
-        statusLine: TextView,
-        apkUrl: String,
-        releaseUrl: String,
-    ) {
-        val installer = ApkInstall.installer(requireContext())
-        button.setOnClickListener {
-            if (installer.snapshot().phase == InstallPhase.ERROR) {
-                openUrl(releaseUrl)
-            } else {
-                installer.start(apkUrl)
-            }
-        }
-        viewLifecycleOwner.lifecycleScope.launch {
-            while (isAdded && dialog.isShowing) {
-                val snap = installer.snapshot()
-                when (snap.phase) {
-                    InstallPhase.IDLE -> {
-                        button.isEnabled = true
-                        button.text = "Download"
-                    }
-                    InstallPhase.DOWNLOADING -> {
-                        button.isEnabled = false
-                        button.text = snap.progress?.let { "Downloading… $it%" } ?: "Downloading…"
-                    }
-                    InstallPhase.AWAITING_CONFIRM -> {
-                        button.isEnabled = false
-                        button.text = "Confirm on screen"
-                    }
-                    InstallPhase.ERROR -> {
-                        button.isEnabled = true
-                        button.text = "Open release page"
-                        statusLine.visibility = View.VISIBLE
-                        statusLine.text = "Install failed: ${snap.error}"
-                    }
-                }
-                delay(500)
-            }
-        }
-    }
-
-    /** Opens [url] in a browser, ignoring the (unlikely) no-browser case rather than crashing. */
-    private fun openUrl(url: String) {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        } catch (e: Exception) {
-            // No browser/handler available — nothing actionable to do.
-        }
-    }
-
-    private fun bindInfoSheet(dialog: Dialog, state: ReceiverDashboardState) {
-        val (statusLabel, dotColor) = statusInfo(state)
-        dialog.findViewById<View>(R.id.viewInfoDot)?.backgroundTintList = ColorStateList.valueOf(dotColor)
-        dialog.findViewById<TextView>(R.id.tvInfoStatus)?.text = statusLabel
-        dialog.findViewById<LinearLayout>(R.id.llInfoListeners)?.let { bindListeners(it, state.listeners) }
-        dialog.findViewById<TextView>(R.id.tvInfoDiscovery)?.text = state.discoveryLine
-        dialog.findViewById<TextView>(R.id.tvInfoService)?.text = state.serviceLine
-        dialog.findViewById<TextView>(R.id.tvInfoAudio)?.text = state.audioLine
-        dialog.findViewById<TextView>(R.id.tvInfoQuality)?.text = "Quality: ${bitrateLabel(shell.currentBitrateKbps)}"
-    }
-
-    /** Renders the session section as listener rows (one today; forward-compatible for Jam). */
-    private fun bindListeners(container: LinearLayout, listeners: List<ReceiverDashboardState.SessionListener>) {
-        if (container.tag == listeners) return
-        container.tag = listeners
-        container.removeAllViews()
-        if (listeners.isEmpty()) {
-            val tv = TextView(requireContext()).apply {
-                text = ReceiverDashboardState.NO_SESSION_LINE
-                setTextColor(ContextCompat.getColor(requireContext(), R.color.muted))
-                textSize = 15f
-                typeface = ResourcesCompat.getFont(requireContext(), R.font.hanken_regular)
-                setPadding(0, (8 * resources.displayMetrics.density).toInt(), 0, 0)
-            }
-            container.addView(tv)
-            return
-        }
-        for (listener in listeners) {
-            val row = layoutInflater.inflate(R.layout.item_session_listener, container, false)
-            row.findViewById<TextView>(R.id.tvListenerName).text = listener.name
-            row.findViewById<TextView>(R.id.tvListenerSubtitle).text = listener.subtitle
-            val avatar = row.findViewById<ImageView>(R.id.ivListenerAvatar)
-            val url = listener.avatarUrl
-            if (!url.isNullOrBlank()) {
-                avatar.load(url) {
-                    crossfade(true)
-                    transformations(CircleCropTransformation())
-                    error(R.drawable.bg_avatar_placeholder)
-                }
-            } else {
-                avatar.setImageResource(R.drawable.bg_avatar_placeholder)
-            }
-            container.addView(row)
-        }
-    }
-
-    /**
-     * Builds a centered, rounded popup-card dialog hosting [view].
-     *
-     * Sets the SOLE dismiss listener which: removes the dialog from [openDialogs],
-     * reasserts immersive mode, and invokes any per-dialog [onDismiss] cleanup.
-     */
-    private fun createCardDialog(view: View, onDismiss: (() -> Unit)? = null): Dialog {
-        val dialog = Dialog(requireContext())
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        dialog.setContentView(view)
-        dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            val width = (resources.displayMetrics.widthPixels * 0.72f).toInt()
-            setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
-        }
-        openDialogs.add(dialog)
-        dialog.setOnDismissListener {
-            openDialogs.remove(dialog)
-            (activity as? HomeActivity)?.reassertImmersiveIfEnabled()
-            onDismiss?.invoke()
-        }
-        return dialog
-    }
-
     // ---- Window insets (host-forwarded) ------------------------------------
 
     /**
@@ -866,13 +597,6 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         val basePad = (BASE_PAD_DP * resources.displayMetrics.density).toInt()
         val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
         contentLayer.setPadding(basePad + bars.left, basePad + bars.top, basePad + bars.right, basePad + bars.bottom)
-    }
-
-    private fun bitrateLabel(value: Int): String = when (value) {
-        96 -> "96 kbps · fastest"
-        160 -> "160 kbps · balanced"
-        320 -> "320 kbps · highest"
-        else -> "$value kbps"
     }
 
     private companion object {

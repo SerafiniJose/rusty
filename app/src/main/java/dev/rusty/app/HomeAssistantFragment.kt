@@ -244,6 +244,17 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
                 if (!HomeAssistantNav.isAuthPath(url)) frontendReady = true
                 runDiscovery(force = false)
                 view?.evaluateJavascript(HomeAssistantNav.kioskJs(), null)
+                // Apply the chosen theme to the live frontend. The onPageStarted localStorage seed only
+                // paints the first frame: once the WebSocket connects, HA replaces hass.selectedTheme
+                // with the account's server-stored theme (and overwrites the seed), so the selection has
+                // to be pushed through HA's own settheme event to stick. See applyThemeJs.
+                if (!HomeAssistantNav.isAuthPath(url)) {
+                    view?.evaluateJavascript(
+                        HomeAssistantNav.applyThemeJs(
+                            prefs.getString(HomeAssistantFeature.KEY_SELECTED_THEME, null),
+                            prefs.getString(HomeAssistantFeature.KEY_SELECTED_THEME_MODE, null)),
+                        null)
+                }
                 // Match the shell to HA's theme: tint the reserved strips (top clock clearance / bottom
                 // chrome clearance) to HA's background so they stop reading as black bands, and tint the
                 // floating chrome (clock, settings, app-selector) to HA's text colour so it stays legible.
@@ -587,6 +598,16 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         @android.webkit.JavascriptInterface
         fun onDiscovery(generation: Long, json: String) {
             repo.submitResult(generation, json)
+            // Mirror the discovered account name into prefs: it lives only inside the live
+            // HaDiscovery.Loaded state, so surfaces that never open this WebView (the Info page)
+            // would otherwise have no way to name the signed-in user after a process restart.
+            // Read back from the repo state rather than re-parsing the JSON, so a stale generation —
+            // which submitResult drops — can never store another server's identity. A payload with no
+            // user object leaves the stored name untouched: a known name is never downgraded to null.
+            // No thread hop: like submitResult above, this touches no view and no requireContext() —
+            // prefs is a process-wide store and apply() writes off the main thread by design.
+            (repo.state as? HaDiscovery.Loaded)?.account?.name?.takeIf { it.isNotBlank() }
+                ?.let { HomeAssistantFeature.setAccountName(prefs, it) }
         }
 
         @android.webkit.JavascriptInterface

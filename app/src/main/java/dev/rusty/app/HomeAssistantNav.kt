@@ -181,6 +181,53 @@ object HomeAssistantNav {
     }
 
     /**
+     * JS that applies the selected theme to the RUNNING Home Assistant frontend, by firing HA's own
+     * `settheme` event on the frontend root — the same event HA's profile theme picker fires.
+     *
+     * [selectedThemeJs] alone is not enough, and this is why: HA does not treat `localStorage` as the
+     * source of truth for the theme. It seeds `hass.selectedTheme` from localStorage on boot (which is
+     * what paints the right theme on the first frame), but on `hassConnected` it also subscribes to the
+     * signed-in user's server-side `frontend_user_data["theme"]`. That subscription fires immediately
+     * with the account's stored value, overwrites `hass.selectedTheme`, re-applies the theme, and then
+     * writes that value straight back over our localStorage entry. So a seeded selection that differs
+     * from the account's survives only until the WebSocket connects — Dark reverts to whatever the
+     * account holds, on every load. Firing `settheme` is what HA itself does: it updates the live
+     * frontend AND persists the choice to the account, so the two agree and it sticks.
+     *
+     * Note this therefore CHANGES the signed-in HA user's own theme preference, exactly as picking a
+     * theme in HA's profile page would. Rusty signs in as its own HA account, so the blast radius is
+     * that account's other sessions.
+     *
+     * Three details the loop depends on:
+     *  - it POLLS: `hass` (and the server value that overrides us) lands well after onPageFinished, so
+     *    a one-shot dispatch races the connection and loses;
+     *  - it compares before dispatching: HA echoes the persisted value back through the same
+     *    subscription, and re-firing an already-applied selection would loop;
+     *  - `dark` is always present in the detail — HA merges `{...current, ...detail}`, so omitting the
+     *    key on Auto would leave an earlier `dark:true` in place instead of clearing it.
+     */
+    fun applyThemeJs(themeName: String?, mode: String?): String {
+        val name = themeName?.trim().orEmpty()
+        val theme = org.json.JSONObject.quote(if (name.isEmpty()) "default" else name)
+        val dark = when (mode?.trim()?.lowercase()) {
+            MODE_LIGHT -> "false"
+            MODE_DARK -> "true"
+            else -> "undefined"
+        }
+        return "(function(){var want={theme:$theme,dark:$dark};var n=0;" +
+            "(function loop(){try{" +
+                "var el=document.querySelector('home-assistant');" +
+                "if(el&&el.hass&&el.hass.themes){" +
+                    "var cur=el.hass.selectedTheme||{};" +
+                    "if(cur.theme!==want.theme||cur.dark!==want.dark){" +
+                        "el.dispatchEvent(new CustomEvent('settheme'," +
+                            "{detail:want,bubbles:true,composed:true}));}}" +
+            "}catch(e){}" +
+            "if(n++<40)setTimeout(loop,300);})();" +
+        "})();"
+    }
+
+    /**
      * JS that samples the Home Assistant frontend's *own* theme colours and reports them to the app
      * through the discovery bridge, so the native shell can match them:
      *  - the background ([RustyHaBridge.onBackgroundColor]) tints the reserved top/bottom strips
@@ -240,9 +287,10 @@ object HomeAssistantNav {
      *    dashboard content is slotted INSIDE it (`hui-view-container` sits in its default slot).
      *    Hiding that host collapses the entire panel to 0x0 — verified on-device, it is what made
      *    tapping e.g. Security from Overview render a blank screen. So for those panels we reach one
-     *    level deeper and paint the `header` element inside the scaffold's OWN shadow root in Rusty
-     *    style (52px, dashboard-matching background, caps-header title), reserving its height via
-     *    `--header-height:52px` so content sits below rather than under the bar.
+     *    level deeper and hide the `header` element inside the scaffold's OWN shadow root, then
+     *    float the app's back control + the page title (caps-header style, theme-inked) over the
+     *    content top-left — mirroring the corner-parked shell clock top-right — so no screen-wide
+     *    strip is reserved and the dashboard keeps its full height.
      *
      * Selectors target current HA — verify on-device (CDP) and tune here if a future HA renames them.
      */
@@ -256,77 +304,53 @@ object HomeAssistantNav {
             '.header{display:none!important;}'+
             '.toolbar{display:none!important;}'+
             'app-header{display:none!important;}';
-          // Panels that DO use the scaffold get a real 52px bar, so reserve its height instead of
-          // collapsing it — otherwise the bar would paint over the first rows of content. No
-          // '.toolbar' kill here: this panel's own bar lives one level deeper (BAR_CSS, inside the
-          // scaffold's shadow root), so a '.toolbar' out here is the panel's CONTENT — History
-          // renders its filter row as one — and blanket-hiding it is exactly the mistake that made
-          // these panels blank in the first place.
-          var PANEL_BAR_CSS=':host{--header-height:52px!important;}'+
+          // Panels that DO use the scaffold hide only the bar INSIDE it (BAR_CSS, one level
+          // deeper). No '.toolbar' kill here: a '.toolbar' out here is the panel's CONTENT —
+          // History renders its filter row as one — and blanket-hiding it is exactly the mistake
+          // that made these panels blank in the first place.
+          var PANEL_BAR_CSS=':host{--header-height:0px!important;}'+
             'app-header{display:none!important;}';
-          // The bar paints on HA's surface, so its INK has to come from HA's theme too. The app's own
-          // ink (#F3EEE7) stays as the fallback and is what a dark theme resolves to anyway, but
-          // hard-coding it made the bar unreadable on a light theme — near-white text and a
+          // The float sits on HA's surface, so its INK has to come from HA's theme too. The app's
+          // own ink (#F3EEE7) stays as the fallback and is what a dark theme resolves to anyway, but
+          // hard-coding it made the old bar unreadable on a light theme — near-white text and a
           // near-white arrow on a near-white background. The accent fill is translucent and reads on
           // both. Same reasoning for the hairline, which was a dark ring on a light surface.
           var INK='var(--primary-text-color,#F3EEE7)';
           var HAIRLINE='var(--divider-color,#2A2730)';
-          // The app's own back control, shared by both bars so they stay one design.
-          var HOME_BTN_CSS=
+          // The floating back control + page title. Replaces the old full-width 52px repainted bar,
+          // which cost every section page a screen-wide strip: the cluster floats over the content
+          // top-left (mirroring the corner-parked shell clock top-right), reserving nothing.
+          // position:fixed inside a shadow root is still viewport-relative, and pointer-events are
+          // confined to the pill so the content under the title stays tappable.
+          var FLOAT_CSS=
+            '#rusty-float{position:fixed;top:12px;left:12px;z-index:9999;'+
+              'display:flex;align-items:center;pointer-events:none;}'+
             '#rusty-home{all:unset;display:inline-flex;align-items:center;justify-content:center;'+
-              'width:40px;height:40px;margin:0 4px 0 8px;border-radius:20px;cursor:pointer;'+
+              'width:40px;height:40px;border-radius:20px;cursor:pointer;pointer-events:auto;'+
               'background:rgba(29,185,84,.10);border:1px solid '+HAIRLINE+';}'+
             '#rusty-home svg{width:22px;height:22px;fill:'+INK+';}'+
-            '#rusty-home:focus{outline:2px solid #1DB954!important;outline-offset:2px;}';
+            '#rusty-home:focus{outline:2px solid #1DB954!important;outline-offset:2px;}'+
+            '#rusty-float-title{margin-left:10px!important;font-size:13px!important;'+
+              'letter-spacing:.18em!important;text-transform:uppercase!important;'+
+              'color:'+INK+'!important;font-weight:600!important;opacity:.92!important;}';
           // Injected into <ha-top-app-bar-fixed>'s own shadow root — never onto the element itself,
-          // which slots the page content. Repaints HA's bar in the app's own language: same colour
-          // as the dashboard behind it (so it reads as one surface, not a strip), caps-header title,
-          // and no divider or shadow.
+          // which slots the page content. Hides HA's bar outright (the float replaces it), unpads
+          // the content wrapper so the reclaimed strip is actually used, and defines the float.
           var BAR_CSS=
-            'header.top-app-bar,header.mdc-top-app-bar{display:flex!important;'+
-              'height:52px!important;min-height:52px!important;'+
-              'background:var(--primary-background-color,#111)!important;'+
-              'color:'+INK+'!important;border-bottom:none!important;'+
-              'box-shadow:none!important;padding:0 4px!important;}'+
-            'header .row,header div.row{height:52px!important;min-height:52px!important;'+
-              'align-items:center!important;}'+
-            'header span.title,.title{font-size:13px!important;letter-spacing:.18em!important;'+
-              'text-transform:uppercase!important;color:'+INK+'!important;'+
-              'font-weight:600!important;opacity:.92!important;}'+
+            'header.top-app-bar,header.mdc-top-app-bar{display:none!important;}'+
             '.top-app-bar-fixed-adjust,.mdc-top-app-bar--fixed-adjust{padding-top:0!important;}'+
-            // Both of these are HA's OWN fallback content for the bar's navigationIcon slot, so a
-            // rule in the bar's shadow root reaches them (a panel that slots its own control from
-            // its light DOM is untouched — that one is real up-navigation, not a duplicate).
-            //  - ha-menu-button opens the sidebar drawer, which this app disables — a dead control;
-            //  - ha-icon-button-arrow-prev is HA's back arrow, rendered whenever a panel is entered
-            //    with ?historyBack=1 (which is how HA's own Overview cards link to Security, Lights,
-            //    Climate…). It lands in the same slot as #rusty-home, so leaving it visible puts TWO
-            //    back arrows side by side; ours wins because it is always present and Rusty-styled.
-            'ha-menu-button,ha-icon-button-arrow-prev{display:none!important;}'+
-            HOME_BTN_CSS;
+            FLOAT_CSS;
           // A Lovelace panel renders its own toolbar inside hui-root instead of a scaffold, and HA
           // puts an ha-icon-button-arrow-prev in it exactly when the current view has somewhere to go
           // back TO — its home panel's area/section views (`/home/areas-salon`), and any dashboard
           // view marked `subview`. Those are reachable only by tapping a card, the chip row cannot
           // represent them, and with the toolbar hidden they had no way back at all. So on those, and
-          // only those, the toolbar is restyled into the same bar rather than hidden — Overview and
-          // the user's own dashboard views report no arrow and stay exactly as they were.
-          var HUI_BAR_CSS=':host{--header-height:52px!important;}'+
-            // Position:fixed, so it never pushes content — the reserved --header-height above is what
-            // keeps the first rows out from under it.
-            '.header{display:block!important;background:var(--primary-background-color,#111)!important;'+
-              'border-bottom:none!important;box-shadow:none!important;}'+
-            '.toolbar{display:flex!important;align-items:center!important;'+
-              'height:52px!important;min-height:52px!important;padding:0 4px!important;'+
-              'background:transparent!important;color:'+INK+'!important;}'+
-            '.main-title{font-size:13px!important;letter-spacing:.18em!important;'+
-              'text-transform:uppercase!important;color:'+INK+'!important;'+
-              'font-weight:600!important;opacity:.92!important;margin:0 0 0 8px!important;}'+
-            // HA's own back arrow is replaced by #rusty-home (see BAR_CSS), and .action-items is the
-            // search / Assist / edit chrome the kiosk hides on every other page — unhiding the
-            // toolbar must not smuggle it back in.
-            'ha-icon-button-arrow-prev,ha-menu-button,.action-items{display:none!important;}'+
-            HOME_BTN_CSS;
+          // only those, the float is injected — Overview and the user's own dashboard views report no
+          // arrow and stay exactly as they were. The whole .header (HA's back arrow, search / Assist /
+          // edit chrome) stays hidden; the float is the only navigation affordance left.
+          var HUI_BAR_CSS=':host{--header-height:0px!important;}'+
+            '.header{display:none!important;}'+
+            FLOAT_CSS;
           function sr(el){return el&&el.shadowRoot;}
           function styled(root, id, css){
             if(!root) return false;
@@ -354,14 +378,15 @@ object HomeAssistantNav {
               hui=lov&&sr(lov)&&sr(lov).querySelector('hui-root');}
             return sr(hui);
           }
-          // The bar's only control, in both bars. HA either offers no back affordance at all (the
-          // scaffold panels) or one that goes somewhere else (a Lovelace subview's arrow walks the
-          // view stack), so the app adds its own; the destination is the app's decision, so the
-          // button just reports the tap.
-          function injectHome(barRoot, containerSel){
-            if(!barRoot || barRoot.querySelector('#rusty-home')) return;
-            var sect=barRoot.querySelector(containerSel);
-            if(!sect) return;
+          // The float's only control, on both panel types. HA either offers no back affordance at
+          // all (the scaffold panels) or one that goes somewhere else (a Lovelace subview's arrow
+          // walks the view stack), so the app adds its own; the destination is the app's decision,
+          // so the button just reports the tap. Injected as a direct child of the shadow root — not
+          // into HA's (hidden) bar — so hiding the bar cannot take it down too.
+          function injectFloat(root){
+            if(!root || root.querySelector('#rusty-float')) return;
+            var f=document.createElement('div');
+            f.id='rusty-float';
             var b=document.createElement('button');
             b.id='rusty-home';
             b.setAttribute('aria-label','Back');
@@ -370,7 +395,21 @@ object HomeAssistantNav {
             b.addEventListener('click',function(){
               try{ if(window.RustyHaBridge) RustyHaBridge.onHomeTap(); }catch(e){}
             });
-            sect.insertBefore(b, sect.firstChild);
+            var t=document.createElement('span');
+            t.id='rusty-float-title';
+            f.appendChild(b); f.appendChild(t);
+            root.appendChild(f);
+          }
+          // The float names the page from HA's own (hidden) bar title, re-synced every pass so a
+          // route change WITHIN one panel (History → a different History view) updates it.
+          function setFloatTitle(root, text){
+            var t=root&&root.querySelector('#rusty-float-title');
+            var v=(text||'').trim();
+            if(t&&t.textContent!==v) t.textContent=v;
+          }
+          function removeFloat(root){
+            var f=root&&root.querySelector('#rusty-float');
+            if(f) f.remove();
           }
           function applyHeader(){
             var pr=sr(activePanel());
@@ -380,12 +419,28 @@ object HomeAssistantNav {
             // live DOM rather than inferred from the path, so it needs no knowledge of which views
             // a dashboard has.
             var deep=!!(hui&&hui.querySelector('.toolbar ha-icon-button-arrow-prev'));
-            // Reserve the bar's height only where a bar will actually be painted.
-            var a=styled(pr,'rusty-kiosk-header',(bar||deep)?PANEL_BAR_CSS:PANEL_FLAT_CSS);
+            var a=styled(pr,'rusty-kiosk-header',bar?PANEL_BAR_CSS:PANEL_FLAT_CSS);
             var b=styled(hui,'rusty-kiosk-header',deep?HUI_BAR_CSS:PANEL_FLAT_CSS);
             var c=styled(sr(bar),'rusty-kiosk-bar',BAR_CSS);
-            if(c) injectHome(sr(bar),'header section');
-            if(deep) injectHome(hui,'.toolbar');
+            if(c){
+              injectFloat(sr(bar));
+              // The bar's shadow .title holds only a <slot>: the text itself is the panel's
+              // light-DOM [slot="title"] child. Read that first; keep the shadow span as a
+              // fallback for a panel that ever writes its title directly.
+              var tt=bar.querySelector('[slot="title"]')||
+                sr(bar).querySelector('header .title,header span.title');
+              setFloatTitle(sr(bar), tt&&tt.textContent);
+            }
+            if(deep){
+              injectFloat(hui);
+              var mt=hui.querySelector('.main-title');
+              setFloatTitle(hui, mt&&mt.textContent);
+            }else{
+              // The float is a SIBLING of hui-root's content, so the flat CSS (which hides the
+              // toolbar) cannot hide it — leaving an area view for a plain dashboard view within
+              // the same panel must remove it explicitly or a stale Back button floats forever.
+              removeFloat(hui);
+            }
             // Not done until a bar present in this panel has been styled AND carries the back
             // control — otherwise the retry stops early and the panel keeps a 52px bar with no way
             // out (injectHome gives up silently while its container hasn't rendered yet), or

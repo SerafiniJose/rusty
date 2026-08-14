@@ -18,7 +18,11 @@ class HaServerResetKeysTest {
         assertTrue(keys.contains("ha_active_dashboard_origin"))
         assertTrue(keys.contains("ha_active_dashboard_path"))
         assertTrue(keys.contains("ha_selected_theme"))
+        // The account name is a mirror of the signed-in identity, so it is server-scoped too: a
+        // different server (or a sign-out) must not leave the previous account's name on the
+        // Services & status page.
+        assertTrue(keys.contains("ha_account_name"))
         assertFalse("the server URL must survive sign-out", keys.contains("ha_url"))
-        assertEquals(6, keys.size)
+        assertEquals(7, keys.size)
     }
 }

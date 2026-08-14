@@ -19,7 +19,7 @@ import org.junit.runner.RunWith
  * Exercises the lifecycle hardening delivered across the whole branch (Tasks 5-8, 11-13, 18-22).
  * Every assertion is expressed via INSPECTABLE state — FragmentManager queries, the
  * [@VisibleForTesting][ReceiverStateStore.listenerCount] accessor, and the
- * [@VisibleForTesting][SpotifyFragment.openDialogCount] accessor — NOT via logcat or StrictMode.
+ * [@VisibleForTesting][HomeActivity.shellDialogCount] accessor — NOT via logcat or StrictMode.
  *
  * ## DEVICE-PENDING
  * These tests compile (verified via `:app:assembleDebugAndroidTest`) but have NOT been executed on
@@ -36,9 +36,10 @@ import org.junit.runner.RunWith
  *    (the enabled-feature count, never growing beyond it).
  *
  * 2. [rotateWithDialogOpen_noAttachedDialogAfterRecreation]
- *    — Open the Info sheet via [SpotifyFragment.showInfo], then `scenario.recreate()`.
- *    After recreation: read [SpotifyFragment.openDialogCount()] → must be 0.
- *    Uses the [@VisibleForTesting] accessor from Task 8 so the assertion is exact.
+ *    — Open the Services & status card via [HomeActivity.openInfo], then `scenario.recreate()`.
+ *    After recreation: read [HomeActivity.shellDialogCount] → must be 0.
+ *    Uses the [@VisibleForTesting] accessor so the assertion is exact. The card is shell-owned, so
+ *    the teardown under test is [HomeActivity.onDestroy], not a fragment's view-destroy.
  *
  * 3. [backgroundForeground_withScreensaverShowing_noListenerLeak]
  *    — Record the store's baseline [ReceiverStateStore.listenerCount] before showing the
@@ -140,43 +141,28 @@ class LifecycleStressTest {
         }
     }
 
-    // ---- 2. Rotate with Info dialog open → 0 attached dialogs after recreation ---
+    // ---- 2. Rotate with the Info card open → 0 tracked dialogs after recreation ---
 
     /**
-     * Open the Spotify Info sheet, then force a configuration-change (recreate). After recreation
-     * the new [SpotifyFragment] instance must report 0 open dialogs via the
-     * [@VisibleForTesting][SpotifyFragment.openDialogCount] accessor (Task 8).
+     * Open the shell-owned Services & status card, then force a recreate. The NEW [HomeActivity]
+     * must track no dialogs — the old instance's [HomeActivity.onDestroy] dismisses whatever it was
+     * showing, which is also what runs the card's listener cleanup.
      *
-     * Inspectable state: [SpotifyFragment.openDialogCount()] — exact count, not logcat.
+     * Inspectable state: [HomeActivity.shellDialogCount] — an exact count, not logcat.
      */
     @Test
     fun rotateWithDialogOpen_noAttachedDialogAfterRecreation() {
         ActivityScenario.launch(HomeActivity::class.java).use { scenario ->
-            // Open the Info sheet before the rotation.
-            scenario.onActivity { activity ->
-                val fragment = activity.supportFragmentManager
-                    .findFragmentById(R.id.featureContainer)
-                if (fragment is SpotifyFragment) {
-                    fragment.showInfo()
-                }
-            }
+            scenario.onActivity { activity -> activity.openInfo() }
 
-            // Force a configuration change (onDestroy → onDestroyView → dismiss all open dialogs).
             scenario.recreate()
 
-            // After recreation the NEW fragment instance must have no open dialogs.
             scenario.onActivity { activity ->
-                val fragment = activity.supportFragmentManager
-                    .findFragmentById(R.id.featureContainer)
-                if (fragment is SpotifyFragment) {
-                    assertEquals(
-                        "openDialogCount() must be 0 after configuration-change recreation",
-                        0,
-                        fragment.openDialogCount(),
-                    )
-                }
-                // Sanity: the activity itself survived.
-                assertNotNull("Activity must be non-null after recreate", activity)
+                assertEquals(
+                    "shellDialogCount() must be 0 after recreation",
+                    0,
+                    activity.shellDialogCount(),
+                )
             }
         }
     }

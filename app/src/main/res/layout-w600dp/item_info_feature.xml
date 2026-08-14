@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- WIDE variant (available screen width >= 600dp). Single-line header — title ✓ status — as in
+     the concept. The default res/layout/ variant stacks the status; both expose the same ids. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:background="@drawable/bg_info_row"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="@drawable/bg_tv_focus"
+    android:gravity="center_vertical"
+    android:minHeight="48dp"
+    android:orientation="horizontal"
+    android:paddingStart="14dp"
+    android:paddingTop="10dp"
+    android:paddingEnd="14dp"
+    android:paddingBottom="10dp">
+
+    <ImageView
+        android:id="@+id/ivInfoFeatureIcon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:importantForAccessibility="no"
+        android:scaleType="centerInside" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="14dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- Weighted title, same reason as item_info_service: it ellipsizes rather than pushing
+             the check mark and status label off a narrow card. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tvInfoFeatureTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_medium"
+                android:maxLines="1"
+                android:text="Home Assistant"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <ImageView
+                android:id="@+id/ivInfoFeatureMark"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_marginStart="8dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_mdi_check_circle"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvInfoFeatureStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_medium"
+                android:maxLines="1"
+                android:text="Connected"
+                android:textColor="@color/muted"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvInfoFeatureDetail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:fontFamily="@font/hanken_regular"
+            android:maxLines="1"
+            android:text="Signed in as Marco · 3 dashboards"
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:fontFamily="@font/hanken_regular"
+        android:importantForAccessibility="no"
+        android:text="›"
+        android:textColor="@color/muted_dim"
+        android:textSize="18sp" />
+</LinearLayout>

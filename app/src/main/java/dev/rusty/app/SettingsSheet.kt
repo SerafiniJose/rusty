@@ -48,7 +48,7 @@ object SettingsSheet {
         SettingsTabKey.SCREENSAVER -> Tab(key, "Screensaver", R.drawable.ic_mdi_weather_night, R.layout.settings_panel_screensaver)
         SettingsTabKey.SLIDESHOW -> Tab(key, "Slideshow", R.drawable.ic_mdi_image, R.layout.settings_panel_slideshow)
         SettingsTabKey.DLNA_PLAYER -> Tab(key, "DLNA Player", R.drawable.ic_mdi_dlna, R.layout.settings_panel_dlna_player)
-        SettingsTabKey.SPOTIFY -> Tab(key, "Spotify", R.drawable.ic_mdi_spotify, R.layout.settings_panel_spotify)
+        SettingsTabKey.SPOTIFY -> Tab(key, "Spotify", R.drawable.ic_music_note, R.layout.settings_panel_spotify)
         SettingsTabKey.HOME_ASSISTANT -> Tab(key, "Home Assistant", R.drawable.ic_mdi_home_assistant, R.layout.settings_panel_home_assistant)
     }
 

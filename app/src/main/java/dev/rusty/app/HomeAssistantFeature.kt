@@ -31,6 +31,11 @@ object HomeAssistantFeature : Feature {
     // display preference that applies to the built-in default theme (present on every server), so it
     // survives a server change while the custom-theme NAME (KEY_SELECTED_THEME) resets.
     const val KEY_SELECTED_THEME_MODE = "ha_selected_theme_mode"
+    // Display name of the signed-in HA account, mirrored out of the live discovery payload. The name
+    // otherwise exists ONLY inside HaDiscovery.Loaded, which needs the HA WebView open to be produced
+    // — so without this key any surface outside the HA feature (the Info page) could say "Connected"
+    // but never "Signed in as Marco" after a process restart. Server-scoped, hence SERVER_RESET_KEYS.
+    const val KEY_ACCOUNT_NAME = "ha_account_name"
 
     /** Pref keys wiped whenever the active HA server session is reset — on a server-URL change AND on
      *  sign-out. Excludes [KEY_URL]: the server address is preserved across sign-out. Shared by the
@@ -42,7 +47,22 @@ object HomeAssistantFeature : Feature {
         HomeAssistantFragment.KEY_ACTIVE_DASHBOARD_ORIGIN,
         HomeAssistantFragment.KEY_ACTIVE_DASHBOARD_PATH,
         KEY_SELECTED_THEME,
+        KEY_ACCOUNT_NAME,
     )
+
+    /** The persisted display name of the signed-in account, or null when discovery has never named
+     *  one (or a server change / sign-out wiped it). Mirrors [SlideshowSettings.accountName]. */
+    fun accountName(prefs: SharedPreferences): String? =
+        prefs.getString(KEY_ACCOUNT_NAME, null)?.takeIf { it.isNotBlank() }
+
+    /** Persists the discovered account name. A null or blank [name] REMOVES the key rather than
+     *  storing an empty identity, so `contains` and [accountName] can never disagree. */
+    fun setAccountName(prefs: SharedPreferences, name: String?) {
+        val edit = prefs.edit()
+        if (name.isNullOrBlank()) edit.remove(KEY_ACCOUNT_NAME)
+        else edit.putString(KEY_ACCOUNT_NAME, name)
+        edit.apply()
+    }
 
     override val id = FeatureId.HOME_ASSISTANT
     override val title = "Home Assistant"

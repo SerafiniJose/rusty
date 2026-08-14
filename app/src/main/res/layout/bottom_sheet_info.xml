@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Services & status: the app-wide info page. Header + aggregate summary, then three runtime
+     service rows (Spotify Connect, DLNA Player, Remote Control) inflated into llInfoServices, then
+     the configured integrations inflated into llInfoFeatures, then the About & updates row.
+     The features divider + header are hidden together when there is no connected feature.
+     Height is capped at ~82% of the display by MaxHeightNestedScrollView so the card stays
+     dismissible in every orientation. -->
+<dev.rusty.app.MaxHeightNestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/infoScroll"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@android:color/transparent">
+    android:background="@android:color/transparent"
+    android:fillViewport="false">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -15,101 +23,59 @@
         android:paddingBottom="24dp">
 
         <TextView
+            android:id="@+id/tvInfoTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Session &amp; receiver health"
+            android:fontFamily="@font/bricolage_bold"
+            android:text="Services &amp; status"
             android:textColor="@color/ink"
-            android:textSize="20sp"
-            android:fontFamily="@font/bricolage_bold" />
+            android:textSize="20sp" />
 
-        <!-- Status line: dot + label -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <View
-                android:id="@+id/viewInfoDot"
-                android:layout_width="12dp"
-                android:layout_height="12dp"
-                android:background="@drawable/bg_status_dot" />
-
-            <TextView
-                android:id="@+id/tvInfoStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:text="Waiting"
-                android:textColor="@color/ink"
-                android:textSize="16sp"
-                android:fontFamily="@font/hanken_semibold" />
-        </LinearLayout>
-
+        <!-- Aggregate runtime summary, e.g. "2 services running · 1 off". Bound at runtime. -->
         <TextView
+            android:id="@+id/tvInfoSummary"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="Session"
-            android:textColor="@color/muted_dim"
-            android:textSize="13sp"
-            android:letterSpacing="0.08"
-            android:textAllCaps="true"
-            android:fontFamily="@font/hanken_semibold" />
-
-        <LinearLayout
-            android:id="@+id/llInfoListeners"
-            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
+            android:fontFamily="@font/hanken_regular"
+            android:text=""
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
+
+        <!-- Service rows (item_info_service) are inflated here, in spec order. -->
+        <LinearLayout
+            android:id="@+id/llInfoServices"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
             android:orientation="vertical" />
 
         <View
+            android:id="@+id/viewInfoFeaturesDivider"
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="16dp"
-            android:layout_marginBottom="14dp"
             android:background="@color/surface_border" />
 
         <TextView
-            android:id="@+id/tvInfoDiscovery"
-            android:layout_width="match_parent"
+            android:id="@+id/tvInfoFeaturesHeader"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Discovery: active"
-            android:textColor="@color/muted"
-            android:textSize="15sp"
-            android:fontFamily="@font/hanken_regular" />
+            android:layout_marginTop="14dp"
+            android:fontFamily="@font/hanken_regular"
+            android:letterSpacing="0.12"
+            android:text="CONNECTED FEATURES"
+            android:textAllCaps="true"
+            android:textColor="@color/muted_dim"
+            android:textSize="12sp" />
 
-        <TextView
-            android:id="@+id/tvInfoService"
+        <!-- Feature rows (item_info_feature) are inflated here; empty when nothing is configured. -->
+        <LinearLayout
+            android:id="@+id/llInfoFeatures"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Service: listening for Spotify"
-            android:textColor="@color/muted"
-            android:textSize="15sp"
-            android:fontFamily="@font/hanken_regular" />
-
-        <TextView
-            android:id="@+id/tvInfoAudio"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Audio: AAudio • Cache: app cache"
-            android:textColor="@color/muted"
-            android:textSize="15sp"
-            android:fontFamily="@font/hanken_regular" />
-
-        <TextView
-            android:id="@+id/tvInfoQuality"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Quality: 160 kbps · balanced"
-            android:textColor="@color/muted"
-            android:textSize="15sp"
-            android:fontFamily="@font/hanken_regular" />
+            android:layout_marginTop="4dp"
+            android:orientation="vertical" />
 
         <View
             android:layout_width="match_parent"
@@ -127,7 +93,10 @@
             android:background="?android:attr/selectableItemBackground"
             android:foreground="@drawable/bg_tv_focus"
             android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:minHeight="48dp"
+            android:orientation="horizontal"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp">
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -178,4 +147,4 @@
                 android:textSize="18sp" />
         </LinearLayout>
     </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+</dev.rusty.app.MaxHeightNestedScrollView>

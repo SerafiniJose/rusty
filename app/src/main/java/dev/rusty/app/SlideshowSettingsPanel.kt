@@ -390,10 +390,15 @@ class SlideshowSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPa
                     if (configChanged) add("Filters reset for the new server.")
                     if (unavailable.isNotEmpty()) add("Unavailable: ${unavailable.joinToString(", ")}.")
                 }.joinToString(" ")
+                // Every branch below also settles SlideshowSettings.setLastVerifyFailed: this `when` is
+                // the only place an explicit verification verdict is reached, so a branch that left the
+                // flag alone would strand the previous attempt's verdict on the current one — showing a
+                // red "Connection issue" on the Info page for a key that just verified, or vice versa.
                 when (val outcome = SlideshowSaveModel.of(user, probes)) {
                     is SlideshowSaveResult.SignedIn -> {
                         SlideshowSettings.setAccountName(prefs, outcome.name)
                         SlideshowSettings.setVerified(prefs, true)
+                        SlideshowSettings.setLastVerifyFailed(prefs, false)
                         renderSummaries()
                         showFeedback(feedback,
                             withExtras("✓ Signed in as ${outcome.name}.", outcome.unavailable),
@@ -403,6 +408,7 @@ class SlideshowSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPa
                         // Key works for the slideshow; the name just isn't readable with this scoped
                         // key. Header becomes "{host} · key saved" (verified, renderSummaries reads no name).
                         SlideshowSettings.setVerified(prefs, true)
+                        SlideshowSettings.setLastVerifyFailed(prefs, false)
                         renderSummaries()
                         showFeedback(feedback,
                             withExtras("✓ Saved. Account name unavailable — the API key lacks user access.",
@@ -413,10 +419,12 @@ class SlideshowSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPa
                     // typed and can be corrected), but it is NOT verified — re-render so the header
                     // drops the optimistic "key saved" and reads "Key not verified" instead of lying.
                     SlideshowSaveResult.InvalidKey -> {
+                        SlideshowSettings.setLastVerifyFailed(prefs, true)
                         renderSummaries()
                         showFeedback(feedback, "✗ Couldn't sign in — check the API key.", HaFeedbackKind.ERROR)
                     }
                     SlideshowSaveResult.Unreachable -> {
+                        SlideshowSettings.setLastVerifyFailed(prefs, true)
                         renderSummaries()
                         showFeedback(feedback, "✗ Couldn't reach the server.", HaFeedbackKind.ERROR)
                     }

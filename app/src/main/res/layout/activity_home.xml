@@ -98,7 +98,7 @@
                 android:layout_height="44dp"
                 android:layout_marginStart="10dp"
                 android:background="@drawable/bg_chrome_pill"
-                android:contentDescription="Session and receiver health"
+                android:contentDescription="Services and status"
                 android:foreground="@drawable/bg_tv_focus"
                 android:nextFocusUp="@id/btnNext"
                 android:nextFocusLeft="@id/btnSettings"

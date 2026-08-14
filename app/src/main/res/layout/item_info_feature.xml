@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One configured-integration row (Home Assistant, Immich Slideshow) on the Services & status
+     page: a compact navigation row with a chevron. The green check mark is shown only for the
+     Connected state; every other state is carried by the text label alone. Inflated into
+     llInfoFeatures with attachToRoot=false, so layout_marginTop here is the inter-row gap.
+
+     NARROW variant (the default): the status goes on its own line under the title, for the same
+     reason as item_info_service.xml — beside the title, the unweighted status and the 16dp check
+     mark squeeze the weighted title down to a couple of characters on a 360dp portrait card.
+     res/layout-w600dp/ keeps the single-line header. Both variants expose the same ids. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:background="@drawable/bg_info_row"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="@drawable/bg_tv_focus"
+    android:gravity="center_vertical"
+    android:minHeight="48dp"
+    android:orientation="horizontal"
+    android:paddingStart="14dp"
+    android:paddingTop="10dp"
+    android:paddingEnd="14dp"
+    android:paddingBottom="10dp">
+
+    <ImageView
+        android:id="@+id/ivInfoFeatureIcon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:importantForAccessibility="no"
+        android:scaleType="centerInside" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="14dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvInfoFeatureTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="@font/hanken_medium"
+            android:maxLines="1"
+            android:text="Home Assistant"
+            android:textColor="@color/ink"
+            android:textSize="16sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/ivInfoFeatureMark"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginEnd="6dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_mdi_check_circle"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvInfoFeatureStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_medium"
+                android:maxLines="1"
+                android:text="Connected"
+                android:textColor="@color/muted"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvInfoFeatureDetail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:fontFamily="@font/hanken_regular"
+            android:maxLines="1"
+            android:text="Signed in as Marco · 3 dashboards"
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:fontFamily="@font/hanken_regular"
+        android:importantForAccessibility="no"
+        android:text="›"
+        android:textColor="@color/muted_dim"
+        android:textSize="18sp" />
+</LinearLayout>

@@ -126,6 +126,52 @@ class HomeAssistantNavTest {
         assertTrue(js.contains("{\"theme\":\"My \\\"Dark\\\" Theme\"}"))
     }
 
+    // ---- HomeAssistantNav.applyThemeJs --------------------------------------
+
+    @Test fun applyThemeJsDispatchesSetthemeOnTheFrontendRoot() {
+        // The seeded localStorage value only survives until HA's connection pushes the account's
+        // server-stored theme over it, so the selection must also be applied through HA's own
+        // 'settheme' event (which updates the running frontend AND persists the preference).
+        val js = HomeAssistantNav.applyThemeJs(null, HomeAssistantNav.MODE_DARK)
+        assertTrue(js.contains("document.querySelector('home-assistant')"))
+        assertTrue(js.contains("new CustomEvent('settheme'"))
+        assertTrue(js.contains("bubbles:true"))
+        assertTrue(js.contains("composed:true"))
+    }
+
+    @Test fun applyThemeJsCarriesDarkFlagForEachMode() {
+        assertTrue(HomeAssistantNav.applyThemeJs(null, HomeAssistantNav.MODE_DARK)
+            .contains("{theme:\"default\",dark:true}"))
+        assertTrue(HomeAssistantNav.applyThemeJs(null, HomeAssistantNav.MODE_LIGHT)
+            .contains("{theme:\"default\",dark:false}"))
+        // Auto carries dark:undefined — the key must still be PRESENT so HA's `{...current, ...detail}`
+        // merge clears any dark flag we set earlier; omitting it would leave the old value in place.
+        assertTrue(HomeAssistantNav.applyThemeJs(null, HomeAssistantNav.MODE_AUTO)
+            .contains("{theme:\"default\",dark:undefined}"))
+        assertTrue(HomeAssistantNav.applyThemeJs("Noctis", HomeAssistantNav.MODE_DARK)
+            .contains("{theme:\"Noctis\",dark:true}"))
+    }
+
+    @Test fun applyThemeJsOnlyDispatchesOnMismatch() {
+        // HA echoes the persisted value back through its user-data subscription; re-dispatching an
+        // already-applied selection would loop, so the poll compares before firing.
+        val js = HomeAssistantNav.applyThemeJs(null, HomeAssistantNav.MODE_DARK)
+        assertTrue(js.contains("cur.theme!==want.theme||cur.dark!==want.dark"))
+    }
+
+    @Test fun applyThemeJsRetriesUntilTheFrontendIsConnected() {
+        // hass (and the server-stored theme that overrides us) lands well after onPageFinished, so a
+        // one-shot dispatch races it — the loop keeps re-checking for a bounded window.
+        val js = HomeAssistantNav.applyThemeJs(null, HomeAssistantNav.MODE_DARK)
+        assertTrue(js.contains("el.hass"))
+        assertTrue(js.contains("setTimeout(loop"))
+    }
+
+    @Test fun applyThemeJsEscapesQuotesInName() {
+        assertTrue(HomeAssistantNav.applyThemeJs("My \"Dark\" Theme", HomeAssistantNav.MODE_AUTO)
+            .contains("theme:\"My \\\"Dark\\\" Theme\""))
+    }
+
     // ---- parseCssColorToArgb ------------------------------------------------
 
     @Test fun parseCssColor_rgb() {
@@ -195,17 +241,38 @@ class HomeAssistantNavTest {
         assertTrue(js.contains("top-app-bar-fixed-adjust"))    // and un-pad the content wrapper
     }
 
-    @Test fun kioskJs_paintsARustyBarInsteadOfHidingIt() {
-        // The scaffold's inner header is restyled, not hidden: it is the only place a user on a
-        // section panel can be told where they are and get back from.
+    @Test fun kioskJs_floatsBackAndTitleInsteadOfPaintingABar() {
+        // The 52px painted bar cost a full-width strip; the back control + page title now FLOAT
+        // over the content (mirroring the corner-parked clock top-right), and HA's inner bar is
+        // hidden outright — its height reclaimed for the dashboard.
         val js = HomeAssistantNav.kioskJs()
-        assertFalse(js.contains("header.top-app-bar,header.mdc-top-app-bar{display:none"))
-        assertTrue(js.contains("header.top-app-bar,header.mdc-top-app-bar{display:flex!important;"))
-        assertTrue(js.contains("height:52px!important;"))
-        // Same colour as the dashboard behind it — no seam, and it follows the HA theme.
-        assertTrue(js.contains("background:var(--primary-background-color,#111)!important;"))
-        assertTrue(js.contains("border-bottom:none!important;"))
-        assertTrue(js.contains("box-shadow:none!important;"))
+        assertTrue(js.contains("header.top-app-bar,header.mdc-top-app-bar{display:none!important;}"))
+        assertTrue(js.contains("#rusty-float{position:fixed"))
+        assertTrue(js.contains("#rusty-float-title"))
+        // No painted strip left anywhere.
+        assertFalse(js.contains("height:52px!important;"))
+        assertFalse(js.contains("background:var(--primary-background-color,#111)!important;"))
+    }
+
+    @Test fun kioskJs_reservesNoHeaderStrip() {
+        // The floating design must not reserve header height on any panel type — every path
+        // collapses HA's header entirely, or dashboards would keep a 52px empty gap.
+        val js = HomeAssistantNav.kioskJs()
+        assertFalse(js.contains("--header-height:52px"))
+        assertTrue(js.contains("--header-height:0px!important"))
+    }
+
+    @Test fun kioskJs_floatTitleMirrorsHasHiddenBarTitle() {
+        // The title text is read from HA's own (hidden) bar and re-synced on every pass so a route
+        // change within one panel updates it. On scaffold panels the bar's shadow `.title` holds
+        // only a <slot> (no text of its own) — the real text is the panel's light-DOM
+        // `[slot="title"]` element, so that is read first, the shadow span kept as a fallback.
+        // Deep Lovelace views name it in `.main-title`.
+        val js = HomeAssistantNav.kioskJs()
+        assertTrue(js.contains("function setFloatTitle("))
+        assertTrue(js.contains("""querySelector('[slot="title"]')"""))
+        assertTrue(js.contains("header .title,header span.title"))
+        assertTrue(js.contains(".main-title"))
     }
 
     @Test fun kioskJs_titleUsesTheAppsCapsHeaderTreatment() {
@@ -213,6 +280,14 @@ class HomeAssistantNavTest {
         assertTrue(js.contains("text-transform:uppercase!important;"))
         assertTrue(js.contains("letter-spacing:.18em!important;"))
         assertTrue(js.contains("color:'+INK+'!important;"))
+    }
+
+    @Test fun kioskJs_floatIsRemovedWhenTheViewNoLongerNeedsAWayBack() {
+        // The float is injected as a SIBLING of hui-root's content, so the flat CSS that hides the
+        // toolbar cannot hide it — navigating from an area view back to a plain dashboard view
+        // within the same panel must remove it explicitly or a stale Back button floats forever.
+        val js = HomeAssistantNav.kioskJs()
+        assertTrue(js.contains("removeFloat("))
     }
 
     @Test fun kioskJs_theBarsInkFollowsTheThemeToo() {
@@ -230,50 +305,36 @@ class HomeAssistantNavTest {
         assertFalse(code.contains("1px solid #2A2730"))
     }
 
-    @Test fun kioskJs_hidesHasOwnNavigationControlsInTheBar() {
-        // Both are HA's own fallback content for the bar's navigationIcon slot, which is exactly
-        // where #rusty-home is inserted:
-        //  - ha-menu-button opens the sidebar drawer, which the app disables — a dead control;
-        //  - ha-icon-button-arrow-prev is HA's back arrow, rendered whenever a panel is entered with
-        //    ?historyBack=1 — which is how HA's own Overview cards link to Security/Lights/Climate.
-        //    Left visible it put a SECOND back arrow right beside ours.
+    @Test fun kioskJs_panelCssIsChosenByWhatThePanelRenders() {
+        // Scaffold panels must NOT get the flat CSS (its `.toolbar` kill would hide their content —
+        // History renders its filter row as one); everything else must, or classic Lovelace keeps
+        // its own header. The deep hui case gets its own CSS from HA's live back-arrow signal.
         val js = HomeAssistantNav.kioskJs()
-        assertTrue(js.contains("ha-menu-button,ha-icon-button-arrow-prev{display:none!important;}"))
-    }
-
-    @Test fun kioskJs_reservesTheBarsHeightOnlyWhereABarIsPainted() {
-        // A panel that paints a bar reserves 52px so content sits below it; everything else stays
-        // fully collapsed, or an ordinary dashboard would gain a 52px empty gap where its hidden
-        // header was. The `.header` in the deep case is position:fixed, so this reservation — not
-        // document flow — is what keeps the first rows out from under it.
-        val js = HomeAssistantNav.kioskJs()
-        assertTrue(js.contains("':host{--header-height:52px!important;}'"))
-        assertTrue(js.contains("':host{--header-height:0px!important;}'"))
-        assertTrue(js.contains("(bar||deep)?PANEL_BAR_CSS:PANEL_FLAT_CSS"))
+        assertTrue(js.contains("bar?PANEL_BAR_CSS:PANEL_FLAT_CSS"))
         assertTrue(js.contains("deep?HUI_BAR_CSS:PANEL_FLAT_CSS"))
     }
 
-    @Test fun kioskJs_restylesALovelaceToolbarThatHasSomewhereToGoBackTo() {
+    @Test fun kioskJs_floatsOverALovelaceViewThatHasSomewhereToGoBackTo() {
         // HA puts an ha-icon-button-arrow-prev in a Lovelace toolbar exactly when the current view
         // has a back destination — its home panel's area views, and any `subview`. Those are
-        // reachable only by tapping a card and no chip can represent them, so hiding the toolbar
-        // (as every other Lovelace page does) left NO way back at all. Read from the live DOM, so
-        // Overview and the user's own dashboards report no arrow and are untouched.
+        // reachable only by tapping a card and no chip can represent them, so those (and only
+        // those) get the floating back control. Read from the live DOM, so Overview and the user's
+        // own dashboards report no arrow and are untouched.
         val js = HomeAssistantNav.kioskJs()
         assertTrue(js.contains("var deep=!!(hui&&hui.querySelector('.toolbar ha-icon-button-arrow-prev'));"))
-        assertTrue(js.contains("if(deep) injectHome(hui,'.toolbar');"))
+        assertTrue(js.contains("injectFloat(hui)"))
     }
 
-    @Test fun kioskJs_theDeepBarKeepsHasChromeHidden() {
-        // Unhiding the toolbar must not smuggle back the search / Assist / edit controls the kiosk
-        // hides on every other page, nor HA's own back arrow that #rusty-home replaces.
+    @Test fun kioskJs_theDeepViewKeepsHasChromeHidden() {
+        // The deep view's whole header — HA's back arrow, search / Assist / edit chrome — stays
+        // hidden; the floating control is the only navigation affordance left.
         val js = HomeAssistantNav.kioskJs()
-        val huiCss = js.substringAfter("var HUI_BAR_CSS=").substringBefore("HOME_BTN_CSS")
-        assertTrue(huiCss.contains("ha-icon-button-arrow-prev,ha-menu-button,.action-items{display:none!important;}"))
-        // …and it is the same control, styled the same way, as the scaffold bar's.
-        assertTrue(js.contains("var HOME_BTN_CSS="))
+        val huiCss = js.substringAfter("var HUI_BAR_CSS=").substringBefore("FLOAT_CSS")
+        assertTrue(huiCss.contains(".header{display:none!important;}"))
+        // …and both panel types share the one floating control definition.
+        assertTrue(js.contains("var FLOAT_CSS="))
         val barCss = js.substringAfter("var BAR_CSS=").substringBefore("var HUI_BAR_CSS")
-        assertTrue(barCss.contains("HOME_BTN_CSS"))
+        assertTrue(barCss.contains("FLOAT_CSS"))
     }
 
     @Test fun kioskJs_reappliesTheHeaderOnRouteChangesNotJustPanelSwaps() {

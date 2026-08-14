@@ -237,4 +237,51 @@ class SlideshowSettingsTest {
         SlideshowSettings.saveConnection(prefs, secrets, "http://immich.local", "KEY1")
         assertTrue(SlideshowSettings.isVerified(prefs))
     }
+
+    // "Never verified" and "verification FAILED" are both isVerified == false, so the failure needs
+    // its own flag: without it the Info page can only say the grey "Needs setup" for a server that
+    // is actually configured and refusing the stored key.
+    @Test fun lastVerifyFailedDefaultsFalse() {
+        assertFalse(SlideshowSettings.lastVerifyFailed(FakePrefs()))
+    }
+
+    @Test fun lastVerifyFailedRoundTrips() {
+        val prefs = FakePrefs()
+        SlideshowSettings.setLastVerifyFailed(prefs, true)
+        assertTrue(SlideshowSettings.lastVerifyFailed(prefs))
+        SlideshowSettings.setLastVerifyFailed(prefs, false)
+        assertFalse(SlideshowSettings.lastVerifyFailed(prefs))
+    }
+
+    // A red "Connection issue" belongs to the server that actually failed: a changed URL — or a
+    // changed key against the same URL — starts clean instead of inheriting the old verdict.
+    @Test fun changingConnectionClearsLastVerifyFailed() {
+        val prefs = FakePrefs()
+        val secrets = InMemorySecretStore()
+        SlideshowSettings.saveConnection(prefs, secrets, "http://immich.local", "KEY1")
+        SlideshowSettings.setLastVerifyFailed(prefs, true)
+        SlideshowSettings.saveConnection(prefs, secrets, "http://other.local", "KEY1")   // url change
+        assertFalse(SlideshowSettings.lastVerifyFailed(prefs))
+        SlideshowSettings.setLastVerifyFailed(prefs, true)
+        SlideshowSettings.saveConnection(prefs, secrets, "http://other.local", "KEY2")   // key change
+        assertFalse(SlideshowSettings.lastVerifyFailed(prefs))
+    }
+
+    // The mirror case: a re-save of the SAME connection verifies nothing, so it must not silently
+    // downgrade the last verdict — nor any of the other connection-scoped state it sits beside.
+    @Test fun resavingSameConnectionKeepsLastVerifyFailedAndTheRestOfTheState() {
+        val prefs = FakePrefs()
+        val secrets = InMemorySecretStore()
+        SlideshowSettings.saveConnection(prefs, secrets, "http://immich.local", "KEY1")
+        SlideshowSettings.setAccountName(prefs, "Jose")
+        SlideshowSettings.setVerified(prefs, true)
+        SlideshowSettings.setLastVerifyFailed(prefs, true)
+        SlideshowSettings.setFilters(prefs, ImmichFilters(listOf("al1"), emptyList(), emptyList()))
+        assertEquals(ImmichConnectionSave.SAVED,
+            SlideshowSettings.saveConnection(prefs, secrets, "http://immich.local", "KEY1"))
+        assertTrue(SlideshowSettings.lastVerifyFailed(prefs))
+        assertEquals("Jose", SlideshowSettings.accountName(prefs))
+        assertTrue(SlideshowSettings.isVerified(prefs))
+        assertEquals(listOf("al1"), SlideshowSettings.filters(prefs).albumIds)
+    }
 }

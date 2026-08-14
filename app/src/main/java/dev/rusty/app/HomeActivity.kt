@@ -60,9 +60,10 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         // From the screensaver chrome → open straight to the Screensaver tab (not the active
         // feature's tab), so the user lands on the settings for what they're looking at.
         override fun openSettings() = this@HomeActivity.openSettings(SettingsTabKey.SCREENSAVER)
-        override fun openInfo() {
-            currentFeatureContribution()?.showInfo()
-        }
+
+        // Services & status is app-wide, so the saver's Info chrome opens the shell-owned card
+        // directly instead of asking whichever feature happens to be behind the saver.
+        override fun openInfo() = this@HomeActivity.openInfo()
 
         // The Immich clock/✕ own their exit gesture; a clickable child never reaches the
         // controller's tap-anywhere wake path, so the theme asks for the exit explicitly.
@@ -302,6 +303,8 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     }
 
     override fun onDestroy() {
+        // First: a showing card holds runtime listeners that only its dismiss callback removes.
+        dismissShellDialogs()
         SlideshowConfigRelay.removeListener(slideshowConfigListener)
         // Detach FIRST: an HTTP thread mid-set must not queue a delivery onto a dying window, and
         // `screen.available` must report false the moment the last Activity goes away. Detaching
@@ -348,6 +351,32 @@ class HomeActivity : AppCompatActivity(), ShellHost {
 
     fun removeConfigurationChangeListener(listener: () -> Unit) {
         configurationListeners.remove(listener)
+    }
+
+    /**
+     * Shell-owned cards ([InfoSheet], [AboutSheet]) register here so [onDestroy] can close them.
+     *
+     * A fragment-owned dialog had `onDestroyView` to close it; a shell-owned one has no equivalent,
+     * and a Dialog still showing when its Activity dies leaks its window — and, for the Info card,
+     * would leave its runtime listeners registered, because only dismissal runs their cleanup.
+     */
+    private val shellDialogs = mutableListOf<android.app.Dialog>()
+
+    fun trackShellDialog(dialog: android.app.Dialog) {
+        shellDialogs.add(dialog)
+    }
+
+    fun untrackShellDialog(dialog: android.app.Dialog) {
+        shellDialogs.remove(dialog)
+    }
+
+    @androidx.annotation.VisibleForTesting
+    fun shellDialogCount(): Int = shellDialogs.size
+
+    /** Dismissing runs each card's own cleanup, which is what actually unregisters its listeners. */
+    private fun dismissShellDialogs() {
+        shellDialogs.toList().forEach { if (it.isShowing) it.dismiss() }
+        shellDialogs.clear()
     }
 
     /**
@@ -560,16 +589,18 @@ class HomeActivity : AppCompatActivity(), ShellHost {
      */
     override fun refreshDashboardChips() = shellChrome.refreshDashboardChips()
 
+    /** Opens the app-wide Services & status card. Reachable from the shell chrome and every saver. */
+    fun openInfo() = InfoSheet.show(this, this)
+
     /**
      * Wires the shell chrome cluster's clicks once (called from onCreate). Settings opens the active
-     * feature's tab; Info routes to the Spotify info sheet (btnInfo wired in ShellChromeController
-     * constructor; its click is still routed here via screensaverHost). Per-feature visibility is
-     * reconciled by [ShellChromeController.onFeatureChanged].
+     * feature's tab; Info opens the shell-owned Services & status card, which is app-wide and so is
+     * visible on every feature ([ShellChromeController.onFeatureChanged] no longer hides it).
      */
     private fun setupChrome() {
         btnSettings.setOnClickListener { openSettings(null) }      // null → active feature's tab
         findViewById<android.widget.ImageButton>(R.id.btnInfo)
-            .setOnClickListener { screensaverHost.openInfo() }     // routes to SpotifyFragment.showInfo()
+            .setOnClickListener { openInfo() }
         tvClock.setOnClickListener { showScreensaver() }
         // The clock shrinks to ~0.22 scale in the corner, so a foreground focus ring all but vanishes
         // there — recolor the digits to the brand green on focus instead (reads at any scale).

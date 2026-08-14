@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Active chip: translucent accent fill. Inactive: the same translucent scrim as bg_chrome_pill,
+     so the icon pills read as one family with the settings/app-selector buttons and never turn
+     into opaque black blobs over a light HA theme. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_checked="true" android:color="@color/accent_chip_fill" />
-    <item android:color="@color/bg_base" />
+    <item android:color="@color/chrome_scrim" />
 </selector>
