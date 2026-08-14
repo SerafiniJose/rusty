@@ -1,5 +1,6 @@
 package dev.rusty.app
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -30,6 +31,52 @@ data class ControlPlaying(
 )
 
 /**
+ * Immutable snapshot of the lockscreen (screensaver): which theme it will mount, and which themes
+ * the remote is allowed to pick. [themes] is not simply every [ScreensaverThemeId] — see
+ * [ControlLockscreenThemes.selectable].
+ */
+data class ControlLockscreen(
+    val theme: ScreensaverThemeId,
+    val themes: List<ScreensaverThemeId>,
+)
+
+/**
+ * Immutable snapshot of what the device's screen is showing and what it could show.
+ *
+ * [active] is null when no app window is attached to take a switch — the service runs on boot
+ * without an Activity, and after `onPause` the shell can no longer commit a fragment transaction.
+ * It is the same "can this take effect right now?" question as `screen.available`, and the control
+ * page reads it the same way: null means the lamps are inert until Rusty is back on screen.
+ *
+ * [available] lists what the remote may switch to, in ring order: the ENABLED features (a feature
+ * switched off in settings is not a place you can go) plus [ControlPanelId.LOCKSCREEN], which is
+ * always reachable because the screensaver is not a feature and cannot be disabled.
+ */
+data class ControlPanel(
+    val active: ControlPanelId?,
+    val available: List<ControlPanelId>,
+    val lockscreen: ControlLockscreen,
+)
+
+/**
+ * Immutable snapshot of Rusty's own window: whether it is the thing on screen, and whether the
+ * remote is able to put it there.
+ *
+ * [foreground] is the same fact as `panel.active != null` and is derived from the same source
+ * ([PanelControlRelay]) so the two can never disagree — it is reported separately because a
+ * two-state switch binds to a boolean, and making a control page infer it from a null panel id
+ * is the kind of subtlety that produces a switch stuck in the wrong position.
+ *
+ * [canBringForward] is the genuinely new fact: whether the "Display over other apps" grant is
+ * held, without which Android silently drops a background activity start. It gates BOTH
+ * directions, not just the obvious one — see [ControlForegroundResult].
+ */
+data class ControlApp(
+    val foreground: Boolean,
+    val canBringForward: Boolean,
+)
+
+/**
  * Immutable snapshot of the entire device control state.
  * Serializes to a nested JSON structure for the HTTP API.
  */
@@ -41,6 +88,8 @@ data class ControlSnapshot(
     val volume: ControlVolume,
     val playing: ControlPlaying,
     val slideshowEnabled: Boolean,
+    val panel: ControlPanel,
+    val app: ControlApp,
 ) {
     /**
      * Encodes this snapshot as JSON, matching the `GET /api/state` contract.
@@ -81,6 +130,25 @@ data class ControlSnapshot(
         val slideshowObj = JSONObject()
         slideshowObj.put("enabled", slideshowEnabled)
         root.put("slideshow", slideshowObj)
+
+        // Panel state. `active` is written as an explicit JSON null rather than omitted (the
+        // treatment `latest` gets in ControlUpdateCheck) because a client MUST distinguish "no app
+        // window, nothing is switchable" from "this build is too old to report a panel" — an
+        // always-present key makes that a value check rather than a version guess.
+        val panelObj = JSONObject()
+        panelObj.put("active", panel.active?.wire ?: JSONObject.NULL)
+        panelObj.put("available", JSONArray(panel.available.map { it.wire }))
+        val lockscreenObj = JSONObject()
+        lockscreenObj.put("theme", ControlLockscreenThemes.wire(panel.lockscreen.theme))
+        lockscreenObj.put("themes", JSONArray(panel.lockscreen.themes.map { ControlLockscreenThemes.wire(it) }))
+        panelObj.put("lockscreen", lockscreenObj)
+        root.put("panel", panelObj)
+
+        // App window state
+        val appObj = JSONObject()
+        appObj.put("foreground", app.foreground)
+        appObj.put("canBringForward", app.canBringForward)
+        root.put("app", appObj)
 
         return root.toString()
     }

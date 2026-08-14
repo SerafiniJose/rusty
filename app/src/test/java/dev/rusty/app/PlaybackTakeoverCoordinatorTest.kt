@@ -7,7 +7,7 @@ class PlaybackTakeoverCoordinatorTest {
 
     private val synchronousPoster = MainPoster { it.run() }
     private var nowMs = 0L
-    private val allOn = TakeoverToggles(switchPage = true, bringToFront = true, wakeScreen = true)
+    private val allOn = TakeoverToggles(switchPage = true, showOnPlayback = true)
 
     private fun store(): ReceiverStateStore = ReceiverStateStore(
         ReceiverDashboardState.waiting("A"),
@@ -71,7 +71,7 @@ class PlaybackTakeoverCoordinatorTest {
     @Test fun pageSwitchIsPendingUntilConsumerAttaches_andConsumesOnce() {
         val store = store()
         val rec = Recorder()
-        val coord = coordinator(store, rec, toggles = TakeoverToggles(true, false, false))
+        val coord = coordinator(store, rec, toggles = TakeoverToggles(true, false))
         pastGrace()
         store.dispatch(playing())
         assertEquals(0, rec.pageSwitches) // nobody resumed → pending
@@ -178,7 +178,7 @@ class PlaybackTakeoverCoordinatorTest {
     @Test fun throwingPendingConsumerStillConsumesTheFlagOnce() {
         val store = store()
         val rec = Recorder()
-        val coord = coordinator(store, rec, toggles = TakeoverToggles(true, false, false))
+        val coord = coordinator(store, rec, toggles = TakeoverToggles(true, false))
         pastGrace()
         store.dispatch(playing()) // nobody attached → pending
         assertEquals(0, rec.pageSwitches)

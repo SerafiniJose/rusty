@@ -5,16 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rusty Remote Control</title>
 <style>
+  /*
+   * "Source deck": the page is laid out as an appliance faceplate rather than a settings form.
+   * A lit source selector across the top answers the question you actually opened the page to ask
+   * ("what is Rusty showing?"), the two continuous values are lit slabs you can drag anywhere on
+   * (a thin slider thumb is unfindable one-handed in the dark), and the once-a-month tasks —
+   * slideshow sources, software update — are collapsed into the Service strip at the bottom.
+   */
   :root {
     color-scheme: dark;
     --bg: #101311;
     --accent: #4caf7d;
     --accent-ink: #06150d;
+    --accent-dim: #2b6647;
     --card-bg: #171b18;
     --card-border: #262c27;
+    --slab-bg: #121512;
     --text: #eef2ef;
     --muted: #9aa89f;
     --error: #ff8a80;
+    --pending: #d8c07a;
   }
 
   * , *::before, *::after { box-sizing: border-box; }
@@ -101,6 +111,30 @@
     font-size: 1.05rem;
   }
 
+  /* Small caps label, the faceplate's engraved lettering. */
+  .lab {
+    margin: 0;
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Icons are inline SVG drawn in currentColor, so a lamp's icon lights with its label and
+     needs no second asset for the lit state. Deliberately generic shapes — a note, a house,
+     a display, a moon — rather than any service's mark. */
+  .ico {
+    display: inline-flex;
+    flex: none;
+    width: 15px;
+    height: 15px;
+  }
+
+  .ico svg { width: 100%; height: 100%; display: block; }
+
   .row {
     display: flex;
     align-items: center;
@@ -144,13 +178,6 @@
     border: 1px solid var(--card-border);
   }
 
-  input[type="range"] {
-    width: 100%;
-    height: 48px;
-    accent-color: var(--accent);
-    background: transparent;
-  }
-
   input[type="checkbox"] {
     width: 22px;
     height: 22px;
@@ -180,27 +207,299 @@
     font-size: 0.85rem;
   }
 
-  .pill-row {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
+  /* ---- source lamps ------------------------------------------------------
+     Four fixed positions, always in the same order: the lamp you want is where it was last
+     time even when a feature is switched off in Rusty's settings (that one goes dark and
+     struck through rather than vanishing and reflowing the row under your thumb). */
+
+  .lamps {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
   }
 
-  .pill {
-    display: inline-flex;
+  .lamp {
+    background: #1c211d;
+    border: 1px solid #2f3630;
+    border-radius: 8px;
+    color: var(--muted);
+    min-height: 62px;
+    padding: 8px 2px 7px;
+    display: flex;
+    flex-direction: column;
     align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .lamp .bulb {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #333b35;
+    flex: none;
+  }
+
+  .lamp .ico { width: 22px; height: 22px; }
+
+  .lamp .name { line-height: 1.1; text-align: center; }
+
+  .lamp.on {
+    color: #d6f2e2;
+    border-color: var(--accent-dim);
+    background:
+      radial-gradient(120% 90% at 50% 0%, rgba(76,175,125,0.28), rgba(76,175,125,0.04) 70%),
+      #16211b;
+  }
+
+  .lamp.on .bulb {
+    background: var(--accent);
+    box-shadow: 0 0 10px 2px rgba(76,175,125,0.6);
+  }
+
+  /* Requested but not yet confirmed by a poll. Never styled like `.on`: the device is still
+     showing the old panel, and saying otherwise is the one lie this page must not tell. */
+  .lamp.pending {
+    color: #efe2bd;
+    border-color: #6b5c2f;
+    background: #1f1e17;
+  }
+
+  .lamp.pending .bulb {
+    background: #6b5c2f;
+    animation: warm 1.1s ease-in-out infinite;
+  }
+
+  @keyframes warm {
+    0%, 100% { background: #6b5c2f; box-shadow: 0 0 0 0 rgba(216,192,122,0); }
+    50%      { background: var(--pending); box-shadow: 0 0 10px 2px rgba(216,192,122,0.5); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lamp.pending .bulb { animation: none; background: var(--pending); }
+  }
+
+  .lamp.failed { color: var(--error); border-color: #6d3b36; }
+  .lamp.failed .bulb { background: var(--error); }
+
+  .lamp[disabled] { cursor: default; }
+
+  /* The only reason a rendered lamp is unpressable: no app window to take the switch. A panel
+     switched off in Rusty's settings is not drawn at all (it isn't a place you can go), so the
+     row holds only real destinations. */
+  .lamps.inert .lamp { opacity: 0.45; }
+
+  /* ---- foreground switch -------------------------------------------------
+     A real <button role="switch">, not a checkbox skin: it has to be reachable and operable by
+     a D-pad on the TV browser, and Enter/Space on a button is the one interaction every engine
+     agrees on. */
+
+  .switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 48px;
+    border-top: 1px solid var(--card-border);
+    padding-top: 4px;
+    font-size: 0.95rem;
+  }
+
+  .switch {
+    position: relative;
+    flex: none;
+    width: 62px;
+    min-height: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 999px;
+    background: #2a312c;
+    border: 1px solid #39413a;
+    cursor: pointer;
+  }
+
+  .switch i {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: left 140ms ease, background 140ms ease;
+  }
+
+  .switch[aria-checked="true"] { background: var(--accent-dim); border-color: var(--accent); }
+  .switch[aria-checked="true"] i { left: 33px; background: var(--accent); }
+
+  /* In flight: the knob sits mid-travel so neither end reads as confirmed — a bring-to-front is
+     silently dropped on some OEM builds, and this must not look like it landed. */
+  .switch.pending i {
+    left: 18px;
+    background: var(--pending);
+    animation: warm 1.1s ease-in-out infinite;
+  }
+
+  .switch:disabled { opacity: 0.45; cursor: default; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .switch i { transition: none; }
+    .switch.pending i { animation: none; }
+  }
+
+  /* ---- theme chips ------------------------------------------------------- */
+
+  /* A 2x2 grid rather than a wrapping flex row: "Slideshow" is long enough that flex leaves a
+     3+1 orphan, and fixed cells also give a D-pad a predictable up/down path between chips. */
+  .chips {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .chip {
+    background: transparent;
+    border: 1px solid var(--card-border);
+    border-radius: 999px;
+    color: var(--muted);
     min-height: 48px;
     padding: 0 18px;
-    border-radius: 999px;
-    border: 1px solid var(--card-border);
-    color: var(--muted);
+    font-size: 0.85rem;
     font-weight: 600;
+    cursor: pointer;
   }
 
-  .pill.active {
+  .chip.on {
     background: var(--accent);
-    color: var(--accent-ink);
     border-color: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  /* ---- slabs -------------------------------------------------------------
+     A range input styled as a lit slab: the whole 52px height is the drag target and the fill
+     IS the value. Still a real <input type="range">, so arrow keys, a D-pad and screen readers
+     all keep working — the styling is skin-deep on purpose. */
+
+  .slab {
+    position: relative;
+    height: 52px;
+    border: 1px solid #2f3630;
+    border-radius: 6px;
+    background: var(--slab-bg);
+    overflow: hidden;
+  }
+
+  .slab:focus-within {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .slab .fill {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: var(--fill, 0%);
+    background: linear-gradient(90deg, rgba(76,175,125,0.14), rgba(76,175,125,0.34));
+    border-right: 2px solid var(--accent);
+    pointer-events: none;
+  }
+
+  .slab .readout {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.25rem;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+
+  .slab input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  /* Transparent track + thumb: the `.fill` div underneath is what is actually seen, so the
+     thumb only has to carry the hit area. */
+  .slab input[type="range"]::-webkit-slider-runnable-track { height: 52px; background: transparent; }
+  .slab input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 26px;
+    height: 52px;
+    background: transparent;
+    border: none;
+  }
+  .slab input[type="range"]::-moz-range-track { height: 52px; background: transparent; }
+  .slab input[type="range"]::-moz-range-thumb {
+    width: 26px;
+    height: 52px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+  }
+
+  .slab.off { opacity: 0.45; }
+
+  .pwr {
+    background: transparent;
+    border: 1px solid #2f3630;
+    border-radius: 50%;
+    width: 48px;
+    min-height: 48px;
+    padding: 0;
+    color: var(--muted);
+    font-size: 1.1rem;
+    display: grid;
+    place-items: center;
+  }
+
+  .pwr[aria-pressed="true"] { color: var(--accent); border-color: var(--accent-dim); }
+
+  /* ---- service strip ----------------------------------------------------- */
+
+  .service summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 52px;
+    padding: 0 2px;
+    cursor: pointer;
+    list-style: none;
+    font-size: 0.95rem;
+  }
+
+  .service summary::-webkit-details-marker { display: none; }
+
+  .service summary .hint {
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-align: right;
+  }
+
+  .service summary .hint::after { content: " \203A"; }
+  .service[open] summary .hint::after { content: " \2039"; }
+
+  .service + .service { border-top: 1px solid var(--card-border); }
+
+  .service .body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 4px 0 12px;
   }
 
   fieldset.filter-group {
@@ -278,24 +577,43 @@
 
   <div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
 
+  <section id="source-card" class="card" aria-labelledby="source-heading">
+    <p class="lab" id="source-heading"><span class="ico" data-icon="source"></span>Source</p>
+    <div id="source-lamps" class="lamps" role="group" aria-labelledby="source-heading"></div>
+    <p id="source-status" class="lab" role="status" aria-live="polite"></p>
+
+    <div class="switch-row">
+      <span id="foreground-label">On screen</span>
+      <button id="foreground-switch" type="button" role="switch" aria-checked="false"
+              aria-labelledby="foreground-label" class="switch"><i></i></button>
+    </div>
+
+    <p id="source-note" class="notice" hidden>
+      Rusty isn't on screen right now — it can't change what it's showing until it's back.
+    </p>
+    <p id="foreground-note" class="notice" hidden>
+      Rusty can't move its own window: grant "Display over other apps" to Rusty on the device.
+    </p>
+    <p id="source-error" class="error" hidden></p>
+  </section>
+
   <section id="screen-card" class="card" aria-labelledby="screen-heading">
-    <h2 id="screen-heading">Screen</h2>
+    <div class="row">
+      <p class="lab" id="screen-heading"><span class="ico" data-icon="screen"></span>Screen</p>
+      <button id="screen-toggle" type="button" class="pwr" aria-pressed="false"
+              aria-label="Screen on or off">&#9211;</button>
+    </div>
     <p id="screen-availability-note" class="notice" hidden>
       No screen is currently attached to the app right now — commands are saved and will apply as
       soon as the app is active.
     </p>
-    <div class="row">
-      <span id="screen-status-label">Screen is off</span>
-      <button id="screen-toggle" type="button" aria-pressed="false">Turn On</button>
-    </div>
-    <div class="field">
-      <span class="field-label">
-        <label for="brightness-range">Brightness</label>
-        <span id="brightness-value">1</span>
-      </span>
+    <div id="brightness-slab" class="slab">
+      <i class="fill"></i>
+      <span class="readout" id="brightness-value">1</span>
       <input id="brightness-range" type="range" min="1" max="100" value="1"
              aria-label="Screen brightness">
     </div>
+    <p id="screen-status-label" class="lab">Screen is off</p>
     <p id="screen-mode-hint" class="notice" hidden>
       System brightness permission not granted — controlling app window only.
     </p>
@@ -303,60 +621,74 @@
   </section>
 
   <section id="volume-card" class="card" aria-labelledby="volume-heading" hidden>
-    <h2 id="volume-heading">Volume</h2>
-    <div class="field">
-      <span class="field-label">
-        <label for="volume-range">Volume</label>
-        <span id="volume-value">0</span>
-      </span>
+    <p class="lab" id="volume-heading"><span class="ico" data-icon="volume"></span>Volume</p>
+    <div id="volume-slab" class="slab">
+      <i class="fill"></i>
+      <span class="readout" id="volume-value">0</span>
       <input id="volume-range" type="range" min="0" max="100" value="0" aria-label="Volume">
     </div>
     <p id="volume-error" class="error" hidden></p>
   </section>
 
-  <section id="playing-card" class="card" aria-labelledby="playing-heading">
-    <h2 id="playing-heading">Playing</h2>
-    <div class="pill-row">
-      <span id="pill-spotify" class="pill">Spotify</span>
-      <span id="pill-dlna" class="pill">DLNA</span>
-    </div>
-  </section>
+  <section class="card" aria-labelledby="service-heading">
+    <p class="lab" id="service-heading">Service</p>
 
-  <section id="filters-card" class="card" aria-labelledby="filters-heading">
-    <h2 id="filters-heading">Slideshow Filters</h2>
+    <details id="lockscreen-card" class="service">
+      <summary>
+        Lock screen theme
+        <span class="hint" id="lockscreen-summary">Clock</span>
+      </summary>
+      <div class="body">
+        <div id="theme-chips" class="chips" role="group" aria-label="Lock screen theme"></div>
+        <p id="lockscreen-error" class="error" hidden></p>
+      </div>
+    </details>
 
-    <fieldset class="filter-group">
-      <legend>Albums</legend>
-      <p id="albums-error" class="error" hidden></p>
-      <div id="albums-list" class="filter-list"></div>
-    </fieldset>
+    <details id="filters-card" class="service">
+      <summary>
+        Slideshow sources
+        <span class="hint" id="filters-summary">Albums, people and tags</span>
+      </summary>
+      <div class="body">
+        <fieldset class="filter-group">
+          <legend>Albums</legend>
+          <p id="albums-error" class="error" hidden></p>
+          <div id="albums-list" class="filter-list"></div>
+        </fieldset>
 
-    <fieldset class="filter-group">
-      <legend>People</legend>
-      <p id="people-error" class="error" hidden></p>
-      <div id="people-list" class="filter-list"></div>
-    </fieldset>
+        <fieldset class="filter-group">
+          <legend>People</legend>
+          <p id="people-error" class="error" hidden></p>
+          <div id="people-list" class="filter-list"></div>
+        </fieldset>
 
-    <fieldset class="filter-group">
-      <legend>Tags</legend>
-      <p id="tags-error" class="error" hidden></p>
-      <div id="tags-list" class="filter-list"></div>
-    </fieldset>
+        <fieldset class="filter-group">
+          <legend>Tags</legend>
+          <p id="tags-error" class="error" hidden></p>
+          <div id="tags-list" class="filter-list"></div>
+        </fieldset>
 
-    <div class="row">
-      <p id="filters-status" class="status" role="status" aria-live="polite" hidden></p>
-      <button id="filters-save" type="button" disabled>Save Filters</button>
-    </div>
-  </section>
+        <div class="row">
+          <p id="filters-status" class="status" role="status" aria-live="polite" hidden></p>
+          <button id="filters-save" type="button" disabled>Save Filters</button>
+        </div>
+      </div>
+    </details>
 
-  <section id="update-card" class="card" aria-labelledby="update-heading">
-    <h2 id="update-heading">Update</h2>
-    <pre id="update-notes" class="notice update-notes" hidden></pre>
-    <p id="update-error" class="error" hidden></p>
-    <div class="row">
-      <p id="update-status" class="status" role="status" aria-live="polite">Checking for updates…</p>
-      <button id="update-button" type="button" hidden>Update</button>
-    </div>
+    <details id="update-card" class="service">
+      <summary>
+        Software
+        <span class="hint" id="update-summary">Checking&hellip;</span>
+      </summary>
+      <div class="body">
+        <pre id="update-notes" class="notice update-notes" hidden></pre>
+        <p id="update-error" class="error" hidden></p>
+        <div class="row">
+          <p id="update-status" class="status" role="status" aria-live="polite">Checking for updates&hellip;</p>
+          <button id="update-button" type="button" hidden>Update</button>
+        </div>
+      </div>
+    </details>
   </section>
 </main>
 
@@ -366,22 +698,83 @@
 
   var REFRESH_INTERVAL_MS = 5000;
 
+  /**
+   * Line icons, drawn in currentColor so a lit lamp lights its icon too. Deliberately generic
+   * shapes rather than any service's mark: a note for the music receiver, a house for Home
+   * Assistant, a display for the DLNA renderer, a moon for the idle lock screen.
+   */
+  var ICONS = {
+    source: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h4"/></svg>',
+    spotify: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17V4l11-2v13"/><circle cx="6" cy="17" r="3"/><circle cx="17" cy="15" r="3"/></svg>',
+    home_assistant: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5.5 9.8V20h13V9.8"/><path d="M10 20v-5h4v5"/></svg>',
+    dlna: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 21h7"/><path d="M12 17v4"/></svg>',
+    lockscreen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.3A8.5 8.5 0 1 1 9.7 3.5a6.7 6.7 0 0 0 10.8 10.8z"/></svg>',
+    screen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M2 12h2.4M19.6 12H22M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M19.1 4.9l-1.7 1.7M6.6 17.4l-1.7 1.7"/></svg>',
+    volume: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5v5h3.5L13 19V5L7.5 9.5H4z"/><path d="M16.5 9.2a4 4 0 0 1 0 5.6"/><path d="M19 6.8a7.5 7.5 0 0 1 0 10.4"/></svg>'
+  };
+
+  /**
+   * The four destinations, in a FIXED order that never depends on the response. Only those in
+   * `panel.available` are drawn — a feature switched off in Rusty's settings is not a place you
+   * can go, so offering it (even greyed) would just be a button that always refuses.
+   */
+  var PANELS = [
+    { id: "spotify", label: "Spotify", full: "Spotify" },
+    { id: "home_assistant", label: "Home", full: "Home Assistant" },
+    { id: "dlna", label: "DLNA", full: "DLNA" },
+    { id: "lockscreen", label: "Lock", full: "Lock screen" }
+  ];
+
+  var THEME_LABELS = {
+    clock: "Clock",
+    oled: "OLED",
+    canvas: "Canvas",
+    slideshow: "Slideshow"
+  };
+
+  /**
+   * How long a request may stay unconfirmed before the control gives up and offers a retry, and
+   * how fast to poll while one is outstanding. Shared by the lamps and the foreground switch:
+   * both command something the device applies asynchronously and can fail to apply silently, so
+   * both wait for `/api/state` to agree rather than trusting their own POST.
+   */
+  var PENDING_TIMEOUT_MS = 8000;
+  var PENDING_POLL_MS = 1200;
+
   var state = null;
   var savedFilters = { albumIds: [], personIds: [], tagIds: [] };
   var filterResults = { albums: null, people: null, tags: null };
+
+  /** The panel requested but not yet reported back by /api/state, and when it was asked for.
+   *  A switch is applied asynchronously on the device (it commits a fragment transaction on the
+   *  main thread), so the POST's own response still names the OLD panel — only a later poll can
+   *  confirm it, and until then the lamp stays "warming" rather than lit. */
+  var pendingPanel = null;
+  var pendingSince = 0;
+
+  /** The foreground state requested but not yet confirmed (`true`/`false`), or null when nothing
+   *  is in flight. Bringing Rusty forward is an activity start that some OEM builds drop without
+   *  a word, so this must resolve against a poll exactly like a panel switch. */
+  var pendingForeground = null;
+  var foregroundSince = 0;
+
+  /** One timer for both pending controls; runs while either is outstanding. */
+  var fastPollTimer = null;
 
   var el = {};
 
   function cacheElements() {
     [
       "device-name", "device-version", "banner",
+      "source-lamps", "source-status", "source-note", "source-error",
+      "foreground-switch", "foreground-note",
+      "lockscreen-card", "theme-chips", "lockscreen-error", "lockscreen-summary",
       "screen-card", "screen-availability-note", "screen-status-label", "screen-toggle",
-      "brightness-range", "brightness-value", "screen-mode-hint", "screen-error",
-      "volume-card", "volume-range", "volume-value", "volume-error",
-      "pill-spotify", "pill-dlna",
+      "brightness-slab", "brightness-range", "brightness-value", "screen-mode-hint", "screen-error",
+      "volume-card", "volume-slab", "volume-range", "volume-value", "volume-error",
       "albums-list", "albums-error", "people-list", "people-error", "tags-list", "tags-error",
-      "filters-save", "filters-status",
-      "update-status", "update-notes", "update-error", "update-button"
+      "filters-save", "filters-status", "filters-summary",
+      "update-status", "update-notes", "update-error", "update-button", "update-summary"
     ].forEach(function (id) {
       el[id] = document.getElementById(id);
     });
@@ -422,6 +815,26 @@
   function setSliderValue(node, value) {
     if (node === document.activeElement || node.dataset.dragging === "1") return;
     node.value = String(value);
+  }
+
+  /** Paints the slab behind a range input to match its current value. Called both from polls and
+   *  from live "input" events, so the fill tracks a drag even though nothing is sent until the
+   *  drag ends (see [trackDragging] and the change-not-input rule). */
+  function paintSlab(slab, input, readout) {
+    var min = Number(input.min);
+    var max = Number(input.max);
+    var value = Number(input.value);
+    var pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
+    slab.style.setProperty("--fill", pct + "%");
+    readout.textContent = String(value);
+  }
+
+  function paintBrightness() {
+    paintSlab(el["brightness-slab"], el["brightness-range"], el["brightness-value"]);
+  }
+
+  function paintVolume() {
+    paintSlab(el["volume-slab"], el["volume-range"], el["volume-value"]);
   }
 
   /** Marks a slider as being dragged for as long as a pointer is down on it (see
@@ -478,23 +891,209 @@
     el["device-version"].textContent = "v" + device.version;
   }
 
+  // ---- source lamps ----
+
+  function labelFor(id) {
+    for (var i = 0; i < PANELS.length; i++) {
+      if (PANELS[i].id === id) return PANELS[i].full;
+    }
+    return id;
+  }
+
+  /** Fills every `<span class="ico" data-icon="…">` in the document from [ICONS]. Static markup
+   *  only — the icon set is a closed constant, never anything from the response. */
+  function paintStaticIcons(root) {
+    root.querySelectorAll(".ico[data-icon]").forEach(function (node) {
+      var svg = ICONS[node.getAttribute("data-icon")];
+      if (svg) node.innerHTML = svg;
+    });
+  }
+
+  /**
+   * The lamp row currently drawn, as a comma-joined key. The row is rebuilt only when the set of
+   * available panels actually changes — rebuilding on every 5s poll would drop D-pad focus out of
+   * the row mid-press and restart the pending lamp's animation.
+   */
+  var lampsKey = null;
+
+  function renderLamps(available) {
+    var wanted = PANELS.filter(function (p) {
+      return available.indexOf(p.id) !== -1;
+    });
+    var key = wanted.map(function (p) { return p.id; }).join(",");
+    if (key === lampsKey) return;
+    lampsKey = key;
+
+    el["source-lamps"].innerHTML = "";
+    // Equal columns for however many destinations this device actually has, so three lamps fill
+    // the row rather than leaving a gap where a switched-off feature used to be.
+    el["source-lamps"].style.gridTemplateColumns =
+      "repeat(" + Math.max(wanted.length, 1) + ", 1fr)";
+
+    wanted.forEach(function (panel) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "lamp";
+      button.id = "lamp-" + panel.id;
+      button.setAttribute("data-panel", panel.id);
+      button.setAttribute("aria-pressed", "false");
+      button.setAttribute("aria-label", panel.full);
+
+      var bulb = document.createElement("i");
+      bulb.className = "bulb";
+      var icon = document.createElement("span");
+      icon.className = "ico";
+      icon.innerHTML = ICONS[panel.id] || "";
+      var name = document.createElement("span");
+      name.className = "name";
+      name.textContent = panel.label;
+
+      button.appendChild(bulb);
+      button.appendChild(icon);
+      button.appendChild(name);
+      button.addEventListener("click", function () {
+        onSelectPanel(panel.id);
+      });
+      el["source-lamps"].appendChild(button);
+    });
+  }
+
+  /**
+   * Paints the lamp row from a snapshot.
+   *
+   * `panel.active === null` means no app window is attached, so nothing can take a switch: the
+   * whole row goes inert and the note explains why, rather than leaving four live-looking buttons
+   * over a device that will answer 409.
+   */
+  function renderPanel(panel) {
+    var active = panel && panel.active ? panel.active : null;
+    var available = (panel && panel.available) || [];
+    var attached = active !== null;
+
+    // Resolve any in-flight request against what the device now reports.
+    if (pendingPanel) {
+      if (active === pendingPanel) {
+        clearPending();
+      } else if (Date.now() - pendingSince > PENDING_TIMEOUT_MS) {
+        var name = labelFor(pendingPanel);
+        clearPending();
+        setNotice(el["source-error"], "Rusty didn't switch to " + name + ". Tap to try again.");
+      }
+    }
+
+    renderLamps(available);
+    el["source-lamps"].classList.toggle("inert", !attached);
+    // Only toggled, never rewritten: the note's wording lives in the markup, and routing it
+    // through setNotice would blank the text the first time it was hidden.
+    el["source-note"].hidden = attached;
+
+    PANELS.forEach(function (p) {
+      var button = document.getElementById("lamp-" + p.id);
+      if (!button) return; // switched off in Rusty's settings — not drawn at all
+      var isOn = attached && active === p.id;
+      var isPending = pendingPanel === p.id;
+
+      button.classList.toggle("on", isOn && !isPending);
+      button.classList.toggle("pending", isPending);
+      button.setAttribute("aria-pressed", String(isOn));
+      // The only reason a drawn lamp can't be pressed: nothing is attached to take the switch.
+      button.disabled = !attached;
+      button.title = p.full;
+    });
+
+    if (pendingPanel) {
+      el["source-status"].textContent = (attached ? labelFor(active) + " → " : "") +
+        labelFor(pendingPanel) + " · sending";
+    } else if (attached) {
+      el["source-status"].textContent = labelFor(active);
+    } else {
+      el["source-status"].textContent = "—";
+    }
+  }
+
+  /**
+   * Paints the foreground switch.
+   *
+   * The switch is inert in BOTH directions without the overlay grant, mirroring the device's own
+   * rule: sending Rusty away when it cannot bring itself back would strand a touchless screen
+   * with the remote page — the thing that just did it — as the only way home.
+   */
+  function renderApp(app) {
+    var foreground = !!(app && app.foreground);
+    var canMove = !!(app && app.canBringForward);
+
+    if (pendingForeground !== null) {
+      if (foreground === pendingForeground) {
+        clearForegroundPending();
+      } else if (Date.now() - foregroundSince > PENDING_TIMEOUT_MS) {
+        var wanted = pendingForeground;
+        clearForegroundPending();
+        setNotice(el["source-error"], wanted ?
+          "Rusty didn't come to the front. Some devices block that — try again, or wake it on the device." :
+          "Rusty didn't move out of the way. Try again.");
+      }
+    }
+
+    var sw = el["foreground-switch"];
+    sw.setAttribute("aria-checked", String(foreground));
+    sw.classList.toggle("pending", pendingForeground !== null);
+    sw.disabled = !canMove;
+    el["foreground-note"].hidden = canMove;
+  }
+
+  function renderLockscreen(panel) {
+    var lockscreen = (panel && panel.lockscreen) || null;
+    var themes = (lockscreen && lockscreen.themes) || [];
+    // `hidden` on a <details> needs the [hidden] rule at the top of this file to beat the
+    // element's own `display`, same as the cards.
+    el["lockscreen-card"].hidden = themes.length === 0;
+    if (themes.length === 0) return;
+
+    var current = lockscreen.theme;
+    // Keeps the collapsed Service row honest about what is inside it.
+    el["lockscreen-summary"].textContent = THEME_LABELS[current] || current;
+    // Rebuilt rather than diffed: the selectable set changes when the Slideshow feature is
+    // switched off on the device, and the list is four items long.
+    el["theme-chips"].innerHTML = "";
+    themes.forEach(function (theme) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip" + (theme === current ? " on" : "");
+      chip.setAttribute("data-theme", theme);
+      chip.setAttribute("aria-pressed", String(theme === current));
+      chip.textContent = THEME_LABELS[theme] || theme;
+      chip.addEventListener("click", function () {
+        onSelectTheme(theme);
+      });
+      el["theme-chips"].appendChild(chip);
+    });
+  }
+
   function renderScreen(screen) {
-    setNotice(el["screen-availability-note"], screen.available ? null :
+    // `available` is a single flag — "is a visible window attached?" — but the two controls on this
+    // card do not share that constraint, and captioning both with it made the page lie. Turning the
+    // screen on or off is an overlay plus FLAG_KEEP_SCREEN_ON, which only a VISIBLE window can hold,
+    // so that half genuinely waits for the app to come back. Brightness in system mode is a
+    // Settings.System write: it moves the device's panel with Rusty in the background, and telling
+    // the user it was merely "saved" while the screen visibly dims is worse than saying nothing.
+    setNotice(el["screen-availability-note"], screen.available ? null : screen.writable ?
+      "Rusty isn't on screen right now — brightness still applies to the device, but turning the " +
+      "screen on or off waits until the app is active." :
       "No screen is currently attached to the app right now — commands are saved and will apply " +
       "as soon as the app is active.");
 
     el["screen-status-label"].textContent = screen.on ? "Screen is on" : "Screen is off";
-    el["screen-toggle"].textContent = screen.on ? "Turn Off" : "Turn On";
     el["screen-toggle"].setAttribute("aria-pressed", String(screen.on));
 
     setSliderValue(el["brightness-range"], screen.brightness);
-    el["brightness-value"].textContent = String(screen.brightness);
     // Brightness is only meaningful while the screen is on: with the panel faked off, moving this
     // slider changes nothing anyone can see, so offering it invites the user to "set" a value
     // whose effect only appears at some later wake. Disabled rather than hidden so the card does
     // not reflow (and so a D-pad user's focus order is stable) — the reported number stays
     // visible, it just cannot be commanded from here until the screen is back on.
     el["brightness-range"].disabled = !screen.on;
+    el["brightness-slab"].classList.toggle("off", !screen.on);
+    paintBrightness();
 
     setNotice(el["screen-mode-hint"], screen.mode === "window" ?
       "System brightness permission not granted — controlling app window only." : null);
@@ -504,21 +1103,18 @@
     el["volume-card"].hidden = !!volume.fixed;
     if (!volume.fixed) {
       setSliderValue(el["volume-range"], volume.value);
-      el["volume-value"].textContent = String(volume.value);
+      paintVolume();
     }
-  }
-
-  function renderPlaying(playing) {
-    el["pill-spotify"].classList.toggle("active", !!playing.spotify);
-    el["pill-dlna"].classList.toggle("active", !!playing.dlna);
   }
 
   function renderState(data) {
     state = data;
     renderDevice(data.device);
+    renderPanel(data.panel);
+    renderApp(data.app);
+    renderLockscreen(data.panel);
     renderScreen(data.screen);
     renderVolume(data.volume);
-    renderPlaying(data.playing);
   }
 
   // ---- state polling ----
@@ -531,6 +1127,90 @@
       })
       .catch(function (err) {
         showBanner("Unable to reach the device: " + err.message);
+      });
+  }
+
+  // ---- source card ----
+
+  /** Polls faster than the 5s baseline while anything is unconfirmed, so a control that did land
+   *  settles promptly instead of at the next lazy tick. */
+  function startFastPoll() {
+    if (fastPollTimer !== null) return;
+    fastPollTimer = setInterval(refresh, PENDING_POLL_MS);
+  }
+
+  /** Stops the fast poll only once BOTH pending controls have resolved — otherwise clearing one
+   *  would slow the other back down to 5s mid-flight. */
+  function stopFastPollIfIdle() {
+    if (pendingPanel !== null || pendingForeground !== null) return;
+    if (fastPollTimer === null) return;
+    clearInterval(fastPollTimer);
+    fastPollTimer = null;
+  }
+
+  function clearPending() {
+    pendingPanel = null;
+    pendingSince = 0;
+    stopFastPollIfIdle();
+  }
+
+  function clearForegroundPending() {
+    pendingForeground = null;
+    foregroundSince = 0;
+    stopFastPollIfIdle();
+  }
+
+  function onSelectPanel(id) {
+    if (!state || !state.panel || state.panel.active === id) return;
+    setNotice(el["source-error"], null);
+    pendingPanel = id;
+    pendingSince = Date.now();
+    startFastPoll();
+    renderPanel(state.panel);
+
+    writeJSON("/api/panel", "POST", { id: id })
+      .catch(function (err) {
+        clearPending();
+        setNotice(el["source-error"], err.message);
+      })
+      .then(function () {
+        // The response reports the pre-switch snapshot by design, so this refresh is only the
+        // first of the fast polls — the lamp settles when the device actually reports the change.
+        return refresh();
+      });
+  }
+
+  function onToggleForeground() {
+    if (!state || !state.app || !state.app.canBringForward) return;
+    var want = !state.app.foreground;
+    setNotice(el["source-error"], null);
+    pendingForeground = want;
+    foregroundSince = Date.now();
+    startFastPoll();
+    renderApp(state.app);
+
+    writeJSON("/api/foreground", "POST", { on: want })
+      .catch(function (err) {
+        clearForegroundPending();
+        setNotice(el["source-error"], err.message);
+      })
+      .then(function () {
+        // As with a panel switch, the response reports the pre-command state; the fast poll is
+        // what actually resolves the switch.
+        return refresh();
+      });
+  }
+
+  function onSelectTheme(theme) {
+    setNotice(el["lockscreen-error"], null);
+    // A theme is a preference write on the device, applied before it answers, so unlike a panel
+    // switch there is nothing to wait for — no pending state, just re-read and repaint.
+    writeJSON("/api/lockscreen", "POST", { theme: theme })
+      .catch(function (err) {
+        setNotice(el["lockscreen-error"], err.message);
+      })
+      .then(function () {
+        return refresh();
       });
   }
 
@@ -594,6 +1274,14 @@
     if (kind === "albums") return savedFilters.albumIds;
     if (kind === "people") return savedFilters.personIds;
     return savedFilters.tagIds;
+  }
+
+  /** Keeps the collapsed Service row honest about what is inside it. */
+  function renderFiltersSummary() {
+    var total = savedFilters.albumIds.length + savedFilters.personIds.length +
+      savedFilters.tagIds.length;
+    el["filters-summary"].textContent = total === 0 ? "Everything" :
+      total + (total === 1 ? " filter" : " filters");
   }
 
   function renderFilterGroup(kind) {
@@ -667,6 +1355,7 @@
     renderFilterGroup("albums");
     renderFilterGroup("people");
     renderFilterGroup("tags");
+    renderFiltersSummary();
   }
 
   /**
@@ -733,6 +1422,7 @@
     writeJSON("/api/slideshow/filters", "PUT", body)
       .then(function () {
         savedFilters = body;
+        renderFiltersSummary();
         setNotice(el["filters-status"], "Saved.");
       })
       .catch(function (err) {
@@ -776,6 +1466,7 @@
       el["update-status"].textContent = typeof install.progress === "number"
         ? "Downloading… " + install.progress + "%"
         : "Downloading…";
+      el["update-summary"].textContent = "Downloading…";
       el["update-button"].hidden = false;
       el["update-button"].disabled = true;
       setNotice(el["update-error"], null);
@@ -784,6 +1475,7 @@
     }
     if (install.phase === "awaiting_confirm") {
       el["update-status"].textContent = "Confirm the install on the device screen.";
+      el["update-summary"].textContent = "Confirm on device";
       el["update-button"].hidden = false;
       el["update-button"].disabled = true;
       setNotice(el["update-error"], null);
@@ -796,6 +1488,7 @@
 
     if (data.status === "update_available" && data.latest) {
       el["update-status"].textContent = "Update available · " + data.latest.version;
+      el["update-summary"].textContent = data.latest.version + " available";
       if (data.latest.notes) {
         el["update-notes"].textContent = data.latest.notes;
         el["update-notes"].hidden = false;
@@ -806,10 +1499,12 @@
       el["update-button"].disabled = false;
     } else if (data.status === "up_to_date") {
       el["update-status"].textContent = "Up to date.";
+      el["update-summary"].textContent = "Up to date";
       el["update-notes"].hidden = true;
       el["update-button"].hidden = true;
     } else {
       el["update-status"].textContent = "Couldn't check for updates.";
+      el["update-summary"].textContent = "Check failed";
       el["update-notes"].hidden = true;
       el["update-button"].hidden = true;
     }
@@ -821,6 +1516,7 @@
       .catch(function (err) {
         stopUpdatePolling();
         el["update-status"].textContent = "Couldn't check for updates: " + err.message;
+        el["update-summary"].textContent = "Check failed";
         el["update-button"].hidden = true;
       });
   }
@@ -842,10 +1538,16 @@
 
   function init() {
     cacheElements();
+    paintStaticIcons(document);
 
+    el["foreground-switch"].addEventListener("click", onToggleForeground);
     el["screen-toggle"].addEventListener("click", onToggleScreen);
     el["brightness-range"].addEventListener("change", onBrightnessChange);
     el["volume-range"].addEventListener("change", onVolumeChange);
+    // "input" paints only — the write still happens on "change", so a drag sends one command
+    // at the end rather than one per pixel.
+    el["brightness-range"].addEventListener("input", paintBrightness);
+    el["volume-range"].addEventListener("input", paintVolume);
     el["filters-save"].addEventListener("click", onSaveFilters);
     el["update-button"].addEventListener("click", onUpdateClick);
     trackDragging(el["brightness-range"]);

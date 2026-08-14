@@ -34,33 +34,38 @@ class PlaybackTakeoverSettingsTest {
         override fun unregisterOnSharedPreferenceChangeListener(l: SharedPreferences.OnSharedPreferenceChangeListener?) {}
     }
 
-    @Test fun allDefaultToOff() {
+    @Test fun bothDefaultToOff() {
         val prefs = FakePrefs()
         assertFalse(PlaybackTakeoverSettings.isSwitchPageEnabled(prefs))
-        assertFalse(PlaybackTakeoverSettings.isBringToFrontEnabled(prefs))
-        assertFalse(PlaybackTakeoverSettings.isWakeScreenEnabled(prefs))
+        assertFalse(PlaybackTakeoverSettings.isShowOnPlaybackEnabled(prefs))
         val toggles = PlaybackTakeoverSettings.toggles(prefs)
         assertFalse(toggles.switchPage)
-        assertFalse(toggles.bringToFront)
-        assertFalse(toggles.wakeScreen)
+        assertFalse(toggles.showOnPlayback)
     }
 
     @Test fun eachKeyRoundTripsIndependently() {
         val prefs = FakePrefs()
         PlaybackTakeoverSettings.setSwitchPage(prefs, true)
         assertTrue(PlaybackTakeoverSettings.isSwitchPageEnabled(prefs))
-        assertFalse(PlaybackTakeoverSettings.isBringToFrontEnabled(prefs))
-        assertFalse(PlaybackTakeoverSettings.isWakeScreenEnabled(prefs))
+        assertFalse(PlaybackTakeoverSettings.isShowOnPlaybackEnabled(prefs))
 
-        PlaybackTakeoverSettings.setBringToFront(prefs, true)
-        PlaybackTakeoverSettings.setWakeScreen(prefs, true)
+        PlaybackTakeoverSettings.setShowOnPlayback(prefs, true)
         val toggles = PlaybackTakeoverSettings.toggles(prefs)
         assertTrue(toggles.switchPage)
-        assertTrue(toggles.bringToFront)
-        assertTrue(toggles.wakeScreen)
+        assertTrue(toggles.showOnPlayback)
 
         PlaybackTakeoverSettings.setSwitchPage(prefs, false)
         assertFalse(PlaybackTakeoverSettings.isSwitchPageEnabled(prefs))
-        assertTrue(PlaybackTakeoverSettings.isBringToFrontEnabled(prefs))
+        assertTrue(PlaybackTakeoverSettings.isShowOnPlaybackEnabled(prefs))
+    }
+
+    @Test fun theRetiredWakeAndForegroundKeysAreNotReadAnyMore() {
+        // The merged toggle ships in an unreleased version, so there is deliberately no migration:
+        // a stale value left by a test build must not switch the new toggle on behind the user.
+        val prefs = FakePrefs()
+        prefs.edit().putBoolean("takeover_wake_screen", true).apply()
+        prefs.edit().putBoolean("takeover_foreground", true).apply()
+        assertFalse(PlaybackTakeoverSettings.isShowOnPlaybackEnabled(prefs))
+        assertFalse(PlaybackTakeoverSettings.toggles(prefs).showOnPlayback)
     }
 }

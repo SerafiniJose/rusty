@@ -5,13 +5,30 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ControlModelsTest {
-    private fun snap() = ControlSnapshot(
+    private fun snap(
+        panel: ControlPanel = panel(),
+        app: ControlApp = ControlApp(foreground = true, canBringForward = true),
+    ) = ControlSnapshot(
         deviceId = "abc", deviceName = "Rusty Speaker", version = "2.3.0",
         screen = ControlScreen(on = true, brightness = 80, mode = "system", writable = true, available = true),
         volume = ControlVolume(value = 47, fixed = false),
         playing = ControlPlaying(spotify = true, dlna = false),
         slideshowEnabled = true,
+        panel = panel,
+        app = app,
     )
+
+    private fun panel(
+        active: ControlPanelId? = ControlPanelId.SPOTIFY,
+        available: List<ControlPanelId> = listOf(
+            ControlPanelId.SPOTIFY, ControlPanelId.DLNA, ControlPanelId.LOCKSCREEN,
+        ),
+        theme: ScreensaverThemeId = ScreensaverThemeId.CLOCK,
+        themes: List<ScreensaverThemeId> = listOf(ScreensaverThemeId.CLOCK, ScreensaverThemeId.OLED),
+    ) = ControlPanel(active, available, ControlLockscreen(theme, themes))
+
+    private fun JSONObject.stringList(key: String): List<String> =
+        getJSONArray(key).let { a -> (0 until a.length()).map { a.getString(it) } }
 
     @Test fun jsonMatchesApiContract() {
         val o = JSONObject(snap().toJson())
@@ -30,6 +47,91 @@ class ControlModelsTest {
         assertEquals(true, o.getJSONObject("playing").getBoolean("spotify"))
         assertEquals(false, o.getJSONObject("playing").getBoolean("dlna"))
         assertEquals(true, o.getJSONObject("slideshow").getBoolean("enabled"))
+        assertEquals("spotify", o.getJSONObject("panel").getString("active"))
+    }
+
+    // ---- panel block --------------------------------------------------------
+
+    @Test fun panelJson_reportsActiveAvailableAndLockscreen() {
+        val o = JSONObject(snap().toJson()).getJSONObject("panel")
+        assertEquals("spotify", o.getString("active"))
+        assertEquals(listOf("spotify", "dlna", "lockscreen"), o.stringList("available"))
+        val lock = o.getJSONObject("lockscreen")
+        assertEquals("clock", lock.getString("theme"))
+        assertEquals(listOf("clock", "oled"), lock.stringList("themes"))
+    }
+
+    /** `available` is a ring order, not a set: the page draws the lamps in exactly this sequence,
+     *  so the serializer must not sort or dedupe it. */
+    @Test fun panelJson_preservesAvailableOrder() {
+        val o = JSONObject(
+            snap(
+                panel(
+                    available = listOf(
+                        ControlPanelId.LOCKSCREEN, ControlPanelId.HOME_ASSISTANT, ControlPanelId.SPOTIFY,
+                    ),
+                )
+            ).toJson()
+        ).getJSONObject("panel")
+        assertEquals(listOf("lockscreen", "home_assistant", "spotify"), o.stringList("available"))
+    }
+
+    /**
+     * No attached window: `active` must be present AND null. Omitting the key would be
+     * indistinguishable from an older build that never reported a panel at all, and the page
+     * would leave the lamps live over a device that cannot take a switch.
+     */
+    @Test fun panelJson_activeIsExplicitNullWithNoWindow() {
+        val json = snap(panel(active = null)).toJson()
+        val o = JSONObject(json).getJSONObject("panel")
+        assertEquals(true, o.has("active"))
+        assertEquals(true, o.isNull("active"))
+        assertEquals(true, json.contains("\"active\":null"))
+    }
+
+    // ---- app block ----------------------------------------------------------
+
+    @Test fun appJson_reportsForegroundAndPermission() {
+        val o = JSONObject(snap().toJson()).getJSONObject("app")
+        assertEquals(true, o.getBoolean("foreground"))
+        assertEquals(true, o.getBoolean("canBringForward"))
+    }
+
+    @Test fun appJson_backgroundedWithoutPermission() {
+        val o = JSONObject(snap(app = ControlApp(foreground = false, canBringForward = false)).toJson())
+            .getJSONObject("app")
+        assertEquals(false, o.getBoolean("foreground"))
+        assertEquals(false, o.getBoolean("canBringForward"))
+    }
+
+    /**
+     * `app.foreground` and `panel.active != null` are the same fact from the same source. A
+     * snapshot that disagreed would leave the page with a lit switch over inert lamps (or the
+     * reverse), so the two are pinned together here.
+     */
+    @Test fun appForeground_agreesWithPanelActive() {
+        val live = JSONObject(snap().toJson())
+        assertEquals(
+            live.getJSONObject("app").getBoolean("foreground"),
+            !live.getJSONObject("panel").isNull("active"),
+        )
+
+        val gone = JSONObject(
+            snap(
+                panel = panel(active = null),
+                app = ControlApp(foreground = false, canBringForward = true),
+            ).toJson()
+        )
+        assertEquals(
+            gone.getJSONObject("app").getBoolean("foreground"),
+            !gone.getJSONObject("panel").isNull("active"),
+        )
+    }
+
+    @Test fun panelJson_emptyThemeListSerializesAsEmptyArray() {
+        val o = JSONObject(snap(panel(themes = emptyList())).toJson())
+            .getJSONObject("panel").getJSONObject("lockscreen")
+        assertEquals(emptyList<String>(), o.stringList("themes"))
     }
 
     // ---- ControlUpdateCheck -------------------------------------------------

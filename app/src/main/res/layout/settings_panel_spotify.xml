@@ -302,6 +302,12 @@
             app:trackTint="@color/switch_track_tint" />
     </LinearLayout>
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="14dp"
+        android:background="@color/surface_border" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -319,22 +325,22 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:fontFamily="@font/hanken_medium"
-                android:text="Bring app to front on playback"
+                android:text="Wake and show Rusty on playback"
                 android:textColor="@color/ink"
                 android:textSize="16sp" />
 
             <TextView
-                android:id="@+id/tvTakeoverFrontSubtitle"
+                android:id="@+id/tvTakeoverShowSubtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:fontFamily="@font/hanken_regular"
-                android:text="Open over other apps when a cast starts"
+                android:text="Light the screen and open over other apps when a cast starts"
                 android:textColor="@color/muted_dim"
                 android:textSize="13sp" />
         </LinearLayout>
 
         <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchTakeoverFront"
+            android:id="@+id/switchTakeoverShow"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@null"
@@ -346,7 +352,7 @@
             app:trackTint="@color/switch_track_tint" />
     </LinearLayout>
 
-    <!-- Only visible while the front toggle is on but "Display over other apps" is not
+    <!-- Only visible while the merged toggle is on but "Display over other apps" is not
          granted. Same row idiom as rowBrightnessPermission in the General panel. -->
     <LinearLayout
         android:id="@+id/rowOverlayPermission"
@@ -377,46 +383,4 @@
             android:textSize="18sp" />
     </LinearLayout>
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="@font/hanken_medium"
-                android:text="Wake screen on playback"
-                android:textColor="@color/ink"
-                android:textSize="16sp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="@font/hanken_regular"
-                android:text="Light the display when a cast starts"
-                android:textColor="@color/muted_dim"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchTakeoverWake"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@null"
-            android:foreground="@drawable/bg_tv_focus_switch"
-            android:minHeight="0dp"
-            android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
-            app:switchMinWidth="0dp"
-            app:thumbTint="@color/switch_thumb_tint"
-            app:trackTint="@color/switch_track_tint" />
-    </LinearLayout>
 </LinearLayout>

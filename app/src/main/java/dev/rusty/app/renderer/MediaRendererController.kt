@@ -90,11 +90,27 @@ object RendererStatusPublisher {
  */
 object MediaRendererController {
     const val KEY_RENDERER_ENABLED = "dlna_renderer_enabled"
+
+    /**
+     * `DlnaPlayerFeature.KEY_ENABLED`, spelled out rather than imported: this package has no other
+     * dependency on `dev.rusty.app` and is worth keeping that way. `MediaRendererControllerTest`
+     * asserts the two constants stay equal, so the duplication cannot drift silently.
+     */
+    const val KEY_FEATURE_ENABLED = "dlna_feature_enabled"
+
     private const val TAG = "MediaRendererController"
     private const val PREFS_NAME = "spotify_receiver_prefs"
 
-    /** Pure decision — unit-testable: should the service run given prefs state? */
-    fun shouldRun(enabled: Boolean): Boolean = enabled
+    /**
+     * Pure decision — unit-testable: should the service run given prefs state?
+     *
+     * The DLNA Player FEATURE toggle owns the service. [KEY_RENDERER_ENABLED]'s own Start/Stop button
+     * lives in the DLNA Player settings tab, and that tab disappears with the feature — so a run-state
+     * left on behind a disabled feature is an unreachable service, not a headless mode. Gating here
+     * rather than only at the toggle's call site makes the rule hold for the BOOT_COMPLETED sync too,
+     * including for installs that already drifted into that state.
+     */
+    fun shouldRun(enabled: Boolean, featureEnabled: Boolean): Boolean = enabled && featureEnabled
 
     /** Writes the desired-state pref and syncs the service to it. The settings Start/Stop button
      *  and the notification Stop action both funnel through here. */
@@ -124,8 +140,9 @@ object MediaRendererController {
     fun syncFromPrefs(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val enabled = prefs.getBoolean(KEY_RENDERER_ENABLED, false)
+        val featureEnabled = prefs.getBoolean(KEY_FEATURE_ENABLED, false)
         val serviceIntent = Intent(context, MediaRendererService::class.java)
-        if (shouldRun(enabled)) {
+        if (shouldRun(enabled, featureEnabled)) {
             runCatching { context.startForegroundService(serviceIntent) }
                 .onSuccess { RendererStatusPublisher.publishStartingUnlessRunning() }
                 .onFailure { e ->

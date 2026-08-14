@@ -21,6 +21,9 @@ function createMockServer(config) {
   const state = deepClone(config.state);
   const requests = [];
   const putBodies = []; // { body, ts } for PUT /api/slideshow/filters
+  const panelBodies = []; // { body, ts } for POST /api/panel
+  const lockscreenBodies = []; // { body, ts } for POST /api/lockscreen
+  const foregroundBodies = []; // { body, ts } for POST /api/foreground
   let updateInstallPosted = false; // flips the /api/update answer to config.updateAfterInstall
   const immichDoneAt = {}; // kind -> timestamp the response was flushed
 
@@ -30,7 +33,9 @@ function createMockServer(config) {
       screen: state.screen,
       volume: state.volume,
       playing: state.playing,
-      slideshow: state.slideshow
+      slideshow: state.slideshow,
+      panel: state.panel,
+      app: state.app
     };
   }
 
@@ -112,6 +117,30 @@ function createMockServer(config) {
       return;
     }
 
+    if (req.method === 'POST' && pathname === '/api/panel') {
+      const body = JSON.parse(await readBody(req));
+      panelBodies.push({ body, ts: Date.now() });
+      const result = config.panelResponder(body, state);
+      sendJSON(res, result.status, result.body);
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/foreground') {
+      const body = JSON.parse(await readBody(req));
+      foregroundBodies.push({ body, ts: Date.now() });
+      const result = config.foregroundResponder(body, state);
+      sendJSON(res, result.status, result.body);
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/lockscreen') {
+      const body = JSON.parse(await readBody(req));
+      lockscreenBodies.push({ body, ts: Date.now() });
+      const result = config.lockscreenResponder(body, state);
+      sendJSON(res, result.status, result.body);
+      return;
+    }
+
     if (req.method === 'GET' && pathname === '/api/slideshow/filters') {
       if (config.filters.delayMs) await sleep(config.filters.delayMs);
       sendJSON(res, config.filters.status, config.filters.body);
@@ -156,6 +185,9 @@ function createMockServer(config) {
   return {
     requests,
     putBodies,
+    panelBodies,
+    lockscreenBodies,
+    foregroundBodies,
     immichDoneAt,
     state,
     start() {

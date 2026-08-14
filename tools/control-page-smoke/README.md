@@ -2,8 +2,9 @@
 
 A headless-Chrome smoke harness for `app/src/main/assets/control.html` (the device's on-page
 remote-control UI). It loads the real page against a same-origin mock of the Task 5 API contract
-and asserts 11 named behaviours — including the Task 7 regression (an early "Save Filters" click
-racing the filter-list fetches and PUTting empty arrays over the user's real saved filters).
+and asserts 17 named behaviours — including the Task 7 regression (an early "Save Filters" click
+racing the filter-list fetches and PUTting empty arrays over the user's real saved filters), and
+the panel switcher's rule that a lamp only lights once `GET /api/state` confirms the switch.
 
 This exists because the plan shipped `control.html` as "device-exercised only" (no automated
 tests), and that gap is exactly how the Task 7 data-loss bug slipped past a fast localhost mock —

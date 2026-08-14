@@ -37,13 +37,16 @@ class InfoOverviewReducerTest {
     ) = InfoSpotifyInput(service, status, receiverName, sessionName, bitrateKbps)
 
     private fun dlna(
+        featureEnabled: Boolean = true,
         status: RendererStatus = RendererStatus.STOPPED,
         descriptionUrl: String? = null,
         rendererName: String = "Rusty Media Player",
         transport: RendererTransport? = null,
         transportError: Boolean = false,
         trackTitle: String? = null,
-    ) = InfoDlnaInput(status, descriptionUrl, rendererName, transport, transportError, trackTitle)
+    ) = InfoDlnaInput(
+        featureEnabled, status, descriptionUrl, rendererName, transport, transportError, trackTitle,
+    )
 
     private fun control(
         state: ControlServerStatus.State = ControlServerStatus.State.Stopped,
@@ -283,13 +286,51 @@ class InfoOverviewReducerTest {
         assertEquals(InfoTone.NEUTRAL, row.tone)
     }
 
-    /**
-     * The renderer service runs headless with the DLNA screen feature off, and then its settings tab
-     * does not exist. Falling through to General is deliberate — General owns the feature toggle.
-     */
+    /** Belt to braces: any row whose settings tab is not on offer must resolve to General, not to
+     *  SettingsSheet's silent index-0 fallback. */
     @Test fun dlnaRowFallsBackToGeneralWhenItsTabIsHidden() {
         val row = InfoOverviewReducer.dlnaRow(dlna(status = RendererStatus.RUNNING), minimalTabs)
         assertEquals(SettingsTabKey.GENERAL, row.settingsTab)
+    }
+
+    /**
+     * The DLNA Player feature toggle owns the renderer service, so with the feature off the row is
+     * Disabled — and it says so even while the status publisher still reports RUNNING, which is a real
+     * window: stopService is asynchronous, so the last RUNNING snapshot outlives the toggle. Pointing
+     * at the DLNA Player tab there would be a dead end, because that tab goes away with the feature.
+     */
+    @Test fun dlnaDisabledReadsAsDisabledEvenWhileTheServiceIsStillWindingDown() {
+        val row = InfoOverviewReducer.dlnaRow(
+            dlna(
+                featureEnabled = false,
+                status = RendererStatus.RUNNING,
+                descriptionUrl = "http://192.168.1.40:49152/upnp/device.xml",
+                transport = RendererTransport.PLAYING,
+                trackTitle = "Kitchen announcement",
+            ),
+            allTabs,
+        )
+        assertEquals("Disabled", row.status)
+        assertEquals("Turn it on in General settings", row.detail)
+        assertEquals(InfoTone.NEUTRAL, row.tone)
+        assertEquals(SettingsTabKey.GENERAL, row.settingsTab)
+    }
+
+    /** Off is off: a failed start must not put a red dot on a feature that is switched off. */
+    @Test fun dlnaDisabledOutranksAFailedStart() {
+        val row = InfoOverviewReducer.dlnaRow(
+            dlna(featureEnabled = false, status = RendererStatus.FAILED), allTabs,
+        )
+        assertEquals("Disabled", row.status)
+        assertEquals(InfoTone.NEUTRAL, row.tone)
+    }
+
+    /** A disabled service still keeps its identity row, so the player's name stays readable. */
+    @Test fun dlnaDisabledKeepsTheRendererName() {
+        val row = InfoOverviewReducer.dlnaRow(
+            dlna(featureEnabled = false, rendererName = "Kitchen Rusty"), allTabs,
+        )
+        assertEquals("Kitchen Rusty", row.identity)
     }
 
     // ---- Remote Control row --------------------------------------------------
@@ -539,6 +580,43 @@ class InfoOverviewReducerTest {
         assertEquals(SettingsTabKey.GENERAL, row.settingsTab)
     }
 
+    /**
+     * A refresh token outlives the toggle that switched the feature off, so the connection facts stay
+     * green long after Home Assistant stopped running. Reporting "Connected" there describes a server
+     * the app is not using — the toggle has to outrank every connection fact.
+     */
+    @Test fun haDisabledReadsAsDisabledEvenWithALiveConnection() {
+        val row = InfoOverviewReducer.haRow(
+            ha(
+                configuredUrl = "http://homeassistant.local:8123",
+                hasOriginToken = true,
+                discovery = HaDiscovery.Loaded(emptyList()),
+                accountName = "Marco",
+                selectedDashboards = 3,
+            ),
+            allTabs,
+        )!!
+        assertEquals("Disabled", row.status)
+        assertEquals("Turn it on in General settings", row.detail)
+        assertEquals(InfoTone.NEUTRAL, row.tone)
+        // Even where the feature's own tab is still on offer, the disabled row opens the panel that
+        // holds the toggle its detail line names.
+        assertEquals(SettingsTabKey.GENERAL, row.settingsTab)
+    }
+
+    /** A feature that is off cannot have a problem worth a red dot; the toggle wins over discovery. */
+    @Test fun haDisabledOutranksADiscoveryError() {
+        val row = InfoOverviewReducer.haRow(
+            ha(
+                configuredUrl = "http://homeassistant.local:8123",
+                discovery = HaDiscovery.Error("Log in to Home Assistant, then tap Refresh."),
+            ),
+            allTabs,
+        )!!
+        assertEquals("Disabled", row.status)
+        assertEquals(InfoTone.NEUTRAL, row.tone)
+    }
+
     // ---- Immich Slideshow feature row ---------------------------------------
 
     @Test fun immichIsOmittedWhenNeitherEnabledNorConfigured() {
@@ -652,6 +730,41 @@ class InfoOverviewReducerTest {
             minimalTabs,
         )!!
         assertEquals(SettingsTabKey.GENERAL, row.settingsTab)
+    }
+
+    /**
+     * The stored key stays verified after the Slideshow toggle goes off, so the connection facts alone
+     * would keep the row green for a slideshow that can never run. The toggle outranks them.
+     */
+    @Test fun immichDisabledReadsAsDisabledEvenWhenTheKeyIsVerified() {
+        val row = InfoOverviewReducer.immichRow(
+            immich(
+                configured = true,
+                verified = true,
+                serverUrl = "https://photos.example.com",
+                accountName = "Family photos",
+                albums = 2,
+            ),
+            allTabs,
+        )!!
+        assertEquals("Disabled", row.status)
+        assertEquals("Turn it on in General settings", row.detail)
+        assertEquals(InfoTone.NEUTRAL, row.tone)
+        assertEquals(SettingsTabKey.GENERAL, row.settingsTab)
+    }
+
+    /** Off is off: a stale verification failure must not put a red dot on a feature nobody is running. */
+    @Test fun immichDisabledOutranksAFailedVerification() {
+        val row = InfoOverviewReducer.immichRow(
+            immich(
+                configured = true,
+                lastVerifyFailed = true,
+                serverUrl = "https://photos.example.com",
+            ),
+            allTabs,
+        )!!
+        assertEquals("Disabled", row.status)
+        assertEquals(InfoTone.NEUTRAL, row.tone)
     }
 
     // ---- Host parsing --------------------------------------------------------

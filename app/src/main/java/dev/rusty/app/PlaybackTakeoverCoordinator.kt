@@ -35,16 +35,16 @@ class PlaybackTakeoverCoordinator(
         val now = clock.nowMs()
         if (prev == VisualState.ACTIVE && next == VisualState.IDLE) leftActiveAtMs = now
 
-        // Read once and reuse for the wake decision below: a value that changes between the
-        // policy call and the fake-off check would let the wake path disagree with the
-        // decision PlaybackTakeover.onVisualEdge actually made.
+        // Read once, for the wake below: the policy no longer branches on it (the merged toggle
+        // always wakes before it launches, so a fake-off is simply cleared), but the wake still
+        // needs to know WHICH path to take — ScreenControlModel under a fake-off, a real wake
+        // lock otherwise.
         val desiredOn = screenDesiredOn()
         val actions = PlaybackTakeover.onVisualEdge(
             prev = prev,
             next = next,
             toggles = toggles(),
             canDrawOverlays = canDrawOverlays(),
-            screenDesiredOn = desiredOn,
             msSinceLastActive = leftActiveAtMs?.let { now - it },
             msSinceProcessStart = now - processStartMs,
         )

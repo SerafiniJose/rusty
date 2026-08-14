@@ -2,36 +2,34 @@ package dev.rusty.app
 
 import android.content.SharedPreferences
 
-/** The three playback-takeover toggles (Spotify tab). All default OFF (opt-in). */
+/**
+ * The two playback-takeover toggles (Spotify tab). Both default OFF (opt-in).
+ *
+ * [KEY_SHOW_ON_PLAYBACK] replaced the earlier `takeover_foreground` + `takeover_wake_screen` pair.
+ * There is deliberately no migration from those keys: the takeover feature has never shipped, so
+ * the only installs holding them are test builds, and reading a stale value would switch the
+ * merged toggle on without the user asking.
+ */
 object PlaybackTakeoverSettings {
     const val KEY_SWITCH_PAGE = "takeover_switch_page"
-    const val KEY_FOREGROUND = "takeover_foreground"
-    const val KEY_WAKE_SCREEN = "takeover_wake_screen"
+    const val KEY_SHOW_ON_PLAYBACK = "takeover_show_on_playback"
 
     fun isSwitchPageEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_SWITCH_PAGE, false)
 
-    fun isBringToFrontEnabled(prefs: SharedPreferences): Boolean =
-        prefs.getBoolean(KEY_FOREGROUND, false)
-
-    fun isWakeScreenEnabled(prefs: SharedPreferences): Boolean =
-        prefs.getBoolean(KEY_WAKE_SCREEN, false)
+    fun isShowOnPlaybackEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_SHOW_ON_PLAYBACK, false)
 
     fun setSwitchPage(prefs: SharedPreferences, enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SWITCH_PAGE, enabled).apply()
     }
 
-    fun setBringToFront(prefs: SharedPreferences, enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_FOREGROUND, enabled).apply()
-    }
-
-    fun setWakeScreen(prefs: SharedPreferences, enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_WAKE_SCREEN, enabled).apply()
+    fun setShowOnPlayback(prefs: SharedPreferences, enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_ON_PLAYBACK, enabled).apply()
     }
 
     fun toggles(prefs: SharedPreferences): TakeoverToggles = TakeoverToggles(
         switchPage = isSwitchPageEnabled(prefs),
-        bringToFront = isBringToFrontEnabled(prefs),
-        wakeScreen = isWakeScreenEnabled(prefs),
+        showOnPlayback = isShowOnPlaybackEnabled(prefs),
     )
 }

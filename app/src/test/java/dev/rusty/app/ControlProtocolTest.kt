@@ -14,8 +14,38 @@ private class FakeControlRuntime : ControlRuntime {
         volume = ControlVolume(value = 47, fixed = false),
         playing = ControlPlaying(spotify = true, dlna = false),
         slideshowEnabled = true,
+        panel = ControlPanel(
+            active = ControlPanelId.SPOTIFY,
+            available = ControlPanelId.values().toList(),
+            lockscreen = ControlLockscreen(
+                theme = ScreensaverThemeId.CLOCK,
+                themes = ScreensaverThemeId.values().toList(),
+            ),
+        ),
+        app = ControlApp(foreground = true, canBringForward = true),
     )
     override fun snapshot(): ControlSnapshot = snap
+
+    val panelCalls = mutableListOf<ControlPanelId>()
+    var panelResult: ControlPanelResult = ControlPanelResult.Ok(snap)
+    override fun setPanel(id: ControlPanelId): ControlPanelResult {
+        panelCalls.add(id)
+        return panelResult
+    }
+
+    val lockscreenCalls = mutableListOf<ScreensaverThemeId>()
+    var lockscreenResult: ControlLockscreenResult = ControlLockscreenResult.Ok(snap)
+    override fun setLockscreenTheme(theme: ScreensaverThemeId): ControlLockscreenResult {
+        lockscreenCalls.add(theme)
+        return lockscreenResult
+    }
+
+    val foregroundCalls = mutableListOf<Boolean>()
+    var foregroundResult: ControlForegroundResult = ControlForegroundResult.Ok(snap)
+    override fun setForeground(on: Boolean): ControlForegroundResult {
+        foregroundCalls.add(on)
+        return foregroundResult
+    }
 
     val screenCalls = mutableListOf<Pair<Boolean, Int?>>()
     var screenResult = snap
@@ -99,6 +129,200 @@ class ControlProtocolTest {
         assertEquals(200, res.status)
         assertTrue(res.headers.any { it.first == "Content-Type" && it.second.contains("application/json") })
         assertEquals(rt.snap.toJson(), res.body)
+    }
+
+    // -- POST /api/panel ------------------------------------------------------
+
+    @Test fun postPanel_switchesAndReturnsSnapshot() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/panel", body = """{"id":"home_assistant"}"""), rt)
+        assertEquals(200, res.status)
+        assertEquals(listOf(ControlPanelId.HOME_ASSISTANT), rt.panelCalls)
+        assertEquals(rt.snap.toJson(), res.body)
+    }
+
+    @Test fun postPanel_lockscreenIsASwitchTargetLikeAnyOther() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/panel", body = """{"id":"lockscreen"}"""), rt)
+        assertEquals(200, res.status)
+        assertEquals(listOf(ControlPanelId.LOCKSCREEN), rt.panelCalls)
+    }
+
+    /** An unknown id must never reach the runtime — that is what would hand the shell an
+     *  arbitrary string to switch to. */
+    @Test fun postPanel_unknownId_400_andRuntimeUntouched() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/panel", body = """{"id":"screensaver"}"""), rt)
+        assertEquals(400, res.status)
+        assertTrue(rt.panelCalls.isEmpty())
+    }
+
+    @Test fun postPanel_missingId_400() {
+        val rt = FakeControlRuntime()
+        assertEquals(400, route(req("POST", "/api/panel", body = """{}"""), rt).status)
+        assertTrue(rt.panelCalls.isEmpty())
+    }
+
+    @Test fun postPanel_nonStringId_400() {
+        val rt = FakeControlRuntime()
+        assertEquals(400, route(req("POST", "/api/panel", body = """{"id":3}"""), rt).status)
+        assertEquals(400, route(req("POST", "/api/panel", body = """{"id":null}"""), rt).status)
+        assertTrue(rt.panelCalls.isEmpty())
+    }
+
+    @Test fun postPanel_malformedJson_400() {
+        val rt = FakeControlRuntime()
+        assertEquals(400, route(req("POST", "/api/panel", body = "{"), rt).status)
+        assertTrue(rt.panelCalls.isEmpty())
+    }
+
+    @Test fun postPanel_noWindow_409() {
+        val rt = FakeControlRuntime()
+        rt.panelResult = ControlPanelResult.NoWindow
+        val res = route(req("POST", "/api/panel", body = """{"id":"dlna"}"""), rt)
+        assertEquals(409, res.status)
+        assertTrue(JSONObject(res.body).getString("error").contains("isn't on screen"))
+    }
+
+    @Test fun postPanel_disabledPanel_409() {
+        val rt = FakeControlRuntime()
+        rt.panelResult = ControlPanelResult.Disabled
+        val res = route(req("POST", "/api/panel", body = """{"id":"dlna"}"""), rt)
+        assertEquals(409, res.status)
+        assertTrue(JSONObject(res.body).getString("error").contains("switched off"))
+    }
+
+    @Test fun postPanel_requiresJsonContentType() {
+        val rt = FakeControlRuntime()
+        val res = route(
+            req("POST", "/api/panel", body = """{"id":"dlna"}""", contentType = "text/plain"), rt
+        )
+        assertEquals(415, res.status)
+        assertTrue(rt.panelCalls.isEmpty())
+    }
+
+    @Test fun getPanel_isNotARoute_404() {
+        assertEquals(404, route(req("GET", "/api/panel")).status)
+    }
+
+    // -- POST /api/lockscreen -------------------------------------------------
+
+    @Test fun postLockscreen_setsThemeAndReturnsSnapshot() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/lockscreen", body = """{"theme":"oled"}"""), rt)
+        assertEquals(200, res.status)
+        assertEquals(listOf(ScreensaverThemeId.OLED), rt.lockscreenCalls)
+        assertEquals(rt.snap.toJson(), res.body)
+    }
+
+    @Test fun postLockscreen_unknownTheme_400_andRuntimeUntouched() {
+        val rt = FakeControlRuntime()
+        // "photos" is the control page's LABEL for the slideshow lamp, never its wire value —
+        // a page that confuses the two must fail loudly rather than set some default theme.
+        val res = route(req("POST", "/api/lockscreen", body = """{"theme":"photos"}"""), rt)
+        assertEquals(400, res.status)
+        assertTrue(rt.lockscreenCalls.isEmpty())
+    }
+
+    @Test fun postLockscreen_nonStringOrMissingTheme_400() {
+        val rt = FakeControlRuntime()
+        assertEquals(400, route(req("POST", "/api/lockscreen", body = """{}"""), rt).status)
+        assertEquals(400, route(req("POST", "/api/lockscreen", body = """{"theme":7}"""), rt).status)
+        assertTrue(rt.lockscreenCalls.isEmpty())
+    }
+
+    @Test fun postLockscreen_unavailableTheme_409() {
+        val rt = FakeControlRuntime()
+        rt.lockscreenResult = ControlLockscreenResult.ThemeUnavailable
+        val res = route(req("POST", "/api/lockscreen", body = """{"theme":"slideshow"}"""), rt)
+        assertEquals(409, res.status)
+        assertTrue(JSONObject(res.body).getString("error").contains("switched off"))
+    }
+
+    @Test fun postLockscreen_requiresJsonContentType() {
+        val rt = FakeControlRuntime()
+        val res = route(
+            req("POST", "/api/lockscreen", body = """{"theme":"oled"}""", contentType = "text/plain"), rt
+        )
+        assertEquals(415, res.status)
+        assertTrue(rt.lockscreenCalls.isEmpty())
+    }
+
+    // -- POST /api/foreground -------------------------------------------------
+
+    @Test fun postForeground_bringsForwardAndReturnsSnapshot() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/foreground", body = """{"on":true}"""), rt)
+        assertEquals(200, res.status)
+        assertEquals(listOf(true), rt.foregroundCalls)
+        assertEquals(rt.snap.toJson(), res.body)
+    }
+
+    @Test fun postForeground_sendsToBackground() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/foreground", body = """{"on":false}"""), rt)
+        assertEquals(200, res.status)
+        assertEquals(listOf(false), rt.foregroundCalls)
+    }
+
+    @Test fun postForeground_missingOrNonBooleanOn_400() {
+        val rt = FakeControlRuntime()
+        assertEquals(400, route(req("POST", "/api/foreground", body = """{}"""), rt).status)
+        // "on":1 is the classic truthy-JSON mistake; it must not be read as true.
+        assertEquals(400, route(req("POST", "/api/foreground", body = """{"on":1}"""), rt).status)
+        assertEquals(400, route(req("POST", "/api/foreground", body = """{"on":"true"}"""), rt).status)
+        assertTrue(rt.foregroundCalls.isEmpty())
+    }
+
+    @Test fun postForeground_malformedJson_400() {
+        val rt = FakeControlRuntime()
+        assertEquals(400, route(req("POST", "/api/foreground", body = "{"), rt).status)
+        assertTrue(rt.foregroundCalls.isEmpty())
+    }
+
+    /** Both directions are refused without the overlay grant — sending Rusty away when it cannot
+     *  be brought back would strand a touchless device. */
+    @Test fun postForeground_withoutOverlayGrant_409_inBothDirections() {
+        for (on in listOf(true, false)) {
+            val rt = FakeControlRuntime()
+            rt.foregroundResult = ControlForegroundResult.CannotBringForward
+            val res = route(req("POST", "/api/foreground", body = """{"on":$on}"""), rt)
+            assertEquals(409, res.status)
+            assertTrue(JSONObject(res.body).getString("error").contains("Display over other apps"))
+        }
+    }
+
+    @Test fun postForeground_requiresJsonContentType() {
+        val rt = FakeControlRuntime()
+        val res = route(
+            req("POST", "/api/foreground", body = """{"on":true}""", contentType = "text/plain"), rt
+        )
+        assertEquals(415, res.status)
+        assertTrue(rt.foregroundCalls.isEmpty())
+    }
+
+    @Test fun getForeground_isNotARoute_404() {
+        assertEquals(404, route(req("GET", "/api/foreground")).status)
+    }
+
+    /** Every new write sits behind the same DNS-rebinding guard as the rest of the API. */
+    @Test fun panelWrites_rejectAForeignHost() {
+        val rt = FakeControlRuntime()
+        assertEquals(
+            403,
+            route(req("POST", "/api/panel", body = """{"id":"dlna"}""", host = "evil.example.com"), rt).status,
+        )
+        assertEquals(
+            403,
+            route(req("POST", "/api/lockscreen", body = """{"theme":"oled"}""", host = "evil.example.com"), rt).status,
+        )
+        assertEquals(
+            403,
+            route(req("POST", "/api/foreground", body = """{"on":true}""", host = "evil.example.com"), rt).status,
+        )
+        assertTrue(rt.panelCalls.isEmpty())
+        assertTrue(rt.lockscreenCalls.isEmpty())
+        assertTrue(rt.foregroundCalls.isEmpty())
     }
 
     // -- POST /api/screen -----------------------------------------------------

@@ -640,6 +640,39 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
                 dlna = RendererRuntimeHolder.current().state?.transport == RendererTransport.PLAYING,
             ),
             slideshowEnabled = SlideshowSettings.isEnabled(prefs),
+            panel = panelSnapshot(),
+            app = ControlApp(
+                // Same source as panel.active, so the two cannot disagree.
+                foreground = PanelControlRelay.hasHost(),
+                canBringForward = AppForeground.canBringForward(context),
+            ),
+        )
+    }
+
+    /**
+     * The `panel` block: what the shell is showing (null while nothing can take a switch — see
+     * [PanelControlRelay]), where the remote may send it, and the lockscreen's theme.
+     *
+     * `available` is built from [FeatureRegistry.enabledIds] rather than every [FeatureId], so a
+     * feature switched off in settings is not offered; [ControlPanelId.LOCKSCREEN] is appended
+     * unconditionally because the screensaver is not a feature and has no enable flag.
+     *
+     * The reported theme is healed through [SlideshowDisable.initialTheme] for the same reason the
+     * in-app picker is: a stored `SLIDESHOW` with the feature since switched off is not the theme
+     * that would actually mount, and reporting it would leave the remote showing a selection the
+     * device would never honour.
+     */
+    private fun panelSnapshot(): ControlPanel {
+        val slideshowEnabled = SlideshowSettings.isEnabled(prefs)
+        val stored = ScreensaverThemeId.fromPrefValue(prefs.getString(ScreensaverController.KEY_THEME, null))
+        return ControlPanel(
+            active = PanelControlRelay.current(),
+            available = FeatureRegistry.enabledIds(prefs).map { ControlPanelId.of(it) } +
+                ControlPanelId.LOCKSCREEN,
+            lockscreen = ControlLockscreen(
+                theme = SlideshowDisable.initialTheme(stored, slideshowEnabled),
+                themes = ControlLockscreenThemes.selectable(slideshowEnabled),
+            ),
         )
     }
 
@@ -667,6 +700,59 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
         // Read back rather than echo: the device quantizes to its own step count, so the caller is
         // told the percentage it actually got (e.g. 55 -> 53 on a 15-step stream).
         snapshot()
+    }
+
+    override fun setPanel(id: ControlPanelId): ControlPanelResult = synchronized(commandLock) {
+        // Availability is decided here, against the same prefs the snapshot reports from, so the
+        // page can never talk the device into mounting a feature the user switched off.
+        if (id !in panelSnapshot().available) return ControlPanelResult.Disabled
+        // Checked before posting: a request that has nowhere to land must answer 409 now, not be
+        // posted into a void and reported as accepted.
+        if (!PanelControlRelay.hasHost()) return ControlPanelResult.NoWindow
+
+        // The host commits a fragment transaction, so it must run on the main thread — and this
+        // must not block on it: the command lock is held, and the main thread may itself be
+        // waiting on something that needs it. The switch is therefore observed by the caller only
+        // through the next snapshot, exactly like a brightness apply.
+        mainHandler.post { PanelControlRelay.requestPanel(id) }
+        // Deliberately the PRE-switch snapshot: the transaction has not run yet, so claiming the
+        // new panel here would be the optimistic report the control page is built not to trust.
+        ControlPanelResult.Ok(snapshot())
+    }
+
+    override fun setLockscreenTheme(theme: ScreensaverThemeId): ControlLockscreenResult =
+        synchronized(commandLock) {
+            if (theme !in panelSnapshot().lockscreen.themes) return ControlLockscreenResult.ThemeUnavailable
+            prefs.edit().putString(ScreensaverController.KEY_THEME, theme.prefValue).apply()
+            // Same shape as setFilters: persist under the lock, then announce outside it on the
+            // main thread, because the subscriber live-swaps a mounted saver's Views. A device
+            // with no window simply has no subscriber — the pref is still saved.
+            mainHandler.post { PanelControlRelay.notifyLockscreenThemeChanged() }
+            // Safe to report the new theme: unlike a panel switch this IS applied synchronously —
+            // the preference is the source of truth and it has already been written.
+            ControlLockscreenResult.Ok(snapshot())
+        }
+
+    override fun setForeground(on: Boolean): ControlForegroundResult = synchronized(commandLock) {
+        // The grant gates BOTH directions. Refusing to send Rusty away without it is the point:
+        // on a touchless Echo Show or TV the launcher has no way back to Rusty, so the remote
+        // must not be able to perform an action it cannot undo. See ControlForegroundResult.
+        if (!AppForeground.canBringForward(context)) return ControlForegroundResult.CannotBringForward
+
+        if (on) {
+            // No host needed — this is precisely the case where there is none. Posted rather than
+            // run inline: the wake half touches ScreenControlModel, whose renderer callbacks are
+            // Activity-bound, and the command lock is held here.
+            mainHandler.post { AppForeground.bringToFront(context) }
+        } else {
+            // A false return means no attached window, i.e. Rusty is already not in front —
+            // a satisfied request, so it is deliberately not an error.
+            mainHandler.post { PanelControlRelay.requestBackground() }
+        }
+        // The pre-command snapshot by design: neither direction has run yet, and a page that
+        // trusted an optimistic answer here would show a switch that silently lied on the OEM
+        // builds where the launch is dropped.
+        ControlForegroundResult.Ok(snapshot())
     }
 
     override fun filters(): ImmichFilters = SlideshowSettings.filters(prefs)

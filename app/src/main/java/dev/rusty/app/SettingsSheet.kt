@@ -15,6 +15,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.RadioButton
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.tabs.TabLayout
@@ -233,6 +234,11 @@ object SettingsSheet {
         val remoteControlStatus = panel.findViewById<TextView>(R.id.tvRemoteControlStatus)
         val brightnessPermissionRow = panel.findViewById<View>(R.id.rowBrightnessPermission)
 
+        fun writeSettingsIntent() = Intent(
+            Settings.ACTION_MANAGE_WRITE_SETTINGS,
+            Uri.parse("package:${activity.packageName}"),
+        )
+
         remoteControlSwitch.isChecked = ControlSettings.isEnabled(prefs)
 
         // Replays the current state on registration (ControlServerStatus.addListener), so the
@@ -253,32 +259,45 @@ object SettingsSheet {
         // Android's scarier-sounding grants, and offering it to a user who has never turned Remote
         // Control on gives them a prompt with no context for why Rusty would want it. It is only
         // meaningful once something can actually ask for a brightness change.
-        fun refreshBrightnessPermissionRow() {
-            val relevant = remoteControlSwitch.isChecked && !Settings.System.canWrite(activity)
+        //
+        // The switch itself turns amber in that same state, matching the takeover row's
+        // vocabulary for "on, but a grant is missing". Note the difference from that row, which
+        // is deliberate and requested: Remote Control does NOT need this permission to work — the
+        // page, volume, playback and screen on/off all run without it, and brightness simply dims
+        // Rusty's own window instead of the panel. Amber here flags an unclaimed capability, not a
+        // broken service, so it will sit amber indefinitely for anyone who never wants system
+        // brightness. Do not "fix" it by suppressing the row instead.
+        //
+        // Skipped entirely where the grant screen does not exist (some TV builds ship no "Modify
+        // system settings" activity): amber that no tap can clear is worse than no amber, which is
+        // the same call the overlay row makes.
+        fun refreshBrightnessPermissionUi() {
+            val grantable = writeSettingsIntent()
+                .resolveActivity(activity.packageManager) != null
+            val relevant = remoteControlSwitch.isChecked &&
+                !Settings.System.canWrite(activity) && grantable
             brightnessPermissionRow.visibility = if (relevant) View.VISIBLE else View.GONE
+            remoteControlSwitch.trackTintList = ContextCompat.getColorStateList(
+                activity,
+                if (relevant) R.color.switch_track_tint_warn else R.color.switch_track_tint,
+            )
         }
-        refreshBrightnessPermissionRow()
+        refreshBrightnessPermissionUi()
         remoteControlSwitch.setOnCheckedChangeListener { _, isChecked ->
             ControlSettings.setEnabled(prefs, isChecked)
             ControlService.syncFromPrefs(activity)
-            refreshBrightnessPermissionRow()
+            refreshBrightnessPermissionUi()
         }
         val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
-            if (hasFocus) refreshBrightnessPermissionRow()
+            if (hasFocus) refreshBrightnessPermissionUi()
         }
         panel.viewTreeObserver.addOnWindowFocusChangeListener(focusListener)
 
         brightnessPermissionRow.setOnClickListener {
             // Some TV builds ship no "Modify system settings" screen to send the user to; a
-            // missing activity here must degrade to a no-op, not a crash.
-            runCatching {
-                activity.startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_WRITE_SETTINGS,
-                        Uri.parse("package:${activity.packageName}"),
-                    ),
-                )
-            }
+            // missing activity here must degrade to a no-op, not a crash. (refreshBrightnessPermissionUi
+            // already hides the row there — this stays as the belt to that braces.)
+            runCatching { activity.startActivity(writeSettingsIntent()) }
         }
 
         return {

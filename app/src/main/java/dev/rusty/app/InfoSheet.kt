@@ -189,6 +189,7 @@ object InfoSheet {
         val rendererStatus = RendererStatusPublisher.current()
         val rendererUi = RendererRuntimeHolder.current()
         val dlna = InfoDlnaInput(
+            featureEnabled = prefs.getBoolean(DlnaPlayerFeature.KEY_ENABLED, false),
             status = rendererStatus.status,
             descriptionUrl = rendererStatus.descriptionUrl,
             // The runtime reports "" whenever no backend is attached, so a stopped player falls back

@@ -58,7 +58,7 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 - **Home Assistant dashboard** — an optional second screen: sign in from Rusty's settings (or through the dashboard's own login) and Rusty shows your Home Assistant dashboards full-screen in a kiosk-style view, with switcher chips to jump between them. It auto-discovers your dashboards and sidebar apps, and can tint its own chrome to match your dashboard theme.
 - **Home Assistant media renderer** — optionally expose Rusty as a DLNA media player that Home Assistant auto-discovers as a `media_player` entity (nothing to install on the HA side). Speak TTS announcements ("the wash is done", a doorbell chime, a morning briefing) or stream internet radio to it from automations, scripts, or a dashboard card — Rusty pauses or fades Spotify while the message plays and resumes it afterwards.
 - **Spotify Canvas in now-playing** — optionally fill the now-playing screen with the track's looping Canvas video instead of static album art.
-- **Remote control** — an optional, off-by-default web page and HTTP API the device serves itself: turn the screen on/off, set brightness and media volume, see what's playing, and edit the Slideshow's album/person/tag filters from your phone or laptop. While it's on, the device announces itself on the network so a Home Assistant integration can discover it. See [Remote control](#remote-control).
+- **Remote control** — an optional, off-by-default web page and HTTP API the device serves itself: switch what Rusty is showing (Spotify, Home Assistant, DLNA or the lock screen), bring its window forward or send it away, pick the lock screen's theme, turn the screen on/off, set brightness and media volume, and edit the Slideshow's album/person/tag filters from your phone or laptop. While it's on, the device announces itself on the network so a Home Assistant integration can discover it. See [Remote control](#remote-control).
 - **Playback takeover** — optionally have Rusty react when a phone or laptop starts playing on this receiver: switch the app to the Spotify page, bring it to the front over other apps, and/or wake the screen. Three independent toggles in **Settings → Spotify**, all off by default. See [Playback takeover](#playback-takeover).
 - **On-screen launcher** — an expandable button jumps between Spotify, Home Assistant, and the screensaver.
 - **Start on boot & Keep screen on** — optional toggles to launch Rusty when the device powers on and to hold the display awake while it's in front.
@@ -104,19 +104,32 @@ you can drive the screen from another room without walking over to it.
 then shows the address to open, something like `http://192.168.1.42:8765/`. Type that into any
 browser on the same network and you get a single page with:
 
-- **Screen** — on/off and a brightness slider. "Off" is a full-screen black overlay that keeps
-  the panel awake, so turning it back on is instant; touching the device (or pressing any remote
-  key) also wakes it.
-- **Volume** — the media volume slider. Hidden on devices whose volume is fixed (some TVs and
+- **Source** — four lamps for the four things Rusty can be showing: Spotify, Home Assistant,
+  DLNA and the lock screen. Tap one and the device switches to it. A lamp only lights once the
+  device confirms the switch, so a command that didn't land never looks like it did; a feature
+  you've switched off in Settings stays in place, struck through, rather than disappearing.
+  Switching needs Rusty to be on screen — if it isn't, the row says so instead of pretending.
+- **On screen** — a switch that brings Rusty's window to the front, or sends it out of the way to
+  whatever's behind it. Bringing it forward wakes the display first, so it works on a sleeping
+  panel. Both directions need Rusty to hold Android's **"Display over other apps"** permission —
+  and the switch is deliberately dead in *both* directions without it, because sending Rusty away
+  when it can't come back would leave a touch-free screen with no way home.
+- **Lock screen theme** — pick Clock, OLED, Canvas or Slideshow. This one works even when Rusty
+  isn't in the foreground, because it's a saved preference: a lock screen that appears later
+  uses it, and one that's already up swaps instantly.
+- **Screen** — on/off and a brightness slab you can drag anywhere on. "Off" is a full-screen
+  black overlay that keeps the panel awake, so turning it back on is instant; touching the device
+  (or pressing any remote key) also wakes it.
+- **Volume** — the media volume slab. Hidden on devices whose volume is fixed (some TVs and
   docks).
-- **Playing** — whether the Spotify receiver or the DLNA player is currently playing.
-- **Slideshow filters** — the same album / person / tag checklists as the in-app picker, so you
-  can re-aim the photo frame from the sofa.
-- **Update** — see whether a newer Rusty release exists and start the download from your sofa.
-  The device fetches the APK itself and hands it to Android's installer; **Android always asks
-  for confirmation on the device screen** (a sideloaded app can't update itself silently), so
-  the last step is one OK on the device — by touch or D-pad. The very first time, Android also
-  shows a one-time **"allow installs from this source"** screen for Rusty.
+- **Slideshow sources** — the same album / person / tag checklists as the in-app picker, so you
+  can re-aim the photo frame from the sofa. Collapsed under **Service**, since it's a setup task
+  rather than something you do daily.
+- **Software** — see whether a newer Rusty release exists and start the download from your sofa,
+  also under **Service**. The device fetches the APK itself and hands it to Android's installer;
+  **Android always asks for confirmation on the device screen** (a sideloaded app can't update
+  itself silently), so the last step is one OK on the device — by touch or D-pad. The very first
+  time, Android also shows a one-time **"allow installs from this source"** screen for Rusty.
 
 The port is fixed at **8765**. Nothing needs to be installed on the other device — it's one
 self-contained page, no accounts, no cloud.
@@ -132,8 +145,8 @@ mode is in effect. It is entirely optional, and Remote control works without it.
 ### Home Assistant
 
 While Remote control is on, Rusty advertises itself as `_rusty._tcp` over mDNS so a Home
-Assistant integration can discover it on the network and expose the screen, volume and playing
-state as entities. That integration is a separate project; Rusty itself needs no configuration
+Assistant integration can discover it on the network and expose the screen, volume, playing
+state and the active panel as entities. That integration is a separate project; Rusty itself needs no configuration
 for it beyond the toggle.
 
 ### Security — please read before enabling
@@ -163,22 +176,27 @@ own VPN rather than forwarding port 8765.
 
 ### Playback takeover
 
-**Settings → Spotify** has three independent toggles, each off by default: **Switch to Spotify on
-playback**, **Bring app to front on playback**, and **Wake screen on playback**. All three react
-only to a genuine new play started from another device — renaming the receiver, changing bitrate,
-or a plain pause/resume won't trigger them.
+**Settings → Spotify** has two toggles, both off by default: **Switch to Spotify on playback** and
+**Wake and show Rusty on playback**. Both react only to a genuine new play started from another
+device — renaming the receiver, changing bitrate, or a plain pause/resume won't trigger them.
 
-**Bring app to front** needs Android's **Display over other apps** permission
-(`SYSTEM_ALERT_WINDOW`). Its settings row opens the system grant screen directly; on devices that
-ship no such screen — common on Android TV and Fire OS builds — the toggle disables itself with an
-explanation instead.
+**Wake and show Rusty** is one gesture rather than a screen switch and an app switch, because the
+halves are not separately useful: an app launched while the display is off may never resume, so
+waking and coming forward only make sense together. It needs Android's **Display over other apps**
+permission (`SYSTEM_ALERT_WINDOW`), and it is all-or-nothing — without the grant it does nothing at
+all, not even the wake it could technically perform.
+
+Turning it on without the permission opens the system grant screen directly, and until the grant
+lands the switch shows **amber** rather than green, with the reason under it. On devices that ship
+no such screen — common on Android TV and Fire OS builds — the toggle disables itself with an
+explanation instead, since there is nothing to send you to.
 
 Holding that permission is a documented background-activity-launch exemption on Android 10–15, but
 Android 14–16 have progressively hardened background launches, and some OEM builds ignore the
 exemption regardless. A blocked launch is swallowed silently by the platform — there is no way for
-Rusty to detect it — so on an affected device the toggle quietly degrades to the same page switch
-as the first toggle: the Spotify page is simply ready and waiting the next time you open the app,
-and the existing media notification remains the manual way to bring it forward.
+Rusty to detect it — so on an affected device the toggle quietly degrades to a wake plus a page
+switch: the screen still lights, and the Spotify page is ready and waiting the next time you open
+the app, with the existing media notification as the manual way to bring it forward.
 
 ## Install
 

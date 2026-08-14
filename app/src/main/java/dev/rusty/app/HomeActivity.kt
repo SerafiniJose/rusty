@@ -168,6 +168,9 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             isReceiverForeground = { currentFeatureId() == FeatureId.SPOTIFY },
             store = store,
             screenSuppressed = { !ScreenControlModel.desired().on },
+            // Keeps the remote-control API's `panel.active` truthful across every saver edge,
+            // including the ones nothing else observes (idle timer, wake gesture, track bloom).
+            onShowingChanged = { publishCurrentPanel() },
         )
 
         shellChrome = ShellChromeController(
@@ -217,6 +220,9 @@ class HomeActivity : AppCompatActivity(), ShellHost {
                 // Update chrome (info button, chips, launcher, clock park).
                 // animate=false here; switchTo() re-calls with animate=true for explicit user switches.
                 shellChrome.onFeatureChanged(id, animate = false)
+                // Every feature switch — from the launcher, a takeover, or the remote itself —
+                // is an edge the remote-control API has to see.
+                publishCurrentPanel()
             },
         )
 
@@ -290,14 +296,19 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         // After screensaver.onResume(): attaching can deliver a pending takeover synchronously,
         // and the saver dismissal inside it needs the controller resumed.
         takeover.attachPageConsumer { onPlaybackTakeover() }
+        // Same window as the takeover consumer, for the same reason: past onPause the navigator's
+        // commitNow is unsafe, so the remote must see no host rather than crash one from an HTTP
+        // thread. Seeded with what is on screen right now.
+        PanelControlRelay.attachHost(panelHost, currentPanelId())
         applyKeepScreenOn()
     }
 
     override fun onPause() {
         super.onPause()
         // Before anything else: past this point the navigator's commitNow is no longer safe,
-        // so no takeover page switch may be delivered.
+        // so no takeover page switch — and no remote panel switch — may be delivered.
         takeover.detachPageConsumer()
+        PanelControlRelay.detachHost(panelHost)
         handler.removeCallbacks(autoHideBarsTick)
         screensaver.onPause()
     }
@@ -495,6 +506,54 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     }
 
     override fun showScreensaver() = screensaver.show()
+
+    // ---- Remote control: the panel host ------------------------------------
+
+    /**
+     * What the remote-control API calls the panel on screen. The saver wins when it is up: it
+     * covers the feature completely, so reporting the feature underneath would name something
+     * nobody can see.
+     */
+    private fun currentPanelId(): ControlPanelId =
+        if (screensaver.isShowing) ControlPanelId.LOCKSCREEN
+        else ControlPanelId.of(featureNavigator.current)
+
+    /** Pushes [currentPanelId] to the relay. Called from every edge that can change it; the relay
+     *  drops it while detached, so a late callback cannot resurrect a dead window's panel. */
+    private fun publishCurrentPanel() = PanelControlRelay.publishCurrent(currentPanelId())
+
+    /**
+     * Held as a field so `onPause` detaches the SAME instance `onResume` attached — the relay's
+     * identity check is what makes an overlapping Activity recreation safe.
+     */
+    private val panelHost = object : PanelControlHost {
+        override fun showPanel(id: ControlPanelId) {
+            if (id == ControlPanelId.LOCKSCREEN) {
+                screensaver.show()
+                return
+            }
+            id.featureId?.let { switchTo(it) }
+            // Switch THEN dismiss, the same order the feature launcher and a playback takeover
+            // use: a saver left up over the new feature would swallow the switch entirely, and
+            // the user would see nothing happen.
+            screensaver.dismissToForeground()
+            // No publish here — switchTo's onSwitched and the saver's teardown both fire one,
+            // and a third from this thread would only ever report a mid-transition state.
+        }
+
+        override fun onLockscreenThemeChanged() {
+            // Pref already written by ControlService; this is only the live swap, which is what
+            // applyScreensaverTheme does after its own write.
+            screensaver.onThemeChanged()
+        }
+
+        override fun sendToBackground() {
+            // `true` = move the whole task, not just this Activity: a non-root Activity left
+            // behind would simply be shown instead, which is not "get out of the way".
+            // The relay only reaches us while attached, so this always runs on a live window.
+            moveTaskToBack(true)
+        }
+    }
 
     override fun sharedClock(): android.widget.TextView = tvClock
 
@@ -729,18 +788,31 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         get() = prefs.getBoolean(DlnaPlayerFeature.KEY_ENABLED, false)
 
     /**
-     * Persists the DLNA screen-feature flag and reconciles the shell. Independent of the renderer
-     * service run-state ([dev.rusty.app.renderer.MediaRendererController.setEnabled]) — this never
-     * starts/stops the service, it only controls whether the now-playing screen + launcher entry
-     * appear. Captures the active feature BEFORE the nav ring is mutated so disabling the active
-     * DLNA screen actually switches away and shows the fallback (see [FeatureDisable]).
+     * Persists the DLNA feature flag, reconciles the shell, and starts or stops the renderer service
+     * to match. The feature toggle OWNS the service: the Start/Stop button that governs the run-state
+     * lives in the DLNA Player settings tab, and that tab disappears with the feature, so leaving a
+     * running renderer behind a disabled feature strands a foreground service that still answers on
+     * the network and can no longer be stopped from settings.
+     *
+     * Enabling routes through [startDlnaPlayer] rather than setting the run-state directly, so the
+     * API 33+ POST_NOTIFICATIONS gate still runs — the service starts either way, but without the
+     * grant its notification (and its Stop action) would be invisible.
+     *
+     * The pref is written BEFORE the service call because
+     * [dev.rusty.app.renderer.MediaRendererController.syncFromPrefs] re-reads both flags and refuses
+     * to run the service while the feature is off. Captures the active feature BEFORE the nav ring is
+     * mutated so disabling the active DLNA screen switches away and shows the fallback (see
+     * [FeatureDisable]).
      */
     fun setDlnaFeatureEnabled(enabled: Boolean) {
         val activeBefore = currentFeatureId()
         prefs.edit().putBoolean(DlnaPlayerFeature.KEY_ENABLED, enabled).apply()
         val stillEnabled = FeatureRegistry.enabledIds(prefs)
         featureNavigator.state.onEnabledChanged(stillEnabled)
-        if (!enabled) {
+        if (enabled) {
+            startDlnaPlayer()
+        } else {
+            dev.rusty.app.renderer.MediaRendererController.setEnabled(this, false)
             FeatureDisable.switchTargetOnDisable(FeatureId.DLNA, activeBefore, stillEnabled)
                 ?.let { switchTo(it) }
             featureNavigator.removeRetained(FeatureId.DLNA)
@@ -830,20 +902,12 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         PlaybackTakeoverSettings.setSwitchPage(prefs, enabled)
     }
 
-    /** Whether a playback start brings the app over other apps. Default OFF. */
-    val isTakeoverFrontEnabled: Boolean
-        get() = PlaybackTakeoverSettings.isBringToFrontEnabled(prefs)
+    /** Whether a playback start wakes the screen and brings the app over other apps. Default OFF. */
+    val isTakeoverShowEnabled: Boolean
+        get() = PlaybackTakeoverSettings.isShowOnPlaybackEnabled(prefs)
 
-    fun setTakeoverFrontEnabled(enabled: Boolean) {
-        PlaybackTakeoverSettings.setBringToFront(prefs, enabled)
-    }
-
-    /** Whether a playback start wakes the screen. Default OFF. */
-    val isTakeoverWakeEnabled: Boolean
-        get() = PlaybackTakeoverSettings.isWakeScreenEnabled(prefs)
-
-    fun setTakeoverWakeEnabled(enabled: Boolean) {
-        PlaybackTakeoverSettings.setWakeScreen(prefs, enabled)
+    fun setTakeoverShowEnabled(enabled: Boolean) {
+        PlaybackTakeoverSettings.setShowOnPlayback(prefs, enabled)
     }
 
     // ---- Fullscreen / immersive --------------------------------------------

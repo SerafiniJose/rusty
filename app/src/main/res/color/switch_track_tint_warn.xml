@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Checked-but-not-yet-permitted track: the switch is on, so the user has asked for the feature,
+     but it cannot run until a permission is granted. Amber (the same dot_amber the receiver status
+     uses for "Permission needed") says that at a glance. Never the only signal — the row subtitle
+     and the grant row below it say it in words too. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:color="@color/dot_amber" />
+    <item android:color="@color/surface_border" />
+</selector>

@@ -20,6 +20,32 @@ interface ControlRuntime {
     /** Returns resulting snapshot, or null when volume is fixed (router answers 409). */
     fun setVolume(percent: Int): ControlSnapshot?
 
+    /**
+     * Asks the shell to put [id] on screen. Like [setScreen] this is applied asynchronously (the
+     * fragment transaction must run on the main thread), so the returned snapshot reports the
+     * panel that is CURRENTLY showing — usually still the old one. The control page treats the
+     * request as pending until a `GET /api/state` poll reports the new panel, which is also what
+     * keeps a switch that silently fails from ever looking like it worked.
+     */
+    fun setPanel(id: ControlPanelId): ControlPanelResult
+
+    /**
+     * Selects the lockscreen theme. Unlike [setPanel] this needs no attached window: the theme is
+     * a persisted preference, and a live shell picks the change up through [PanelControlRelay] the
+     * same way a filter change reaches a mounted slideshow.
+     */
+    fun setLockscreenTheme(theme: ScreensaverThemeId): ControlLockscreenResult
+
+    /**
+     * Puts Rusty's window in front ([on] = true) or sends it to the back ([on] = false).
+     *
+     * Bringing forward is an activity start, so — like [setPanel] — it is applied asynchronously
+     * and the returned snapshot still reports the old state; on a few OEM builds it is dropped
+     * silently even when permitted, which is why the control page treats it as a request to be
+     * confirmed by a later poll rather than as a completed action.
+     */
+    fun setForeground(on: Boolean): ControlForegroundResult
+
     fun filters(): ImmichFilters
     fun setFilters(f: ImmichFilters)
 
@@ -40,6 +66,50 @@ sealed class ControlImmichResult {
     object NotConfigured : ControlImmichResult()
     object Unauthorized : ControlImmichResult()
     object Unreachable : ControlImmichResult()
+}
+
+/**
+ * Outcome of a `POST /api/panel`. Both failures are 409 rather than 404: the panel named is a
+ * real, known destination in each case — it just cannot be reached right now — and answering 404
+ * would tell the page the route or the id was wrong.
+ */
+sealed class ControlPanelResult {
+    /** Accepted; [snapshot] is the state as it stands, which may still name the old panel. */
+    data class Ok(val snapshot: ControlSnapshot) : ControlPanelResult()
+
+    /** No app window is attached to take the switch (booted headless, or backgrounded). */
+    object NoWindow : ControlPanelResult()
+
+    /** The panel's feature is switched off in Rusty's settings. */
+    object Disabled : ControlPanelResult()
+}
+
+/**
+ * Outcome of a `POST /api/foreground`.
+ *
+ * There is deliberately no "already there" case: both directions are idempotent, so asking for a
+ * state the device is already in is a satisfied request, not a conflict.
+ */
+sealed class ControlForegroundResult {
+    /** Accepted; [snapshot] is the state as it stands, which may still say the opposite — a
+     *  bring-forward is an activity start that has not happened yet. */
+    data class Ok(val snapshot: ControlSnapshot) : ControlForegroundResult()
+
+    /**
+     * The "Display over other apps" grant is missing, so the device cannot put itself back in
+     * front. Refused for BOTH directions, not only the obvious one: without the ability to undo
+     * it, sending Rusty away would strand a touchless device — the remote page would be the only
+     * way back, and it is the thing that just took that ability away.
+     */
+    object CannotBringForward : ControlForegroundResult()
+}
+
+/** Outcome of a `POST /api/lockscreen`. */
+sealed class ControlLockscreenResult {
+    data class Ok(val snapshot: ControlSnapshot) : ControlLockscreenResult()
+
+    /** The theme exists but is not selectable — Slideshow while its feature is off. */
+    object ThemeUnavailable : ControlLockscreenResult()
 }
 
 /**
@@ -130,6 +200,15 @@ object ControlProtocol {
 
             req.method == "POST" && path == "/api/volume" ->
                 writeGuarded(req) { handleSetVolume(req, rt) }
+
+            req.method == "POST" && path == "/api/panel" ->
+                writeGuarded(req) { handleSetPanel(req, rt) }
+
+            req.method == "POST" && path == "/api/lockscreen" ->
+                writeGuarded(req) { handleSetLockscreen(req, rt) }
+
+            req.method == "POST" && path == "/api/foreground" ->
+                writeGuarded(req) { handleSetForeground(req, rt) }
 
             req.method == "GET" && path == "/api/slideshow/filters" ->
                 jsonOk(filtersJson(rt.filters()))
@@ -225,6 +304,67 @@ object ControlProtocol {
 
         val result = rt.setVolume(percent) ?: return errorResponse(409, "Conflict", "volume is fixed")
         return jsonOk(result.toJson())
+    }
+
+    // -------------------------------------------------------------------
+    // /api/panel
+    // -------------------------------------------------------------------
+
+    private fun handleSetPanel(req: HttpRequest, rt: ControlRuntime): HttpResponse {
+        val obj = parseJsonObject(req.body) ?: return errorResponse(400, "Bad Request", "malformed JSON")
+
+        val raw = obj.opt("id")
+        if (raw !is String) return errorResponse(400, "Bad Request", "'id' must be a string")
+        // An unknown id is a client mistake, not a device state: 400, and never passed to the
+        // runtime, which would otherwise be handed arbitrary strings to switch the shell to.
+        val id = ControlPanelId.fromWire(raw)
+            ?: return errorResponse(400, "Bad Request", "unknown panel '$raw'")
+
+        return when (val result = rt.setPanel(id)) {
+            is ControlPanelResult.Ok -> jsonOk(result.snapshot.toJson())
+            ControlPanelResult.NoWindow -> errorResponse(409, "Conflict", "Rusty isn't on screen right now")
+            ControlPanelResult.Disabled -> errorResponse(409, "Conflict", "panel is switched off in Rusty's settings")
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // /api/lockscreen
+    // -------------------------------------------------------------------
+
+    private fun handleSetLockscreen(req: HttpRequest, rt: ControlRuntime): HttpResponse {
+        val obj = parseJsonObject(req.body) ?: return errorResponse(400, "Bad Request", "malformed JSON")
+
+        val raw = obj.opt("theme")
+        if (raw !is String) return errorResponse(400, "Bad Request", "'theme' must be a string")
+        val theme = ControlLockscreenThemes.fromWire(raw)
+            ?: return errorResponse(400, "Bad Request", "unknown lockscreen theme '$raw'")
+
+        return when (val result = rt.setLockscreenTheme(theme)) {
+            is ControlLockscreenResult.Ok -> jsonOk(result.snapshot.toJson())
+            ControlLockscreenResult.ThemeUnavailable ->
+                errorResponse(409, "Conflict", "lockscreen theme is switched off in Rusty's settings")
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // /api/foreground
+    // -------------------------------------------------------------------
+
+    private fun handleSetForeground(req: HttpRequest, rt: ControlRuntime): HttpResponse {
+        val obj = parseJsonObject(req.body) ?: return errorResponse(400, "Bad Request", "malformed JSON")
+
+        // Mirrors /api/screen's `on`: same shape for the same kind of two-state control.
+        val onValue = obj.opt("on")
+        if (onValue !is Boolean) return errorResponse(400, "Bad Request", "'on' must be a boolean")
+
+        return when (val result = rt.setForeground(onValue)) {
+            is ControlForegroundResult.Ok -> jsonOk(result.snapshot.toJson())
+            ControlForegroundResult.CannotBringForward -> errorResponse(
+                409,
+                "Conflict",
+                "Rusty needs the \"Display over other apps\" permission to control its own window",
+            )
+        }
     }
 
     // -------------------------------------------------------------------

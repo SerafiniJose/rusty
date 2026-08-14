@@ -67,12 +67,15 @@ data class InfoSpotifyInput(
 )
 
 /**
- * DLNA renderer runtime facts. [descriptionUrl] is the publisher's own UPnP description URL
- * (`http://host:port/upnp/device.xml`) or null — null under [RendererStatus.RUNNING] means "bound, no
- * routable address", never a failure. [rendererName] must already have the persisted-name fallback
- * applied: the runtime reports `""` whenever no backend is attached.
+ * DLNA renderer runtime facts. [featureEnabled] is the `dlna_feature_enabled` preference, and it
+ * outranks [status]: the feature toggle owns the renderer service, and `stopService` is asynchronous,
+ * so the last RUNNING snapshot outlives a toggle-off. [descriptionUrl] is the publisher's own UPnP
+ * description URL (`http://host:port/upnp/device.xml`) or null — null under [RendererStatus.RUNNING]
+ * means "bound, no routable address", never a failure. [rendererName] must already have the
+ * persisted-name fallback applied: the runtime reports `""` whenever no backend is attached.
  */
 data class InfoDlnaInput(
+    val featureEnabled: Boolean,
     val status: RendererStatus,
     val descriptionUrl: String?,
     val rendererName: String,
@@ -138,16 +141,20 @@ object InfoOverviewReducer {
     const val UNAVAILABLE = "Unavailable"
 
     const val CONNECTED = "Connected"
+    const val DISABLED = "Disabled"
     const val REFRESHING = "Refreshing…"
     const val NEEDS_SETUP = "Needs setup"
     const val CONNECTION_ISSUE = "Connection issue"
+
+    /** Every feature's enable toggle lives in the General panel, so a disabled row points there. */
+    private const val TURN_ON_DETAIL = "Turn it on in General settings"
 
     /**
      * [availableTabs] is the settings sheet's CURRENT tab list. A tab that is not in it would make
      * `SettingsSheet.show` fall back to index 0 silently, so rows resolve to General deliberately
      * instead — General is where every feature's enable toggle and the Remote Control switch live,
-     * so the user can still act. This is reachable in normal use: the DLNA renderer runs headless
-     * with its screen feature off, and Immich stays configured when the Slideshow feature is off.
+     * so the user can still act. This is reachable in normal use: every disabled integration loses
+     * its own tab while staying configured, and its row still has to lead somewhere.
      */
     fun reduce(
         spotify: InfoSpotifyInput,
@@ -248,6 +255,20 @@ object InfoOverviewReducer {
         if (who != null) "$word · $who controlling playback" else "$word · $bitrateKbps kbps"
 
     fun dlnaRow(input: InfoDlnaInput, availableTabs: Set<SettingsTabKey>): InfoServiceRow {
+        // The feature toggle owns the service, so a disabled feature is reported as disabled whatever
+        // the publisher last said — and the row has to route to General, because the DLNA Player tab
+        // (which holds Start/Stop) is gone with the feature.
+        if (!input.featureEnabled) {
+            return InfoServiceRow(
+                id = InfoServiceId.DLNA,
+                title = "DLNA Player",
+                status = DISABLED,
+                identity = input.rendererName.takeIf { it.isNotBlank() },
+                detail = TURN_ON_DETAIL,
+                tone = InfoTone.NEUTRAL,
+                settingsTab = tabOr(SettingsTabKey.GENERAL, availableTabs),
+            )
+        }
         val (status, detail, tone) = when (input.status) {
             RendererStatus.FAILED -> Triple(NEEDS_ATTENTION, "The player couldn't start", InfoTone.NEGATIVE)
             RendererStatus.STARTING -> Triple(STARTING, "Starting the player", InfoTone.PENDING)
@@ -322,6 +343,10 @@ object InfoOverviewReducer {
     /** Null when Home Assistant is neither enabled nor configured — an unused integration is omitted. */
     fun haRow(input: InfoHaInput, availableTabs: Set<SettingsTabKey>): InfoFeatureRow? {
         if (!input.enabled && input.configuredUrl.isNullOrBlank() && !input.hasOriginToken) return null
+        // The feature toggle outranks every connection fact, because none of them expire when it goes
+        // off: the refresh token survives, and discovery keeps its last loaded (or failed) result. A
+        // row that kept reporting those would describe a server the app is no longer using.
+        if (!input.enabled) return featureRow(InfoFeatureId.HOME_ASSISTANT, "Home Assistant", availableTabs)
         val host = hostOf(input.configuredUrl)
         val discovery = input.discovery
         val connected = input.hasOriginToken || discovery is HaDiscovery.Loaded
@@ -357,6 +382,9 @@ object InfoOverviewReducer {
     /** Null when the Slideshow is neither enabled nor configured. */
     fun immichRow(input: InfoImmichInput, availableTabs: Set<SettingsTabKey>): InfoFeatureRow? {
         if (!input.enabled && !input.configured) return null
+        // As with Home Assistant: the stored key stays verified (or stays failed) after the toggle goes
+        // off, so the toggle has to be read first or the row reports on a slideshow that cannot run.
+        if (!input.enabled) return featureRow(InfoFeatureId.IMMICH_SLIDESHOW, "Immich Slideshow", availableTabs)
         val host = hostOf(input.serverUrl)
         val name = input.accountName?.takeIf { it.isNotBlank() }
         val (status, detail, tone) = when {
@@ -386,6 +414,23 @@ object InfoOverviewReducer {
             settingsTab = tabOr(SettingsTabKey.SLIDESHOW, availableTabs),
         )
     }
+
+    /**
+     * The row a switched-off integration gets: no connection facts at all, and it always opens General,
+     * where the toggle that switched it off lives — the feature's own tab is hidden while it is off.
+     */
+    private fun featureRow(
+        id: InfoFeatureId,
+        title: String,
+        availableTabs: Set<SettingsTabKey>,
+    ): InfoFeatureRow = InfoFeatureRow(
+        id = id,
+        title = title,
+        status = DISABLED,
+        detail = TURN_ON_DETAIL,
+        tone = InfoTone.NEUTRAL,
+        settingsTab = tabOr(SettingsTabKey.GENERAL, availableTabs),
+    )
 
     /** No filter in any category means the whole library. Pluralization stays in [ImmichPickerModel]. */
     fun filtersLabel(albums: Int, people: Int, tags: Int): String {

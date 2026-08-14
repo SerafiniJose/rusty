@@ -11,6 +11,7 @@ import android.view.ViewTreeObserver
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.slider.Slider
@@ -185,14 +186,8 @@ private class SpotifySettingsPanel(
             activity.setTakeoverPageEnabled(isChecked)
         }
 
-        val takeoverWakeSwitch = panel.findViewById<SwitchMaterial>(R.id.switchTakeoverWake)
-        takeoverWakeSwitch.isChecked = activity.isTakeoverWakeEnabled
-        takeoverWakeSwitch.setOnCheckedChangeListener { _, isChecked ->
-            activity.setTakeoverWakeEnabled(isChecked)
-        }
-
-        val takeoverFrontSwitch = panel.findViewById<SwitchMaterial>(R.id.switchTakeoverFront)
-        val frontSubtitle = panel.findViewById<TextView>(R.id.tvTakeoverFrontSubtitle)
+        val takeoverShowSwitch = panel.findViewById<SwitchMaterial>(R.id.switchTakeoverShow)
+        val showSubtitle = panel.findViewById<TextView>(R.id.tvTakeoverShowSubtitle)
         val overlayPermissionRow = panel.findViewById<View>(R.id.rowOverlayPermission)
 
         fun overlayIntent() = Intent(
@@ -204,32 +199,46 @@ private class SpotifySettingsPanel(
         // TV and Fire OS builds ship no "Display over other apps" screen (the manifest
         // <queries> entry makes this resolveActivity reliable under Android 11+ package
         // visibility) — a dead switch there would look broken, so it disables with a why.
+        //
+        // The middle state stays ON and usable: the user asked for the takeover, it just cannot
+        // run yet. Rather than a dead row, the track turns amber (the app's existing "Permission
+        // needed" colour) while checked. Colour is reinforcement, never the message — the subtitle
+        // and the grant row carry it in words, which is what a D-pad or colour-blind user reads.
         fun refreshOverlayPermissionUi() {
             val granted = Settings.canDrawOverlays(activity)
             val grantable = overlayIntent().resolveActivity(activity.packageManager) != null
             when {
                 granted -> {
-                    takeoverFrontSwitch.isEnabled = true
-                    frontSubtitle.text = "Open over other apps when a cast starts"
+                    takeoverShowSwitch.isEnabled = true
+                    takeoverShowSwitch.trackTintList =
+                        ContextCompat.getColorStateList(activity, R.color.switch_track_tint)
+                    showSubtitle.text = "Light the screen and open over other apps when a cast starts"
                     overlayPermissionRow.visibility = View.GONE
                 }
                 grantable -> {
-                    takeoverFrontSwitch.isEnabled = true
-                    frontSubtitle.text = "Needs the “Display over other apps” permission"
+                    takeoverShowSwitch.isEnabled = true
+                    takeoverShowSwitch.trackTintList = ContextCompat.getColorStateList(
+                        activity,
+                        if (takeoverShowSwitch.isChecked) R.color.switch_track_tint_warn
+                        else R.color.switch_track_tint,
+                    )
+                    showSubtitle.text = "Needs the \u201CDisplay over other apps\u201D permission"
                     overlayPermissionRow.visibility =
-                        if (takeoverFrontSwitch.isChecked) View.VISIBLE else View.GONE
+                        if (takeoverShowSwitch.isChecked) View.VISIBLE else View.GONE
                 }
                 else -> {
-                    takeoverFrontSwitch.isEnabled = false
-                    frontSubtitle.text = "Unavailable — this device has no “Display over other apps” setting"
+                    takeoverShowSwitch.isEnabled = false
+                    takeoverShowSwitch.trackTintList =
+                        ContextCompat.getColorStateList(activity, R.color.switch_track_tint)
+                    showSubtitle.text = "Unavailable \u2014 this device has no \u201CDisplay over other apps\u201D setting"
                     overlayPermissionRow.visibility = View.GONE
                 }
             }
         }
 
-        takeoverFrontSwitch.isChecked = activity.isTakeoverFrontEnabled
-        takeoverFrontSwitch.setOnCheckedChangeListener { _, isChecked ->
-            activity.setTakeoverFrontEnabled(isChecked)
+        takeoverShowSwitch.isChecked = activity.isTakeoverShowEnabled
+        takeoverShowSwitch.setOnCheckedChangeListener { _, isChecked ->
+            activity.setTakeoverShowEnabled(isChecked)
             // Turning it on without the grant goes straight to the system screen — the
             // missing-activity case must degrade to a no-op, not a crash.
             if (isChecked && !Settings.canDrawOverlays(activity)) {

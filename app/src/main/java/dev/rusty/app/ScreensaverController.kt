@@ -32,6 +32,18 @@ class ScreensaverController(
     // theme mounted while the panel is dark (the idle timer still fires behind the black overlay)
     // starts a brand-new slideshow loop that has never heard about the suppression.
     private val screenSuppressed: () -> Boolean = { false },
+    /**
+     * Fired whenever [isShowing] flips, from [show] and [teardown] — the two choke points every
+     * one of the saver's many entry and exit paths funnels through (idle timer, wake gesture, nav
+     * key, track-start bloom, an explicit [dismissToForeground]).
+     *
+     * It exists so the remote-control API can report the saver as a panel without polling Activity
+     * state from an HTTP thread: hooking the individual paths instead would silently miss whichever
+     * one is added next. Deliberately NOT fired from [dispose] — that runs in `onDestroy`, long
+     * after the API's host has detached, and a "saver hidden" edge there would announce the state
+     * of a window that no longer exists.
+     */
+    private val onShowingChanged: (Boolean) -> Unit = {},
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var resumed = false
@@ -165,6 +177,7 @@ class ScreensaverController(
         }
         isShowing = true
         handler.post(tickRunnable)
+        onShowingChanged(true)
     }
 
     /**
@@ -265,6 +278,7 @@ class ScreensaverController(
         exiting = false
         reassertImmersive()
         resetIdleTimer()
+        onShowingChanged(false)
     }
 
     /**

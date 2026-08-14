@@ -19,6 +19,12 @@ private class FakeControlHttpRuntime : ControlRuntime {
         volume = ControlVolume(value = 47, fixed = false),
         playing = ControlPlaying(spotify = true, dlna = false),
         slideshowEnabled = true,
+        panel = ControlPanel(
+            active = ControlPanelId.SPOTIFY,
+            available = ControlPanelId.values().toList(),
+            lockscreen = ControlLockscreen(ScreensaverThemeId.CLOCK, ScreensaverThemeId.values().toList()),
+        ),
+        app = ControlApp(foreground = true, canBringForward = true),
     )
 
     /** Lets a test simulate a runtime failure (e.g. a prefs read blowing up) to prove the
@@ -32,6 +38,10 @@ private class FakeControlHttpRuntime : ControlRuntime {
 
     override fun setScreen(on: Boolean, brightness: Int?): ControlSnapshot = snap
     override fun setVolume(percent: Int): ControlSnapshot? = snap
+    override fun setPanel(id: ControlPanelId): ControlPanelResult = ControlPanelResult.Ok(snap)
+    override fun setLockscreenTheme(theme: ScreensaverThemeId): ControlLockscreenResult =
+        ControlLockscreenResult.Ok(snap)
+    override fun setForeground(on: Boolean): ControlForegroundResult = ControlForegroundResult.Ok(snap)
     override fun filters(): ImmichFilters = ImmichFilters(emptyList(), emptyList(), emptyList())
     override fun setFilters(f: ImmichFilters) {}
     override fun immichList(kind: String): ControlImmichResult = ControlImmichResult.Ok(emptyList())
