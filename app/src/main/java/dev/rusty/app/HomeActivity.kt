@@ -6,12 +6,16 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
+import android.provider.Settings
+import android.util.Log
 import android.util.TypedValue
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -160,6 +164,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             },
             isReceiverForeground = { currentFeatureId() == FeatureId.SPOTIFY },
             store = store,
+            screenSuppressed = { !ScreenControlModel.desired().on },
         )
 
         shellChrome = ShellChromeController(
@@ -232,10 +237,30 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         // Best-effort DLNA/UPnP media-renderer exposure — syncs the service to the desired-state
         // pref owned by the DLNA Player settings tab; no-ops if the player is stopped.
         dev.rusty.app.renderer.MediaRendererController.syncFromPrefs(this)
+
+        // A slideshow filter change made from OFF-device (the remote-control API) must reload a
+        // mounted saver exactly like the in-app picker does. Subscribed for the window's lifetime;
+        // dropped in onDestroy so a destroyed Activity is never called back.
+        SlideshowConfigRelay.addListener(slideshowConfigListener)
+
+        // The Activity-bound half of the screen control: the model holds the desired state (and
+        // survives this Activity), we are what actually blacks the panel and moves brightness.
+        // Attaching also flips the API's `screen.available` to true and immediately replays the
+        // current desired state, so an "off" issued while no Activity existed is applied on arrival.
+        ScreenControlModel.attachRenderer(screenRenderer)
     }
+
+    /** Held as a field so onDestroy can unsubscribe the SAME instance (a fresh lambda would not
+     *  match). Fires on the main thread — the relay's caller posts there. */
+    private val slideshowConfigListener: () -> Unit = { onSlideshowConfigChanged() }
 
     override fun onStart() {
         super.onStart()
+        // `screen.available` is about whether a screen command can take effect NOW, which is a
+        // different fact from whether a renderer is attached (that is onCreate/onDestroy, above).
+        // FLAG_KEEP_SCREEN_ON only holds a VISIBLE window awake, so once this window is hidden a
+        // faked-off panel really sleeps and no remote wake can relight it — the API has to say so.
+        ScreenControlModel.setRendererVisible(true)
         shellChrome.launcher.refresh()
         registerReceiver(clockTickReceiver, IntentFilter(Intent.ACTION_TIME_TICK))
         updateSharedClock()
@@ -244,6 +269,9 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     }
 
     override fun onStop() {
+        // See onStart: the desired state stays attached and will still be applied, but from here on
+        // it cannot take effect until this window is visible again.
+        ScreenControlModel.setRendererVisible(false)
         RustyApp.haRepository(this).removeListener(shellChrome.chipListener)
         unregisterReceiver(clockTickReceiver)
         super.onStop()
@@ -266,6 +294,13 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     }
 
     override fun onDestroy() {
+        SlideshowConfigRelay.removeListener(slideshowConfigListener)
+        // Detach FIRST: an HTTP thread mid-set must not queue a delivery onto a dying window, and
+        // `screen.available` must report false the moment the last Activity goes away. Detaching
+        // does not clear the desired state — a new Activity re-applies it on attach.
+        ScreenControlModel.detachRenderer(screenRenderer)
+        handler.removeCallbacks(applyScreenTick)
+        detachScreenOffOverlay()
         screensaver.dispose()
         super.onDestroy()
     }
@@ -315,11 +350,37 @@ class HomeActivity : AppCompatActivity(), ShellHost {
      * keys); every non-system key still wakes a non-owning saver so a D-pad user is never trapped
      * (the v2.0.0 Shield rule). The whole decision table lives in [ShellKeyRouting]; this method
      * only executes it.
+     *
+     * A remote-control fake-off ([screenOffOverlay]) adds one branch that obeys the same contract:
+     * transport keys still mean MUSIC (the panel being dark says nothing about the audio, so a
+     * PLAY/PAUSE press must pause on the FIRST press, exactly as it does through a saver), and
+     * every other non-system key wakes the panel and is consumed so it cannot reach the feature
+     * underneath a screen the user cannot see. That table lives in
+     * [ShellKeyRouting.routeWhileScreenFakedOff] like every other one here.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (ShellKeyRouting.isSystemKey(event.keyCode)) {
             if (!screensaver.isShowing) screensaver.resetIdleTimer()
             return super.dispatchKeyEvent(event)
+        }
+        // Screen faked off. A null field when the screen is on, so the routing below is untouched.
+        // The decision table itself lives in ShellKeyRouting with the rest of the shell's routing
+        // (and its regression tests); this only executes it.
+        if (screenOffOverlay != null) {
+            val action = ShellKeyRouting.routeWhileScreenFakedOff(
+                keyCode = event.keyCode,
+                action = event.action,
+                repeatCount = event.repeatCount,
+                spotifyActive = store.snapshot.state.visualState() == VisualState.ACTIVE,
+            )
+            return when (action) {
+                ScreenOffKeyAction.SPOTIFY_TRANSPORT -> spotifyTransportKey(event)
+                ScreenOffKeyAction.WAKE_AND_CONSUME -> {
+                    wakeScreenFromLocalInput()
+                    true
+                }
+                ScreenOffKeyAction.CONSUME -> true
+            }
         }
         if (screensaver.isShowing) {
             val action = ShellKeyRouting.routeWhileSaverShowing(
@@ -758,9 +819,17 @@ class HomeActivity : AppCompatActivity(), ShellHost {
 
     // ---- Keep screen on ----------------------------------------------------
 
-    /** Applies the keep-screen-on window flag to match the current setting. */
+    /**
+     * Applies the keep-screen-on window flag to match the current setting — except while the screen
+     * is faked off, where the flag is force-held regardless of the user's preference. That override
+     * is the whole mechanism: without it the system's display timeout puts the panel genuinely to
+     * sleep behind the black overlay, and a remote "screen on" can no longer relight it (there is no
+     * WAKE_LOCK / turnScreenOn path from a backgrounded HTTP request). The check lives HERE rather
+     * than only in [applyScreenDesired] so every other caller — [onResume], [setKeepScreenOn] — is
+     * automatically prevented from clearing the flag out from under an active fake-off.
+     */
     private fun applyKeepScreenOn() {
-        if (keepScreenOnEnabled) {
+        if (keepScreenOnEnabled || screenOffOverlay != null) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -777,6 +846,128 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     /** Whether keep-screen-on is currently enabled (for the settings switch's initial state). */
     val isKeepScreenOnEnabled: Boolean get() = keepScreenOnEnabled
 
+    // ---- Screen control renderer (remote-control fake-off + brightness) -----
+
+    /** The black fake-off layer while the screen is desired off; null whenever it is on. Also the
+     *  single flag [applyKeepScreenOn] reads to decide whether to force-hold the wake flag. */
+    private var screenOffOverlay: View? = null
+
+    /**
+     * The renderer registered with [ScreenControlModel]. It MUST NOT do any work here:
+     * [ControlService]'s `setScreen` holds its command lock across `ScreenControlModel.set(...)`,
+     * and the model drains its delivery queue on the CALLING thread — an HTTP pool thread. Doing
+     * the View / [Settings.System] work inline would therefore block every other control command
+     * behind the UI thread. So this hands off to the main looper and returns immediately.
+     *
+     * The delivered value is deliberately ignored in favour of re-reading [ScreenControlModel] when
+     * the post runs: the model is atomic, so the fresh read is never older than what was delivered,
+     * and a burst of commands can only ever converge on the newest state rather than replay stale
+     * ones. That also lets one shared [Runnable] instance serve every delivery, so [onDestroy] can
+     * cancel any still-queued apply with a single `removeCallbacks`.
+     */
+    private val screenRenderer: (ScreenDesired) -> Unit = { handler.post(applyScreenTick) }
+
+    private val applyScreenTick = Runnable { applyScreenDesired(ScreenControlModel.desired()) }
+
+    /**
+     * Applies one desired screen state. Main thread only (posted by [screenRenderer]); idempotent,
+     * so a coalesced burst of deliveries costs nothing. The pure decisions — which brightness mode,
+     * which values — live in [ScreenRenderPlan]; this only executes them.
+     */
+    private fun applyScreenDesired(desired: ScreenDesired) {
+        if (isDestroyed || isFinishing) return
+        // Re-checked per command, never cached: WRITE_SETTINGS can be granted or revoked while the
+        // app runs. Holding it is still only a promise — the write below reports what it got.
+        val canWriteSystem = runCatching { Settings.System.canWrite(this) }.getOrDefault(false)
+        // A DEFAULT brightness is not a command: without this the replay that every attachRenderer
+        // performs would push 100 % onto the device on every Activity create (see ScreenRenderPlan).
+        val commanded = ScreenControlModel.brightnessEverCommanded()
+        val plan = ScreenRenderPlan.of(desired, canWriteSystem, commanded)
+        if (plan.overlayVisible) attachScreenOffOverlay() else detachScreenOffOverlay()
+        var windowBrightness = plan.windowBrightness
+        plan.systemLevel?.let { level ->
+            // MODE_MANUAL first, and only then the value: under auto-brightness the system
+            // recomputes from the light sensor and the value we write is simply ignored.
+            val wrote = try {
+                Settings.System.putInt(
+                    contentResolver,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL,
+                ) && Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, level)
+            } catch (e: SecurityException) {
+                Log.w(TAG, "system brightness write refused; degrading to window brightness", e)
+                false
+            }
+            // Report the outcome so the API stops claiming `mode: "system"` for a write that never
+            // landed — the snapshot reads this back through ScreenControlModel.systemBrightnessUsable.
+            ScreenControlModel.noteSystemBrightnessWrite(wrote)
+            // Revoked between canWrite() and the write, or refused by the OEM: degrade to the
+            // window-local override, which needs no permission. Re-planning as if we never had the
+            // permission is exactly that fallback, expressed once.
+            if (!wrote) {
+                windowBrightness =
+                    ScreenRenderPlan.of(desired, canWriteSystem = false, brightnessCommanded = commanded)
+                        .windowBrightness
+            }
+        }
+        val attributes = window.attributes
+        attributes.screenBrightness = windowBrightness
+        window.attributes = attributes
+        // Force-holds the flag while the overlay is up, restores the user's own preference when it
+        // comes down (see applyKeepScreenOn) — never leaves a forced-on flag behind.
+        applyKeepScreenOn()
+        // A slideshow must not keep fetching and decoding photos nobody can see. A separate
+        // suppression from the user's manual pause, so waking never resumes what the user paused.
+        screensaver.setSlideshowSuppressed(!desired.on)
+    }
+
+    /** Raises the black fake-off layer over everything, including the screensaver. Idempotent —
+     *  the field is the guard, so repeated deliveries can never stack two overlays. */
+    private fun attachScreenOffOverlay() {
+        if (screenOffOverlay != null) return
+        val overlay = View(this).apply {
+            setBackgroundColor(Color.BLACK)
+            // Above every decorView child (the content view, the screensaver overlay inside it and
+            // any dialog-less popup), independent of add order.
+            elevation = SCREEN_OFF_OVERLAY_ELEVATION
+            // Belt and braces with the window flag: a View asking to keep the screen on survives
+            // window-flag churn from any other caller.
+            keepScreenOn = true
+            isClickable = true
+            // A focus sink: while this is up, focus that would otherwise land on a control nobody
+            // can see stops here instead. NOT a key path — [dispatchKeyEvent] consumes every key
+            // before the view hierarchy is ever offered one, so an OnKeyListener here could not
+            // fire even if it existed, and the guaranteed D-pad wake is the one in
+            // [ShellKeyRouting.routeWhileScreenFakedOff] (a TV remote's focus can be anywhere).
+            isFocusable = true
+            // Local touch ALWAYS wakes: the first touch is consumed here (never reaching the
+            // slideshow/feature underneath) and turns the panel back on.
+            setOnTouchListener { _, _ -> wakeScreenFromLocalInput(); true }
+        }
+        (window.decorView as ViewGroup).addView(
+            overlay,
+            ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+        )
+        screenOffOverlay = overlay
+    }
+
+    /** Removes the fake-off layer if it is up. Idempotent and safe on a torn-down window. */
+    private fun detachScreenOffOverlay() {
+        val overlay = screenOffOverlay ?: return
+        screenOffOverlay = null
+        (overlay.parent as? ViewGroup)?.removeView(overlay)
+    }
+
+    /**
+     * A local touch/key while the screen is faked off. Routed through [ScreenControlModel] rather
+     * than straight to the views so the API's snapshot (and any open control page) learns that the
+     * screen came back on — the model's delivery brings us right back to [applyScreenDesired].
+     * `brightness = null` restores the brightness that was in effect before the fake-off.
+     */
+    private fun wakeScreenFromLocalInput() {
+        ScreenControlModel.set(on = true, brightness = null)
+    }
+
     private fun hideSystemBars() {
         insetsController.hide(WindowInsetsCompat.Type.systemBars())
     }
@@ -791,6 +982,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     }
 
     private companion object {
+        private const val TAG = "HomeActivity"
         private const val PREFS_NAME = "spotify_receiver_prefs"
         private const val KEY_DEVICE_NAME = "device_name"
         private const val KEY_BITRATE_KBPS = "bitrate_kbps"
@@ -805,5 +997,9 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         private val SUPPORTED_BITRATES_KBPS = setOf(96, 160, 320)
 
         private const val AUTO_HIDE_MS = 4_000L
+
+        /** Well above any elevation the shell/features/screensaver use, so the fake-off layer is
+         *  unconditionally the topmost child of the decorView. */
+        private const val SCREEN_OFF_OVERLAY_ELEVATION = 1_000f
     }
 }

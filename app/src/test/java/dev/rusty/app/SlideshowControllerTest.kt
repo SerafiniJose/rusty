@@ -490,6 +490,106 @@ class ImmichSlideshowControllerTest {
         c.stop()
     }
 
+    // ---- Screen-off suppression (remote-control fake-off) -------------------
+
+    /**
+     * Suppression is the screen renderer's gate, not a second pause button: while the panel is
+     * faked off there is nobody to look at a photo, so the loop must stop before the batch fetch
+     * (mobile data / server load) as well as before the decode (CPU, cache churn).
+     */
+    @Test fun suppressionParksTheLoopWithoutFetchingOrAdvancing() = runTest {
+        val rec = Recorder()
+        var fetches = 0
+        val c = controllerOver(manyAssets, rec, onFetch = { fetches++ })
+        c.start()
+        advanceTimeBy(1)
+        assertEquals(1, rec.slides.size)
+        val fetchesAtSuppress = fetches
+
+        c.setSuppressed(true)
+        advanceTimeBy(10 * 60_000L)                 // ten minutes with the screen faked off
+        assertEquals(1, rec.slides.size)            // no advance
+        assertEquals(fetchesAtSuppress, fetches)    // and no network traffic
+
+        c.setSuppressed(false)
+        advanceTimeBy(1)
+        assertEquals(2, rec.slides.size)            // the wake resumes the slideshow at once
+        c.stop()
+    }
+
+    /**
+     * A suppression landing while a batch fetch is in flight must still stop the loop before it
+     * decodes anything: the fetch was already paid for, the decode has not been.
+     */
+    @Test fun suppressionLandingMidFetchStopsBeforeTheDecode() = runTest {
+        val rec = Recorder()
+        var prefetches = 0
+        val c = SlideshowController(
+            fetchBatch = { delay(1_000L); ImmichResult.Ok(manyAssets) },
+            prefetch = { prefetches++; true },
+            scope = backgroundScope,
+            intervalMs = { 10_000L },
+            splitView = { false },
+            listener = rec,
+        )
+        c.start()
+        advanceTimeBy(500L)                         // inside the in-flight fetch
+        c.setSuppressed(true)
+        advanceTimeBy(10 * 60_000L)                 // the batch lands, but nothing may be decoded
+        assertEquals(0, prefetches)
+        assertEquals(0, rec.slides.size)
+
+        c.setSuppressed(false)
+        advanceTimeBy(1)
+        assertEquals(1, rec.slides.size)
+        c.stop()
+    }
+
+    /**
+     * Suppression and the user's manual pause are independent: waking the screen must never
+     * resume a slideshow the user had deliberately paused before the screen went off.
+     */
+    @Test fun clearingSuppressionDoesNotClearAManualPause() = runTest {
+        val rec = Recorder()
+        var fetches = 0
+        val c = controllerOver(manyAssets, rec, onFetch = { fetches++ })
+        c.start()
+        advanceTimeBy(1)
+        c.pause()
+        advanceTimeBy(1)
+        val fetchesAtPause = fetches
+
+        c.setSuppressed(true)
+        advanceTimeBy(1)
+        c.setSuppressed(false)                      // screen back on, but the pause stands
+        advanceTimeBy(10 * 60_000L)
+        assertTrue(c.isPaused)
+        assertEquals(1, rec.slides.size)
+        assertEquals(fetchesAtPause, fetches)
+        c.stop()
+    }
+
+    /** …and the converse: clearing the pause while suppressed must not light the loop back up. */
+    @Test fun manualPauseAndResumeUnderSuppressionStaysSuppressed() = runTest {
+        val rec = Recorder()
+        var fetches = 0
+        val c = controllerOver(manyAssets, rec, onFetch = { fetches++ })
+        c.start()
+        advanceTimeBy(1)
+        c.setSuppressed(true)
+        advanceTimeBy(1)
+        val fetchesAtSuppress = fetches
+
+        c.pause()
+        advanceTimeBy(1)
+        c.resume()                                  // user un-pauses while the panel is dark
+        advanceTimeBy(10 * 60_000L)
+        assertFalse(c.isPaused)
+        assertEquals(1, rec.slides.size)            // still parked: suppression outranks the pause
+        assertEquals(fetchesAtSuppress, fetches)
+        c.stop()
+    }
+
     // ---- Stepping back re-decodes before it re-announces --------------------
 
     /** Interleaved log of prefetch calls and announcements, so ORDER can be asserted. */

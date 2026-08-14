@@ -149,6 +149,101 @@
         android:layout_marginTop="16dp"
         android:background="@color/surface_border" />
 
+    <!-- Remote Control: local HTTP API + web control page (off by default; ControlSettings). -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:fontFamily="@font/hanken_regular"
+        android:letterSpacing="0.12"
+        android:text="REMOTE CONTROL"
+        android:textAllCaps="true"
+        android:textColor="@color/muted_dim"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Control API + web page"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvRemoteControlStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:text="Off"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchRemoteControl"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:foreground="@drawable/bg_tv_focus_switch"
+            android:minHeight="0dp"
+            android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+            app:switchMinWidth="0dp"
+            app:thumbTint="@color/switch_thumb_tint"
+            app:trackTint="@color/switch_track_tint" />
+    </LinearLayout>
+
+    <!-- Only visible while Settings.System.canWrite(context) is false: WRITE_SETTINGS lets the
+         web page dim the real display instead of degrading to a window-local dim. Row (not a
+         button) so it reads as part of this card, matching bottom_sheet_about's rowSource idiom:
+         weighted label + trailing chevron, whole row clickable/focusable. -->
+    <LinearLayout
+        android:id="@+id/rowBrightnessPermission"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:foreground="@drawable/bg_tv_focus"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:fontFamily="@font/hanken_medium"
+            android:text="Allow system brightness control"
+            android:textColor="@color/ink"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:text="›"
+            android:textColor="@color/muted_dim"
+            android:textSize="18sp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="16dp"
+        android:background="@color/surface_border" />
+
     <!-- Features -->
     <TextView
         android:layout_width="wrap_content"

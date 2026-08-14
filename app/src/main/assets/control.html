@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rusty Remote Control</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #101311;
+    --accent: #4caf7d;
+    --accent-ink: #06150d;
+    --card-bg: #171b18;
+    --card-border: #262c27;
+    --text: #eef2ef;
+    --muted: #9aa89f;
+    --error: #ff8a80;
+  }
+
+  * , *::before, *::after { box-sizing: border-box; }
+
+  /* `.card`/`.notice` etc. below set their own `display`, which otherwise wins the cascade over
+     the user-agent's `[hidden] { display: none }` (same specificity, author beats UA) and leaves
+     a "hidden" element visible. Force it. */
+  [hidden] { display: none !important; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    padding: 16px;
+    padding-bottom: 48px;
+  }
+
+  main {
+    max-width: 640px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  a, button, input, [tabindex] {
+    font: inherit;
+    color: inherit;
+  }
+
+  :focus { outline: none; }
+  :focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 4px 8px;
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 1.4rem;
+  }
+
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .banner {
+    background: #3a1f1f;
+    border: 1px solid var(--error);
+    color: var(--error);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 0.9rem;
+  }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .card h2 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 48px;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .field-label {
+    display: flex;
+    justify-content: space-between;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  button {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: none;
+    border-radius: 10px;
+    padding: 0 20px;
+    min-height: 48px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--card-border);
+  }
+
+  input[type="range"] {
+    width: 100%;
+    height: 48px;
+    accent-color: var(--accent);
+    background: transparent;
+  }
+
+  input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    accent-color: var(--accent);
+  }
+
+  .notice {
+    margin: 0;
+    background: #23261f;
+    border: 1px solid var(--card-border);
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+
+  .error {
+    margin: 0;
+    color: var(--error);
+    font-size: 0.85rem;
+  }
+
+  .status {
+    margin: 0;
+    color: var(--accent);
+    font-size: 0.85rem;
+  }
+
+  .pill-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 48px;
+    padding: 0 18px;
+    border-radius: 999px;
+    border: 1px solid var(--card-border);
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .pill.active {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+  }
+
+  fieldset.filter-group {
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    padding: 12px;
+    margin: 0;
+    min-width: 0;
+  }
+
+  fieldset.filter-group legend {
+    padding: 0 6px;
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .filter-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .filter-empty {
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 8px 0;
+  }
+
+  .filter-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 0 4px;
+    border-radius: 8px;
+    cursor: pointer;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
+
+  .filter-row:hover {
+    background: #1e2320;
+  }
+
+  .filter-row span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .filter-row .id-fallback {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="device-name">Rusty</h1>
+    <p id="device-version"></p>
+  </header>
+
+  <div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
+
+  <section id="screen-card" class="card" aria-labelledby="screen-heading">
+    <h2 id="screen-heading">Screen</h2>
+    <p id="screen-availability-note" class="notice" hidden>
+      No screen is currently attached to the app right now — commands are saved and will apply as
+      soon as the app is active.
+    </p>
+    <div class="row">
+      <span id="screen-status-label">Screen is off</span>
+      <button id="screen-toggle" type="button" aria-pressed="false">Turn On</button>
+    </div>
+    <div class="field">
+      <span class="field-label">
+        <label for="brightness-range">Brightness</label>
+        <span id="brightness-value">1</span>
+      </span>
+      <input id="brightness-range" type="range" min="1" max="100" value="1"
+             aria-label="Screen brightness">
+    </div>
+    <p id="screen-mode-hint" class="notice" hidden>
+      System brightness permission not granted — controlling app window only.
+    </p>
+    <p id="screen-error" class="error" hidden></p>
+  </section>
+
+  <section id="volume-card" class="card" aria-labelledby="volume-heading" hidden>
+    <h2 id="volume-heading">Volume</h2>
+    <div class="field">
+      <span class="field-label">
+        <label for="volume-range">Volume</label>
+        <span id="volume-value">0</span>
+      </span>
+      <input id="volume-range" type="range" min="0" max="100" value="0" aria-label="Volume">
+    </div>
+    <p id="volume-error" class="error" hidden></p>
+  </section>
+
+  <section id="playing-card" class="card" aria-labelledby="playing-heading">
+    <h2 id="playing-heading">Playing</h2>
+    <div class="pill-row">
+      <span id="pill-spotify" class="pill">Spotify</span>
+      <span id="pill-dlna" class="pill">DLNA</span>
+    </div>
+  </section>
+
+  <section id="filters-card" class="card" aria-labelledby="filters-heading">
+    <h2 id="filters-heading">Slideshow Filters</h2>
+
+    <fieldset class="filter-group">
+      <legend>Albums</legend>
+      <p id="albums-error" class="error" hidden></p>
+      <div id="albums-list" class="filter-list"></div>
+    </fieldset>
+
+    <fieldset class="filter-group">
+      <legend>People</legend>
+      <p id="people-error" class="error" hidden></p>
+      <div id="people-list" class="filter-list"></div>
+    </fieldset>
+
+    <fieldset class="filter-group">
+      <legend>Tags</legend>
+      <p id="tags-error" class="error" hidden></p>
+      <div id="tags-list" class="filter-list"></div>
+    </fieldset>
+
+    <div class="row">
+      <p id="filters-status" class="status" role="status" aria-live="polite" hidden></p>
+      <button id="filters-save" type="button" disabled>Save Filters</button>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var REFRESH_INTERVAL_MS = 5000;
+
+  var state = null;
+  var savedFilters = { albumIds: [], personIds: [], tagIds: [] };
+  var filterResults = { albums: null, people: null, tags: null };
+
+  var el = {};
+
+  function cacheElements() {
+    [
+      "device-name", "device-version", "banner",
+      "screen-card", "screen-availability-note", "screen-status-label", "screen-toggle",
+      "brightness-range", "brightness-value", "screen-mode-hint", "screen-error",
+      "volume-card", "volume-range", "volume-value", "volume-error",
+      "pill-spotify", "pill-dlna",
+      "albums-list", "albums-error", "people-list", "people-error", "tags-list", "tags-error",
+      "filters-save", "filters-status"
+    ].forEach(function (id) {
+      el[id] = document.getElementById(id);
+    });
+  }
+
+  function showBanner(message) {
+    el.banner.textContent = message;
+    el.banner.hidden = false;
+  }
+
+  function hideBanner() {
+    el.banner.hidden = true;
+    el.banner.textContent = "";
+  }
+
+  function setNotice(node, message) {
+    if (message) {
+      node.textContent = message;
+      node.hidden = false;
+    } else {
+      node.hidden = true;
+      node.textContent = "";
+    }
+  }
+
+  /**
+   * Assigns a slider's value from a poll WITHOUT yanking the thumb out from under a user who is
+   * mid-drag. A range input only fires "change" when the drag ends, so between the first touch
+   * and the release the 5s poll would otherwise keep overwriting `.value` with the device's
+   * (still old) number and the thumb would snap back under the finger, several times per drag.
+   *
+   * Two signals, because neither alone covers every input mode: `document.activeElement` catches
+   * keyboard/D-pad adjustment (arrow keys move a focused slider and it stays focused), and the
+   * pointer-capture flag catches a touch or mouse drag, which on some engines does not focus the
+   * element at all. The value we skip is never lost — the drag ends with a "change" that writes
+   * the user's number to the device, and the very next poll renders whatever it settled on.
+   */
+  function setSliderValue(node, value) {
+    if (node === document.activeElement || node.dataset.dragging === "1") return;
+    node.value = String(value);
+  }
+
+  /** Marks a slider as being dragged for as long as a pointer is down on it (see
+   *  [setSliderValue]). Pointer events cover mouse, touch and pen with one listener set;
+   *  `pointercancel` matters because a scroll gesture stealing the pointer never sends `up`. */
+  function trackDragging(node) {
+    node.addEventListener("pointerdown", function () {
+      node.dataset.dragging = "1";
+    });
+    ["pointerup", "pointercancel", "blur"].forEach(function (type) {
+      node.addEventListener(type, function () {
+        node.dataset.dragging = "0";
+      });
+    });
+  }
+
+  /** GET/POST/PUT helper. Rejects with an Error carrying `.status` on non-2xx. Never appends a
+   *  query string -- the device's router matches the raw request target exactly. */
+  function apiFetch(path, options) {
+    return fetch(path, options).then(function (res) {
+      return res
+        .json()
+        .catch(function () {
+          return null;
+        })
+        .then(function (data) {
+          if (!res.ok) {
+            var message = (data && data.error) || ("HTTP " + res.status);
+            var err = new Error(message);
+            err.status = res.status;
+            throw err;
+          }
+          return data;
+        });
+    });
+  }
+
+  function getJSON(path) {
+    return apiFetch(path);
+  }
+
+  function writeJSON(path, method, body) {
+    return apiFetch(path, {
+      method: method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  }
+
+  // ---- rendering ----
+
+  function renderDevice(device) {
+    el["device-name"].textContent = device.name;
+    el["device-version"].textContent = "v" + device.version;
+  }
+
+  function renderScreen(screen) {
+    setNotice(el["screen-availability-note"], screen.available ? null :
+      "No screen is currently attached to the app right now — commands are saved and will apply " +
+      "as soon as the app is active.");
+
+    el["screen-status-label"].textContent = screen.on ? "Screen is on" : "Screen is off";
+    el["screen-toggle"].textContent = screen.on ? "Turn Off" : "Turn On";
+    el["screen-toggle"].setAttribute("aria-pressed", String(screen.on));
+
+    setSliderValue(el["brightness-range"], screen.brightness);
+    el["brightness-value"].textContent = String(screen.brightness);
+    // Brightness is only meaningful while the screen is on: with the panel faked off, moving this
+    // slider changes nothing anyone can see, so offering it invites the user to "set" a value
+    // whose effect only appears at some later wake. Disabled rather than hidden so the card does
+    // not reflow (and so a D-pad user's focus order is stable) — the reported number stays
+    // visible, it just cannot be commanded from here until the screen is back on.
+    el["brightness-range"].disabled = !screen.on;
+
+    setNotice(el["screen-mode-hint"], screen.mode === "window" ?
+      "System brightness permission not granted — controlling app window only." : null);
+  }
+
+  function renderVolume(volume) {
+    el["volume-card"].hidden = !!volume.fixed;
+    if (!volume.fixed) {
+      setSliderValue(el["volume-range"], volume.value);
+      el["volume-value"].textContent = String(volume.value);
+    }
+  }
+
+  function renderPlaying(playing) {
+    el["pill-spotify"].classList.toggle("active", !!playing.spotify);
+    el["pill-dlna"].classList.toggle("active", !!playing.dlna);
+  }
+
+  function renderState(data) {
+    state = data;
+    renderDevice(data.device);
+    renderScreen(data.screen);
+    renderVolume(data.volume);
+    renderPlaying(data.playing);
+  }
+
+  // ---- state polling ----
+
+  function refresh() {
+    return getJSON("/api/state")
+      .then(function (data) {
+        renderState(data);
+        hideBanner();
+      })
+      .catch(function (err) {
+        showBanner("Unable to reach the device: " + err.message);
+      });
+  }
+
+  // ---- screen card ----
+
+  function sendScreen(partial) {
+    var body = Object.assign({ on: state ? state.screen.on : true }, partial);
+    el["screen-toggle"].disabled = true;
+    el["brightness-range"].disabled = true;
+    setNotice(el["screen-error"], null);
+    return writeJSON("/api/screen", "POST", body)
+      .catch(function (err) {
+        setNotice(el["screen-error"], err.message);
+      })
+      .then(function () {
+        el["screen-toggle"].disabled = false;
+        el["brightness-range"].disabled = false;
+        return refresh();
+      });
+  }
+
+  function onToggleScreen() {
+    sendScreen({ on: !(state && state.screen.on) });
+  }
+
+  function onBrightnessChange() {
+    sendScreen({ brightness: Number(el["brightness-range"].value) });
+  }
+
+  // ---- volume card ----
+
+  function onVolumeChange() {
+    setNotice(el["volume-error"], null);
+    el["volume-range"].disabled = true;
+    writeJSON("/api/volume", "POST", { value: Number(el["volume-range"].value) })
+      .catch(function (err) {
+        setNotice(el["volume-error"], err.message);
+      })
+      .then(function () {
+        el["volume-range"].disabled = false;
+        return refresh();
+      });
+  }
+
+  // ---- filters card ----
+
+  function fetchList(kind) {
+    return getJSON("/api/immich/" + kind)
+      .then(function (items) {
+        filterResults[kind] = { ok: true, items: items };
+      })
+      .catch(function (err) {
+        var message = err.status === 404 ?
+          "Immich is not configured on this device." :
+          "Could not load " + kind + " (" + (err.message || ("HTTP " + err.status)) + ").";
+        filterResults[kind] = { ok: false, message: message };
+      });
+  }
+
+  function savedIdsFor(kind) {
+    if (kind === "albums") return savedFilters.albumIds;
+    if (kind === "people") return savedFilters.personIds;
+    return savedFilters.tagIds;
+  }
+
+  function renderFilterGroup(kind) {
+    var listEl = el[kind + "-list"];
+    var errorEl = el[kind + "-error"];
+    var result = filterResults[kind];
+    var saved = savedIdsFor(kind);
+
+    var known = [];
+    var byId = {};
+    if (result && result.ok) {
+      setNotice(errorEl, null);
+      result.items.forEach(function (item) {
+        known.push(item.id);
+        byId[item.id] = item.name;
+      });
+    } else if (result && !result.ok) {
+      setNotice(errorEl, result.message);
+    } else {
+      setNotice(errorEl, null);
+    }
+
+    var seen = {};
+    var ids = [];
+    known.forEach(function (id) {
+      ids.push(id);
+      seen[id] = true;
+    });
+    saved.forEach(function (id) {
+      if (!seen[id]) {
+        ids.push(id);
+        seen[id] = true;
+      }
+    });
+
+    listEl.innerHTML = "";
+    if (ids.length === 0) {
+      var empty = document.createElement("p");
+      empty.className = "filter-empty";
+      empty.textContent = "Nothing available.";
+      listEl.appendChild(empty);
+      return;
+    }
+
+    ids.forEach(function (id) {
+      var row = document.createElement("label");
+      row.className = "filter-row";
+
+      var checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = id;
+      checkbox.checked = saved.indexOf(id) !== -1;
+      checkbox.setAttribute("data-kind", kind);
+
+      var label = document.createElement("span");
+      var name = byId[id];
+      if (name) {
+        label.textContent = name;
+      } else {
+        label.textContent = id;
+        label.className = "id-fallback";
+      }
+
+      row.appendChild(checkbox);
+      row.appendChild(label);
+      listEl.appendChild(row);
+    });
+  }
+
+  function renderAllFilterGroups() {
+    renderFilterGroup("albums");
+    renderFilterGroup("people");
+    renderFilterGroup("tags");
+  }
+
+  /**
+   * Loads saved filter IDs + the three Immich lists, then renders the checkbox groups.
+   *
+   * `#filters-save` ships `disabled` in the markup and MUST stay disabled until this settles:
+   * `checkedIds()` reads whatever is currently in the DOM, and until `renderAllFilterGroups()`
+   * has populated the three `.filter-list` containers, that DOM is empty. A Save click landing
+   * in that window would PUT `{albumIds:[],personIds:[],tagIds:[]}` and, on success, overwrite
+   * `savedFilters` with it — silently wiping every previously saved filter. Re-enabling only
+   * happens in the `.then`/`.catch` pair below, on every exit path (including an unexpected
+   * failure), so Save is never left permanently disabled either -- it must still work after a
+   * 404/502 on all three Immich lists, using just the saved-ID fallback entries.
+   */
+  function loadFilters() {
+    setNotice(el["filters-status"], "Loading filters…");
+    return getJSON("/api/slideshow/filters")
+      .then(function (data) {
+        savedFilters = {
+          albumIds: data.albumIds || [],
+          personIds: data.personIds || [],
+          tagIds: data.tagIds || []
+        };
+      })
+      .catch(function () {
+        savedFilters = { albumIds: [], personIds: [], tagIds: [] };
+      })
+      .then(function () {
+        return Promise.all([
+          fetchList("albums"),
+          fetchList("people"),
+          fetchList("tags")
+        ]);
+      })
+      .then(renderAllFilterGroups)
+      .then(function () {
+        setNotice(el["filters-status"], null);
+        el["filters-save"].disabled = false;
+      })
+      .catch(function () {
+        // Unexpected failure (e.g. a render bug) must not leave Save stuck disabled forever.
+        setNotice(el["filters-status"], null);
+        el["filters-save"].disabled = false;
+      });
+  }
+
+  function checkedIds(kind) {
+    var boxes = el[kind + "-list"].querySelectorAll('input[type="checkbox"]');
+    var ids = [];
+    boxes.forEach(function (box) {
+      if (box.checked) ids.push(box.value);
+    });
+    return ids;
+  }
+
+  function onSaveFilters() {
+    var body = {
+      albumIds: checkedIds("albums"),
+      personIds: checkedIds("people"),
+      tagIds: checkedIds("tags")
+    };
+    el["filters-save"].disabled = true;
+    setNotice(el["filters-status"], "Saving…");
+    writeJSON("/api/slideshow/filters", "PUT", body)
+      .then(function () {
+        savedFilters = body;
+        setNotice(el["filters-status"], "Saved.");
+      })
+      .catch(function (err) {
+        setNotice(el["filters-status"], "Save failed: " + err.message);
+      })
+      .then(function () {
+        el["filters-save"].disabled = false;
+        return refresh();
+      });
+  }
+
+  // ---- wiring ----
+
+  function init() {
+    cacheElements();
+
+    el["screen-toggle"].addEventListener("click", onToggleScreen);
+    el["brightness-range"].addEventListener("change", onBrightnessChange);
+    el["volume-range"].addEventListener("change", onVolumeChange);
+    el["filters-save"].addEventListener("click", onSaveFilters);
+    trackDragging(el["brightness-range"]);
+    trackDragging(el["volume-range"]);
+
+    refresh();
+    loadFilters();
+    setInterval(refresh, REFRESH_INTERVAL_MS);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>

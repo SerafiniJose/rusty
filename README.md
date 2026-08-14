@@ -58,6 +58,7 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 - **Home Assistant dashboard** — an optional second screen: sign in from Rusty's settings (or through the dashboard's own login) and Rusty shows your Home Assistant dashboards full-screen in a kiosk-style view, with switcher chips to jump between them. It auto-discovers your dashboards and sidebar apps, and can tint its own chrome to match your dashboard theme.
 - **Home Assistant media renderer** — optionally expose Rusty as a DLNA media player that Home Assistant auto-discovers as a `media_player` entity (nothing to install on the HA side). Speak TTS announcements ("the wash is done", a doorbell chime, a morning briefing) or stream internet radio to it from automations, scripts, or a dashboard card — Rusty pauses or fades Spotify while the message plays and resumes it afterwards.
 - **Spotify Canvas in now-playing** — optionally fill the now-playing screen with the track's looping Canvas video instead of static album art.
+- **Remote control** — an optional, off-by-default web page and HTTP API the device serves itself: turn the screen on/off, set brightness and media volume, see what's playing, and edit the Slideshow's album/person/tag filters from your phone or laptop. While it's on, the device announces itself on the network so a Home Assistant integration can discover it. See [Remote control](#remote-control).
 - **On-screen launcher** — an expandable button jumps between Spotify, Home Assistant, and the screensaver.
 - **Start on boot & Keep screen on** — optional toggles to launch Rusty when the device powers on and to hold the display awake while it's in front.
 - **Tabbed settings** — each feature gets its own settings page.
@@ -70,6 +71,7 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 - The receiver and the controlling Spotify client must be on the **same local network**.
 - **Home Assistant mode (optional)** needs a Home Assistant instance reachable on the same local network.
 - **Immich Slideshow (optional)** needs a self-hosted [Immich](https://immich.app) server reachable on the same local network, plus an API key (see below).
+- **Remote control (optional)** is off by default and needs nothing but a browser on the same local network — read the [security note](#security--please-read-before-enabling) before enabling it.
 
 > Tested on an Amazon Echo Show 8 running LineageOS 18.1 (Android 11) and on a Lenovo Tab M10 (TB-X606FA).
 
@@ -91,6 +93,64 @@ person.statistics
 tag.read
 user.read
 ```
+
+## Remote control
+
+Rusty can serve a small control page — and the HTTP API behind it — from the device itself, so
+you can drive the screen from another room without walking over to it.
+
+**It is off by default.** Turn it on in **Settings → General → Remote control**. The same row
+then shows the address to open, something like `http://192.168.1.42:8765/`. Type that into any
+browser on the same network and you get a single page with:
+
+- **Screen** — on/off and a brightness slider. "Off" is a full-screen black overlay that keeps
+  the panel awake, so turning it back on is instant; touching the device (or pressing any remote
+  key) also wakes it.
+- **Volume** — the media volume slider. Hidden on devices whose volume is fixed (some TVs and
+  docks).
+- **Playing** — whether the Spotify receiver or the DLNA player is currently playing.
+- **Slideshow filters** — the same album / person / tag checklists as the in-app picker, so you
+  can re-aim the photo frame from the sofa.
+
+The port is fixed at **8765**. Nothing needs to be installed on the other device — it's one
+self-contained page, no accounts, no cloud.
+
+### The "Allow system brightness" row
+
+Under the toggle you may see a row asking to allow system brightness. It opens Android's **Modify
+system settings** screen for Rusty. Granting it lets the brightness slider move the **device's
+real display brightness**; without it, Rusty can only dim its own window, which looks the same
+from across the room but doesn't affect anything else on screen. The control page tells you which
+mode is in effect. It is entirely optional, and Remote control works without it.
+
+### Home Assistant
+
+While Remote control is on, Rusty advertises itself as `_rusty._tcp` over mDNS so a Home
+Assistant integration can discover it on the network and expose the screen, volume and playing
+state as entities. That integration is a separate project; Rusty itself needs no configuration
+for it beyond the toggle.
+
+### Security — please read before enabling
+
+There is **no password, PIN or token** on this API. That is a deliberate choice for a device that
+lives on a home network, and it means:
+
+- **Any client on your local network can control this device**: switch the screen on or off,
+  change brightness and media volume, and change the Slideshow filters. It can also **read the
+  names of your Immich albums, people and tags** (names only — no photos are served through this
+  API, and your Immich API key never leaves the device).
+- **Any app already installed on the device** that holds the `INTERNET` permission can do the
+  same, because `localhost`/`127.0.0.1` are deliberately accepted as valid hosts (that is what
+  makes `adb forward` debugging work). This isn't a new class of exposure — a local app could
+  already reach any server on the LAN — but it is worth knowing.
+- Browser-based attacks are guarded against: Rusty validates the `Host` header (so a page on the
+  public internet can't use DNS rebinding to reach it), never emits CORS headers, requires
+  `Content-Type: application/json` on writes, and serves nothing but the one embedded page and
+  the fixed API routes.
+
+So: leave it off unless you want it, and don't enable it on a network you don't trust — a guest
+Wi-Fi, a shared flat, a café. If you need it reachable from outside your home, put it behind your
+own VPN rather than forwarding port 8765.
 
 ## Install
 

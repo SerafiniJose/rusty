@@ -65,9 +65,7 @@ class SlideshowSettingsTest {
         val prefs = FakePrefs()
         val secrets = InMemorySecretStore()
         SlideshowSettings.saveConnection(prefs, secrets, "http://a", "k1")
-        SlideshowSettings.setAlbumIds(prefs, listOf("al1", "al2"))
-        SlideshowSettings.setPersonIds(prefs, listOf("p1"))
-        SlideshowSettings.setTagIds(prefs, listOf("t1"))
+        SlideshowSettings.setFilters(prefs, ImmichFilters(listOf("al1", "al2"), listOf("p1"), listOf("t1")))
         // Identical re-save: filters survive.
         assertEquals(ImmichConnectionSave.SAVED, SlideshowSettings.saveConnection(prefs, secrets, "http://a", "k1"))
         assertEquals(listOf("al1", "al2"), SlideshowSettings.filters(prefs).albumIds)
@@ -125,10 +123,18 @@ class SlideshowSettingsTest {
         val prefs = FakePrefs()
         val secrets = InMemorySecretStore()
         assertEquals(ImmichFilters(emptyList(), emptyList(), emptyList()), SlideshowSettings.filters(prefs))
-        SlideshowSettings.setPersonIds(prefs, listOf("p1", "p2"))
+        SlideshowSettings.setFilters(prefs, ImmichFilters(emptyList(), listOf("p1", "p2"), emptyList()))
         assertEquals(listOf("p1", "p2"), SlideshowSettings.filters(prefs).personIds)
-        SlideshowSettings.setPersonIds(prefs, emptyList())
+        SlideshowSettings.setFilters(prefs, ImmichFilters(emptyList(), emptyList(), emptyList()))
         assertEquals(emptyList<String>(), SlideshowSettings.filters(prefs).personIds)
+    }
+
+    @Test fun setFiltersWritesAllThreeCategoriesAtomically() {
+        val prefs = FakePrefs()
+        val u1 = "11111111-2222-3333-4444-555555555555"
+        val u2 = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        SlideshowSettings.setFilters(prefs, ImmichFilters(listOf(u1), listOf(u2), emptyList()))
+        assertEquals(ImmichFilters(listOf(u1), listOf(u2), emptyList()), SlideshowSettings.filters(prefs))
     }
 
     @Test fun displayDefaultsMatchSpec() {

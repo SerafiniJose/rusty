@@ -28,6 +28,10 @@ class ScreensaverController(
     private val isReceiverForeground: () -> Boolean,
     // Process-wide single source of truth.
     private val store: ReceiverStateStore,
+    // True while the remote-control API has the screen faked off. Read at every mount, because a
+    // theme mounted while the panel is dark (the idle timer still fires behind the black overlay)
+    // starts a brand-new slideshow loop that has never heard about the suppression.
+    private val screenSuppressed: () -> Boolean = { false },
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var resumed = false
@@ -182,8 +186,21 @@ class ScreensaverController(
         overlay.addView(theme.createView(overlay.context, overlay, host))
         activeTheme = theme
         theme.setChromeVisible(isReceiverForeground()) // hide Settings/Info when a sleep layer over HA
+        // BEFORE onShown(), which is what starts a slideshow's loop: the loop then parks on its
+        // first gate having spent nothing. Applied the other way round it would already have a
+        // batch fetch in flight (the loop starts eagerly on the main dispatcher).
+        theme.setSlideshowSuppressed(screenSuppressed())
         theme.onShown()
         theme.bind(store.snapshot.state, is24Hour())
+    }
+
+    /**
+     * The remote-control API faked the screen off or back on. Forwarded to the mounted theme so a
+     * running slideshow parks while the panel is dark; a later mount re-reads [screenSuppressed]
+     * itself, so a theme that is not up yet needs nothing here.
+     */
+    fun setSlideshowSuppressed(suppressed: Boolean) {
+        activeTheme?.setSlideshowSuppressed(suppressed)
     }
 
     /** A key while showing routes through the same wake path as a touch. */

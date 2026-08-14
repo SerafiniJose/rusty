@@ -55,6 +55,13 @@ android {
             }
         }
     }
+    // BuildConfig is off by default in AGP 8+. The remote-control API reports the app version in
+    // GET /api/state (Home Assistant shows it as the device's software version), and the generated
+    // BuildConfig.VERSION_NAME is the only compile-time-constant source of the value declared above.
+    buildFeatures {
+        buildConfig = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

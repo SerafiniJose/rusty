@@ -7,13 +7,13 @@ import android.content.Context
 import androidx.core.app.NotificationCompat
 
 /**
- * Process-wide, synchronized bookkeeping for the two foreground-service notifications
- * (Spotify receiver, DLNA player) and their shared group summary.
+ * Process-wide, synchronized bookkeeping for the foreground-service notifications (Spotify
+ * receiver, DLNA player, remote control) and their shared group summary.
  *
- * Why a coordinator: Android auto-bundles only at 4+ notifications, so the 2-child group needs
+ * Why a coordinator: Android auto-bundles only at 4+ notifications, so a smaller group needs
  * an explicitly posted summary — and posting/cancelling it from each service's own lifecycle
  * races (two concurrent onDestroys can each see the other's child and leave an orphan summary).
- * Both services run in one process, so a single lock removes the race entirely.
+ * All services run in one process, so a single lock removes the race entirely.
  *
  * POST_NOTIFICATIONS (API 33+) may be denied: notify() can throw SecurityException, and FGS
  * notifications then appear only in the task manager. Degrades to invisible, never to a crash.
@@ -24,7 +24,7 @@ object ServiceNotifications {
     private const val SUMMARY_ID = 3
     private const val SUMMARY_CHANNEL_ID = "rusty_services_group"
 
-    enum class Kind { SPOTIFY, DLNA }
+    enum class Kind { SPOTIFY, DLNA, CONTROL }
 
     private val active = mutableSetOf<Kind>()
 

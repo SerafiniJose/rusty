@@ -128,6 +128,94 @@ class ShellKeyRoutingTest {
         }
     }
 
+    // ---- while the remote-control API has the screen faked off ----------------------------
+    //
+    // The first rule below IS the shipped "media keys mean MUSIC everywhere" contract, and it has
+    // already regressed once on this exact path (a fake-off guard that swallowed
+    // PLAY_PAUSE/NEXT/PREVIOUS). These are the tests that make the next regression impossible to
+    // land quietly.
+
+    @Test
+    fun `transport keys still mean music while the screen is faked off — no wake`() {
+        transportKeys.forEach { key ->
+            assertEquals(
+                "key $key must reach the transport, not wake the panel",
+                ScreenOffKeyAction.SPOTIFY_TRANSPORT,
+                ShellKeyRouting.routeWhileScreenFakedOff(
+                    key, KeyEvent.ACTION_DOWN, repeatCount = 0, spotifyActive = true,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `transport keys with Spotify idle wake the faked-off screen instead of being dead keys`() {
+        transportKeys.forEach { key ->
+            assertEquals(
+                "key $key must wake when there is nothing to control",
+                ScreenOffKeyAction.WAKE_AND_CONSUME,
+                ShellKeyRouting.routeWhileScreenFakedOff(
+                    key, KeyEvent.ACTION_DOWN, repeatCount = 0, spotifyActive = false,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `every other key wakes the faked-off screen — the no-trap rule`() {
+        (navKeys + exitKeys + otherKeys).forEach { key ->
+            listOf(true, false).forEach { active ->
+                assertEquals(
+                    "key $key must wake",
+                    ScreenOffKeyAction.WAKE_AND_CONSUME,
+                    ShellKeyRouting.routeWhileScreenFakedOff(
+                        key, KeyEvent.ACTION_DOWN, repeatCount = 0, spotifyActive = active,
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `a held key wakes once, not once per auto-repeat`() {
+        (navKeys + exitKeys + otherKeys).forEach { key ->
+            assertEquals(
+                "key $key repeat must not re-wake",
+                ScreenOffKeyAction.CONSUME,
+                ShellKeyRouting.routeWhileScreenFakedOff(
+                    key, KeyEvent.ACTION_DOWN, repeatCount = 3, spotifyActive = false,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `the up half of a wake press is consumed without a second wake`() {
+        (navKeys + exitKeys + otherKeys).forEach { key ->
+            assertEquals(
+                "key $key up must be consumed silently",
+                ScreenOffKeyAction.CONSUME,
+                ShellKeyRouting.routeWhileScreenFakedOff(
+                    key, KeyEvent.ACTION_UP, repeatCount = 0, spotifyActive = false,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `a transport key's up half still routes to the transport, which consumes both halves`() {
+        // TvRemote.dispatchTransportKey acts on the initial DOWN and returns true for the UP too,
+        // so the UP must keep taking the same branch or it would fall through and wake the panel.
+        transportKeys.forEach { key ->
+            assertEquals(
+                ScreenOffKeyAction.SPOTIFY_TRANSPORT,
+                ShellKeyRouting.routeWhileScreenFakedOff(
+                    key, KeyEvent.ACTION_UP, repeatCount = 0, spotifyActive = true,
+                ),
+            )
+        }
+    }
+
     @Test
     fun `play-pause toggles to pause only while status is Playing`() {
         assertTrue(ShellKeyRouting.togglesToPause("Playing"))

@@ -449,6 +449,12 @@ class SlideshowTheme : ScreensaverTheme {
 
     override fun refreshLauncher() = launcher.refresh()
 
+    /** Screen fake-off: park the fetch/decode loop (a no-op before the controller exists, e.g. an
+     *  unconfigured slideshow — the next mount re-applies the current suppression anyway). */
+    override fun setSlideshowSuppressed(suppressed: Boolean) {
+        controller?.setSuppressed(suppressed)
+    }
+
     // ---- Transport overlay --------------------------------------------------
 
     /**

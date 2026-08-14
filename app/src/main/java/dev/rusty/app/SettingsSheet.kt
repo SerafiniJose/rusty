@@ -2,10 +2,14 @@ package dev.rusty.app
 
 import android.app.Dialog
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.net.Uri
+import android.provider.Settings
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.Window
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -220,7 +224,67 @@ object SettingsSheet {
             activity.setSlideshowEnabled(isChecked)
             onFeatureTabsChanged()
         }
-        return {}
+
+        // Remote Control: off by default (ControlSettings.KEY_ENABLED). The switch only flips the
+        // preference; ControlService.syncFromPrefs is what actually starts/stops the foreground
+        // service, mirroring every other feature toggle in this panel.
+        val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val remoteControlSwitch = panel.findViewById<SwitchMaterial>(R.id.switchRemoteControl)
+        val remoteControlStatus = panel.findViewById<TextView>(R.id.tvRemoteControlStatus)
+        val brightnessPermissionRow = panel.findViewById<View>(R.id.rowBrightnessPermission)
+
+        remoteControlSwitch.isChecked = ControlSettings.isEnabled(prefs)
+
+        // Replays the current state on registration (ControlServerStatus.addListener), so the
+        // line is correct immediately even though the service usually started long before this
+        // panel was opened.
+        val controlStatusListener: (ControlServerStatus.State) -> Unit = { state ->
+            remoteControlStatus.text = ControlStatusLine.text(state)
+        }
+        ControlServerStatus.addListener(controlStatusListener)
+
+        // WRITE_SETTINGS has no request-permission dialog; the only path is the system's
+        // "Modify system settings" screen, which the user must back out of by hand — so the row
+        // must re-check on return rather than only once at bind time. A window-focus listener
+        // (not onResume: this panel lives inside a Dialog, not an Activity) fires exactly when
+        // the dialog's window regains focus, which includes coming back from that screen.
+        //
+        // Gated on the SWITCH as well as the permission: "Modify system settings" is one of
+        // Android's scarier-sounding grants, and offering it to a user who has never turned Remote
+        // Control on gives them a prompt with no context for why Rusty would want it. It is only
+        // meaningful once something can actually ask for a brightness change.
+        fun refreshBrightnessPermissionRow() {
+            val relevant = remoteControlSwitch.isChecked && !Settings.System.canWrite(activity)
+            brightnessPermissionRow.visibility = if (relevant) View.VISIBLE else View.GONE
+        }
+        refreshBrightnessPermissionRow()
+        remoteControlSwitch.setOnCheckedChangeListener { _, isChecked ->
+            ControlSettings.setEnabled(prefs, isChecked)
+            ControlService.syncFromPrefs(activity)
+            refreshBrightnessPermissionRow()
+        }
+        val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (hasFocus) refreshBrightnessPermissionRow()
+        }
+        panel.viewTreeObserver.addOnWindowFocusChangeListener(focusListener)
+
+        brightnessPermissionRow.setOnClickListener {
+            // Some TV builds ship no "Modify system settings" screen to send the user to; a
+            // missing activity here must degrade to a no-op, not a crash.
+            runCatching {
+                activity.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                        Uri.parse("package:${activity.packageName}"),
+                    ),
+                )
+            }
+        }
+
+        return {
+            ControlServerStatus.removeListener(controlStatusListener)
+            panel.viewTreeObserver.removeOnWindowFocusChangeListener(focusListener)
+        }
     }
 
     // ---- Screensaver binder -------------------------------------------------

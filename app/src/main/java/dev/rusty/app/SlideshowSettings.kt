@@ -133,9 +133,21 @@ object SlideshowSettings {
         tagIds = readIds(prefs, KEY_TAG_IDS),
     )
 
-    fun setAlbumIds(prefs: SharedPreferences, ids: List<String>) = writeIds(prefs, KEY_ALBUM_IDS, ids)
-    fun setPersonIds(prefs: SharedPreferences, ids: List<String>) = writeIds(prefs, KEY_PERSON_IDS, ids)
-    fun setTagIds(prefs: SharedPreferences, ids: List<String>) = writeIds(prefs, KEY_TAG_IDS, ids)
+    /**
+     * Writes all three filter categories in ONE `edit()` transaction — the only way filters are
+     * ever written. (Three per-category setters used to exist alongside this; once the settings
+     * panel and the remote-control API both moved here they had no production callers left, and a
+     * public API that only tests use is a public API that invites a non-atomic write back.) The
+     * single transaction is what stops a reader — the slideshow fetch loop — ever observing a
+     * half-updated selection where one category reflects the new value and the other two the old.
+     */
+    fun setFilters(prefs: SharedPreferences, filters: ImmichFilters) {
+        prefs.edit()
+            .putString(KEY_ALBUM_IDS, filters.albumIds.joinToString(","))
+            .putString(KEY_PERSON_IDS, filters.personIds.joinToString(","))
+            .putString(KEY_TAG_IDS, filters.tagIds.joinToString(","))
+            .apply()
+    }
 
     fun intervalSeconds(prefs: SharedPreferences) =
         prefs.getInt(KEY_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS)

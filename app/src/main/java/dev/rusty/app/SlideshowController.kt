@@ -25,7 +25,9 @@ sealed interface SlideshowStatus {
  * then wait crossfade + interval. Network errors keep the current photo up and retry with bounded
  * backoff (5 s doubling to 60 s); an empty filter result retries every 60 s. Cancellation via
  * [stop] is the staleness guard: no callback outlives the loop's Job. [pause]/[resume]/[next]/
- * [previous] drive the loop from the UI thread through a command channel.
+ * [previous] drive the loop from the UI thread through a command channel; [setSuppressed] is the
+ * screen renderer's own, separate park for a faked-off panel (see its KDoc for why it is not just
+ * another pause).
  */
 class SlideshowController(
     private val fetchBatch: suspend (Int) -> ImmichResult<List<ImmichAsset>>,
@@ -102,6 +104,26 @@ class SlideshowController(
         commands.trySend(Command.WAKE)
     }
 
+    /**
+     * Screen-off suppression, DELIBERATELY separate from [pausedFlag]: the remote-control API can
+     * fake the panel off, and while it is dark nobody can see a photo, so the loop must stop. Two
+     * flags rather than one because they answer to different owners — waking the screen must not
+     * resume a slideshow the user had paused, and un-pausing must not light up a dark panel. Same
+     * @Volatile reasoning as [pausedFlag]: written from the main thread, read on the loop coroutine.
+     */
+    @Volatile
+    private var suppressedFlag = false
+
+    /**
+     * Parks (true) or releases (false) the loop for screen fake-off. Independent of [pause] /
+     * [resume]: neither flag ever writes the other, so a wake releases only what the screen took.
+     * The WAKE nudge is what unblocks a loop parked in [awaitUnsuppressed] or [dwell].
+     */
+    fun setSuppressed(suppressed: Boolean) {
+        suppressedFlag = suppressed
+        commands.trySend(Command.WAKE)
+    }
+
     /** Forward one step: through history if the viewer stepped back, else a new slide. */
     fun next() {
         commands.trySend(Command.NEXT)
@@ -121,6 +143,7 @@ class SlideshowController(
         var prefetchBackoff = INITIAL_BACKOFF_MS
         while (true) {
             coroutineContext.ensureActive()
+            awaitUnsuppressed() // gate 1: never spend the network while the panel is dark
             if (queue.depth < REFILL_THRESHOLD) {
                 when (val result = fetchBatch(BATCH_SIZE)) {
                     is ImmichResult.Ok -> {
@@ -149,6 +172,10 @@ class SlideshowController(
                     }
                 }
             }
+            // Gate 2: a suppression that landed WHILE the batch fetch was in flight still stops
+            // before the decode — and before the queue is popped, so the pair is chosen (and
+            // splitView re-read, in case the device rotated meanwhile) against the woken screen.
+            awaitUnsuppressed()
             val slide = queue.nextSlide(splitView()) ?: continue
             if (!prefetch(slide.primary)) {
                 // Only the PRIMARY failed. nextSlide() already pulled the partner out of the queue,
@@ -207,6 +234,25 @@ class SlideshowController(
         coroutineContext.ensureActive()
         listener.onSlide(slide)
         return true
+    }
+
+    /**
+     * Parks the loop while the screen is suppressed, returning only once it is released. Like the
+     * paused branch of [dwell] there is no timeout, so a suppressed slideshow issues no network
+     * traffic and burns no CPU; cancellation propagates out of [Channel.receive], which is how
+     * [stop] tears a suppressed loop down.
+     *
+     * Any command re-evaluates the flag (the received value is deliberately discarded — a NEXT
+     * that arrived before the screen went dark must not advance a photo nobody can see), and
+     * [setSuppressed] always sends one, so the release can never be missed. The manual pause is
+     * NOT checked here: it has its own park inside [dwell], which stays deliberately permeable to
+     * NEXT/PREVIOUS so a paused viewer can still step through photos.
+     */
+    private suspend fun awaitUnsuppressed() {
+        while (suppressedFlag) {
+            coroutineContext.ensureActive()
+            commands.receive()
+        }
     }
 
     /**

@@ -8,9 +8,9 @@ import android.util.Log
 /**
  * Best-effort "start on boot": when [KEY_START_ON_BOOT] is set, start the foreground receiver
  * service so the device is a discoverable Spotify Connect target without opening the app.
- * Independently, the DLNA media-renderer sync always runs — it has its own toggle
- * ([dev.rusty.app.renderer.MediaRendererController.KEY_RENDERER_ENABLED]) and is not gated by
- * [KEY_START_ON_BOOT].
+ * Independently, the DLNA media-renderer and remote-control syncs always run — each has its own
+ * toggle ([dev.rusty.app.renderer.MediaRendererController.KEY_RENDERER_ENABLED],
+ * [ControlSettings.KEY_ENABLED]) and neither is gated by [KEY_START_ON_BOOT].
  *
  * Known limitation: apps targeting Android 15+ may NOT launch a mediaPlayback foreground service
  * from BOOT_COMPLETED — startForegroundService throws ForegroundServiceStartNotAllowedException.
@@ -40,6 +40,7 @@ class BootReceiver : BroadcastReceiver() {
         }
 
         dev.rusty.app.renderer.MediaRendererController.syncFromPrefs(context)
+        ControlService.syncFromPrefs(context)
     }
 
     companion object {

@@ -80,4 +80,12 @@ interface ScreensaverTheme {
      * feature enabled after the saver came up). Default: no-op (themes without a launcher ignore it).
      */
     fun refreshLauncher() {}
+
+    /**
+     * The remote-control API faked the screen off (or back on) while this theme is mounted. A theme
+     * that keeps doing work nobody can see — the Slideshow's fetch/decode loop — must park for the
+     * duration. Deliberately NOT the theme's own pause: a wake must not resume a slideshow the user
+     * had paused. Default: no-op (a theme that only draws a clock costs nothing while dark).
+     */
+    fun setSlideshowSuppressed(suppressed: Boolean) {}
 }

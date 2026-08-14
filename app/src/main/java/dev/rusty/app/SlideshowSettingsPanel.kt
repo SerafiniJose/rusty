@@ -153,11 +153,16 @@ class SlideshowSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPa
         }
 
         fun persistFor(kind: ImmichFilterKind): (List<String>) -> Unit = { ids ->
-            when (kind) {
-                ImmichFilterKind.ALBUMS -> SlideshowSettings.setAlbumIds(prefs, ids)
-                ImmichFilterKind.PEOPLE -> SlideshowSettings.setPersonIds(prefs, ids)
-                ImmichFilterKind.TAGS -> SlideshowSettings.setTagIds(prefs, ids)
+            // One SlideshowSettings.setFilters transaction writing all three keys, instead of a
+            // per-category setter each doing its own — so a reader (the slideshow fetch loop)
+            // never observes a write straddling two of the three keys.
+            val current = SlideshowSettings.filters(prefs)
+            val updated = when (kind) {
+                ImmichFilterKind.ALBUMS -> current.copy(albumIds = ids)
+                ImmichFilterKind.PEOPLE -> current.copy(personIds = ids)
+                ImmichFilterKind.TAGS -> current.copy(tagIds = ids)
             }
+            SlideshowSettings.setFilters(prefs, updated)
             filtersChanged = true
             renderSummaries()
         }

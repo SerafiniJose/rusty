@@ -82,6 +82,11 @@ class RustyApp : Application() {
             poster = MainPoster { mainHandler.post(it) },
             scheduler = haScheduler,
         )
+
+        // Heals a remote-control start the system refused at boot: every app launch re-syncs the
+        // service to the toggle, which is the retry the bind-failure status model promises. Last,
+        // because the service's runtime reads [receiverStore] and must not see it uninitialised.
+        ControlService.syncFromPrefs(this)
     }
 
     companion object {

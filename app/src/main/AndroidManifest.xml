@@ -13,6 +13,14 @@
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
+    <!-- Remote control API. connectedDevice (prerequisite CHANGE_WIFI_MULTICAST_STATE, declared
+         above) is deliberately NOT mediaPlayback: it is not among the foreground-service types
+         Android 15+ forbids starting from BOOT_COMPLETED, so the API can come up on boot.
+         WRITE_SETTINGS is the appop the user grants to let remote brightness move the DEVICE's
+         brightness instead of only this app's window; without it the API reports mode "window". -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+
     <!-- Android TV (NVIDIA Shield) support. Declaring these features as not-required keeps the
          app installable on phones/tablets while allowing it to run on touchless TV hardware.
          Android implicitly requires a touchscreen otherwise, which excludes TV devices. -->
@@ -66,6 +74,11 @@
         <service
             android:name=".renderer.MediaRendererService"
             android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
+
+        <service
+            android:name=".ControlService"
+            android:foregroundServiceType="connectedDevice"
             android:exported="false" />
 
         <receiver
