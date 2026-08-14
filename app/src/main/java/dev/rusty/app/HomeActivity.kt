@@ -558,7 +558,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
      * the user saves HA dashboard selection so the chip bar updates immediately without waiting for
      * the next repo-listener tick.
      */
-    fun refreshDashboardChips() = shellChrome.refreshDashboardChips()
+    override fun refreshDashboardChips() = shellChrome.refreshDashboardChips()
 
     /**
      * Wires the shell chrome cluster's clicks once (called from onCreate). Settings opens the active

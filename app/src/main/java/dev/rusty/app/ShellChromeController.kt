@@ -165,7 +165,6 @@ class ShellChromeController(
             return
         }
         val activePath = (currentFragment() as? ShellContribution)?.activeDashboardPath
-            ?: HomeAssistantDashboards.OVERVIEW_PATH
         val inflater = android.view.LayoutInflater.from(haChipGroup.context)
         selected.forEach { dashboard ->
             val chip = inflater.inflate(R.layout.view_dashboard_chip, haChipGroup, false)
@@ -176,9 +175,10 @@ class ShellChromeController(
             val iconSizePx = (16f * haChipGroup.resources.displayMetrics.density).toInt()
             chip.chipIcon = HaIcons.iconDrawable(haChipGroup.context, dashboard.icon, iconSizePx)
             chip.isChecked = dashboard.urlPath == activePath
+            // showDashboard() re-marks the row itself (it owns the optimistic active-path write), so
+            // a follow-up refresh here would only rebuild every chip a second time per tap.
             chip.setOnClickListener {
                 (currentFragment() as? ShellContribution)?.showDashboard(dashboard)
-                refreshDashboardChips()
             }
             haChipGroup.addView(chip)
         }

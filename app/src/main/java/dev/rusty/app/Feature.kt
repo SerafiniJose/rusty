@@ -17,7 +17,8 @@ import androidx.fragment.app.Fragment
  *                             No-op on features that don't own a clock view.
  *  - [activeDashboardPath]  — Home Assistant: the url_path currently shown in the WebView, used
  *                             to mark the active chip in the shell bottom bar. Null on others.
- *  - [showDashboard]        — Home Assistant: navigates the WebView to [dashboard]. No-op on others.
+ *  - [showDashboard]        — Home Assistant: navigates the WebView to [dashboard] AND re-marks the
+ *                             chip row (it owns the active-path write). No-op on others.
  *  - [runDiscovery]         — Home Assistant: triggers JS-bridge dashboard discovery. No-op on others.
  *  - [reloadUrl]            — Home Assistant: reloads the WebView at the configured URL. No-op on others.
  */
@@ -121,6 +122,9 @@ interface ShellHost {
      *  stays legible over the themed strips. Applied only while HA is foreground; the shell restores its
      *  defaults on switch-away. No-op contribution from non-HA features. */
     fun applyHaChromeColor(textColor: Int)
+    /** Rebuild the HA dashboard chip row — e.g. after HA navigated itself and the active chip
+     *  changed. No-op cost when HA is not foreground. */
+    fun refreshDashboardChips()
     fun startReceiver()
     fun stopReceiver()
     fun applyReceiverName(newName: String)

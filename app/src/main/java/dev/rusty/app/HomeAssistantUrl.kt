@@ -49,4 +49,21 @@ object HomeAssistantUrl {
         val fragment = uri.rawFragment?.let { "#$it" } ?: ""
         return path + query + fragment
     }
+
+    /** Assembles [base] + a page-reported [path] into an absolute URL, or null when [path] is not a
+     *  safe same-origin path. Rejects anything not starting with a single '/', and re-checks the
+     *  assembled URL's origin against [base] so a crafted path (e.g. "@evil.example/", which turns the
+     *  host into userinfo) can never redirect the WebView off the trusted origin. Pure. */
+    fun childUrlOrNull(base: String?, path: String?): String? {
+        val root = normalize(base) ?: return null
+        val rootOrigin = origin(root) ?: return null
+        val p = path.orEmpty()
+        // A single leading '/' only: no leading '/' at all lets a path like "@evil.example/" or
+        // "https://evil.example" get glued straight onto the origin below; "//" is protocol-relative
+        // (not actually exploitable once it's past a fixed authority, but never a legitimate
+        // HA-reported path either, so reject it too).
+        if (!p.startsWith("/") || p.startsWith("//")) return null
+        val assembled = root.trimEnd('/') + p
+        return if (isSameOrigin(assembled, rootOrigin)) assembled else null
+    }
 }

@@ -207,4 +207,58 @@ class HomeAssistantDashboardsTest {
         // no prior fire (lastOrigin null) → run
         assertTrue(HomeAssistantDashboards.shouldRunDiscovery(false, "o", null, 0L, 0L, t))
     }
+
+    // ---- activePathFor ------------------------------------------------------
+
+    private val avail = listOf(
+        HomeAssistantDashboards.OVERVIEW,
+        HomeAssistantDashboards.HaDashboard(title = "Mapa", urlPath = "map"),
+        HomeAssistantDashboards.HaDashboard(title = "security", urlPath = "security"),
+        HomeAssistantDashboards.HaDashboard(title = "home", urlPath = "home"),
+    )
+
+    @Test fun activePath_rootIsOverview() {
+        assertEquals(HomeAssistantDashboards.OVERVIEW_PATH,
+            HomeAssistantDashboards.activePathFor("/", "home", avail))
+        assertEquals(HomeAssistantDashboards.OVERVIEW_PATH,
+            HomeAssistantDashboards.activePathFor("", "home", avail))
+    }
+
+    @Test fun activePath_theLearntOverviewPanelIsOverview() {
+        // HA redirects the root to its default panel, so landing there IS the app's Overview.
+        assertEquals(HomeAssistantDashboards.OVERVIEW_PATH,
+            HomeAssistantDashboards.activePathFor("/home/overview", "home", avail))
+        assertEquals(HomeAssistantDashboards.OVERVIEW_PATH,
+            HomeAssistantDashboards.activePathFor("/home", "home", avail))
+    }
+
+    @Test fun activePath_knownDashboardMatchesOnFirstSegment() {
+        assertEquals("security", HomeAssistantDashboards.activePathFor("/security", "home", avail))
+        assertEquals("map", HomeAssistantDashboards.activePathFor("/map/0", "home", avail))
+    }
+
+    @Test fun activePath_unknownPathIsNull() {
+        // Somewhere the chips cannot represent — no chip should be marked active.
+        assertNull(HomeAssistantDashboards.activePathFor("/config/system", "home", avail))
+        assertNull(HomeAssistantDashboards.activePathFor(null, "home", avail))
+    }
+
+    @Test fun activePath_ignoresQueryAndFragment() {
+        assertEquals("security",
+            HomeAssistantDashboards.activePathFor("/security?edit=1#top", "home", avail))
+    }
+
+    @Test fun activePath_unlearntOverviewPanelStillMatchesRealDashboards() {
+        // The Overview panel is learnt from a landing, so it is null until one happens; that must
+        // not swallow every path, and the root is Overview whether or not it has been learnt.
+        assertEquals("security", HomeAssistantDashboards.activePathFor("/security", "", avail))
+        assertEquals(HomeAssistantDashboards.OVERVIEW_PATH,
+            HomeAssistantDashboards.activePathFor("/", null, avail))
+    }
+
+    @Test fun activePath_unlearntOverviewPanelReadsAsThatPanelNotOverview() {
+        // Honest rather than guessed: before the app has seen where its Overview lands, `home` is
+        // just a panel. Guessing it (the shipped bug guessed 'lovelace') lit the wrong chip.
+        assertEquals("home", HomeAssistantDashboards.activePathFor("/home/overview", null, avail))
+    }
 }

@@ -51,6 +51,16 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
     // from a background thread, no IllegalStateException crash.
     private lateinit var haBridge: HaBridge
     private var currentDashboardPath: String = HomeAssistantDashboards.OVERVIEW_PATH
+    // Where HA actually is, as reported by the page (currentDashboardPath is where the APP last sent
+    // it). Null while HA is somewhere the chips can't represent, so no chip reads as active.
+    private var visibleDashboardPath: String? = HomeAssistantDashboards.OVERVIEW_PATH
+    // The HA panel key the app's Overview lands on, learnt from the page rather than guessed: HA
+    // redirects its root (which is what Overview loads) to a default panel whose name differs by HA
+    // version and which `hass` does not expose. Null until the first Overview landing is observed.
+    private var overviewPanel: String? = null
+    // True between an app-initiated navigation to Overview and the page reporting where HA settled —
+    // that report is what teaches [overviewPanel].
+    private var expectingOverviewLanding: Boolean = false
     // True once the HA frontend has reported a successful discovery for the current page (i.e. it is
     // loaded and authenticated). Gates in-app SPA dashboard navigation; reset on every full page load.
     private var frontendReady: Boolean = false
@@ -151,12 +161,23 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         // connected and rendering. Registering here makes the bridge available on the first page.
         //
         // Exposure note: the main frame is pinned to the trusted HA origin (shouldOverrideUrlLoading
-        // hands off-origin links to the external browser), but addJavascriptInterface also injects into
-        // child frames — including ha-panel-app ingress add-on iframes. The bridge's only reachable
-        // surface is the two discovery callbacks, and both are gated by the repository's monotonic
-        // generation guard (stale generations are ignored), so the worst a hostile/compromised ingress
-        // add-on could do is force a redundant discovery refresh or a spurious banner — no token access,
-        // no code execution. Acceptable for a self-hosted LAN appliance where add-ons are already trusted.
+        // hands off-origin links to the external browser), but addJavascriptInterface injects
+        // RustyHaBridge into EVERY frame in the WebView — including ha-panel-app ingress add-on
+        // iframes and any third-party page embedded via a Lovelace iframe/webpage card — so every
+        // method on HaBridge is reachable from a hostile or compromised child frame, not just HA's
+        // own top-level script. Per method: onDiscovery/onDiscoveryError are gated by the repo's
+        // monotonic generation guard (stale generations are ignored); onBackgroundColor/onTextColor
+        // are parsed by parseCssColorToArgb and silently dropped if malformed; onHomeTap takes no
+        // arguments and only navigates to a dashboard the app already trusts. onPath carries the most
+        // risk — it feeds a page-reported path into lastLoadedUrl, which a later loadUrl() (see
+        // onHiddenChanged) can navigate to — but HomeAssistantNav.decidePathReport gates it:
+        // HomeAssistantUrl.childUrlOrNull rejects anything that doesn't parse back out as a
+        // same-origin absolute path (in particular a leading "@host" or "//host", which would
+        // otherwise smuggle a foreign origin past naive base+path concatenation), and HA's auth flow
+        // and its single-use OAuth callback are refused outright, before anything is ever assigned. So the worst a hostile child frame can force is a redundant
+        // discovery refresh, a wrong tint, or a same-origin navigation/chip state of its own choosing —
+        // never an off-origin redirect, token access, or code execution. Acceptable for a self-hosted
+        // LAN appliance where add-ons are already trusted.
         webView.addJavascriptInterface(haBridge, "RustyHaBridge")
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = object : WebViewClient() {
@@ -222,7 +243,7 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
                 // SPA navigation depend on it.
                 if (!HomeAssistantNav.isAuthPath(url)) frontendReady = true
                 runDiscovery(force = false)
-                view?.evaluateJavascript(KIOSK_JS, null)
+                view?.evaluateJavascript(HomeAssistantNav.kioskJs(), null)
                 // Match the shell to HA's theme: tint the reserved strips (top clock clearance / bottom
                 // chrome clearance) to HA's background so they stop reading as black bands, and tint the
                 // floating chrome (clock, settings, app-selector) to HA's text colour so it stays legible.
@@ -256,23 +277,22 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         // the stored path still exists in the available list — falls back to Overview otherwise.
         val storedOrigin = prefs.getString(KEY_ACTIVE_DASHBOARD_ORIGIN, null)
         val storedPath = prefs.getString(KEY_ACTIVE_DASHBOARD_PATH, null)
-        val cacheJson = prefs.getString(HomeAssistantFeature.KEY_DASHBOARDS_CACHE, null)
-        val cacheOrigin = prefs.getString(HomeAssistantFeature.KEY_DASHBOARDS_ORIGIN, null)
-        val available = HomeAssistantDashboards.availableFrom(
-            if (HomeAssistantDashboards.isCacheFresh(origin, cacheOrigin)) cacheJson else null
-        )
+        val available = availableDashboards()
         currentDashboardPath = HomeAssistantDashboards.resolveActiveDashboard(
             storedOrigin = storedOrigin,
             storedPath = storedPath,
             currentOrigin = origin,
             available = available,
         )
+        visibleDashboardPath = currentDashboardPath
 
         val targetDashboard = available.find { it.urlPath == currentDashboardPath }
             ?: HomeAssistantDashboards.OVERVIEW
         val targetUrl = HomeAssistantDashboards.urlFor(url, targetDashboard)
         if (targetUrl != lastLoadedUrl) {
             lastLoadedUrl = targetUrl
+            // A cold load of Overview is a load of the HA root, so it teaches which panel that is.
+            expectingOverviewLanding = targetDashboard.urlPath == HomeAssistantDashboards.OVERVIEW_PATH
             webView.loadUrl(targetUrl)
         }
         if (!webView.isInTouchMode) webView.post { webView.requestFocus() }
@@ -328,21 +348,77 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         }
 
         lastLoadedUrl = null
+        if (originChanged) {
+            overviewPanel = null
+            expectingOverviewLanding = false
+        }
         render()
     }
 
     /** The url_path of the dashboard currently shown (Overview by default). Read by the shell via
      *  [ShellContribution.activeDashboardPath] to mark the active switcher chip. */
-    override val activeDashboardPath: String get() = currentDashboardPath
+    override val activeDashboardPath: String? get() = visibleDashboardPath
+
+    /** The dashboards the app knows about for the current origin: the synthetic Overview plus the
+     *  discovery cache, ignoring a cache captured against a different HA server. */
+    private fun availableDashboards(): List<HomeAssistantDashboards.HaDashboard> {
+        val origin = trustedOrigin
+        val cacheOrigin = prefs.getString(HomeAssistantFeature.KEY_DASHBOARDS_ORIGIN, null)
+        val cacheJson = prefs.getString(HomeAssistantFeature.KEY_DASHBOARDS_CACHE, null)
+        return HomeAssistantDashboards.availableFrom(
+            if (HomeAssistantDashboards.isCacheFresh(origin, cacheOrigin)) cacheJson else null
+        )
+    }
+
+    /** Target of the section bar's back control: the dashboard the app last put the user on — the
+     *  active chip, Overview by default. Never dead, because there is always an active dashboard.
+     *  [showDashboard] relights the chip row itself. */
+    private fun goHome() {
+        val target = availableDashboards().find { it.urlPath == currentDashboardPath }
+            ?: HomeAssistantDashboards.OVERVIEW
+        showDashboard(target)
+    }
+
+    /** HA navigated itself (a card, a link, its own router). Keep the chip row honest and remember
+     *  the real page so a later re-show restores it instead of snapping back to the active chip.
+     *  Thin glue over the pure [HomeAssistantNav.decidePathReport], which is where the actual rules
+     *  (origin safety, the OAuth return leg, deferred chip resolution) live and are tested. */
+    private fun onHaPathChanged(path: String, currentPanel: String) {
+        val decision = HomeAssistantNav.decidePathReport(
+            reportedPath = path,
+            // Blank while hass hasn't populated on a cold load; the decision defers the chips then.
+            currentPanel = currentPanel,
+            overviewPanel = overviewPanel,
+            expectingOverviewLanding = expectingOverviewLanding,
+            baseUrl = HomeAssistantUrl.normalize(prefs.getString(HomeAssistantFeature.KEY_URL, null)),
+            available = availableDashboards(),
+            visiblePath = visibleDashboardPath,
+        )
+        decision.overviewPanelToRemember?.let {
+            overviewPanel = it
+            expectingOverviewLanding = false
+        }
+        decision.restoreUrl?.let { lastLoadedUrl = it }
+        if (decision.refreshChips) {
+            visibleDashboardPath = decision.activePath
+            // Not routed through showDashboard (the page moved itself), so refresh explicitly.
+            (activity as? ShellHost)?.refreshDashboardChips()
+        }
+    }
 
     /** Navigates the WebView to [dashboard]. When the frontend is loaded + authenticated we navigate
      *  in-app via HA's own client-side router ([HomeAssistantNav]) so the live connection and already-
      *  rendered views stay warm (revisiting a dashboard doesn't reload). Otherwise — cold load, login
      *  screen, post-error — we fall back to a full [WebView.loadUrl] for reliability.
-     *  Persists the active dashboard (origin-scoped) so it survives fragment switch + recreation. */
+     *  Persists the active dashboard (origin-scoped) so it survives fragment switch + recreation.
+     *  Refreshes the chip row itself: the optimistic [visibleDashboardPath] write below means the
+     *  page's own confirming report sees no change and fires no refresh, so every caller would
+     *  otherwise have to remember to do it. */
     override fun showDashboard(dashboard: HomeAssistantDashboards.HaDashboard) {
         val base = HomeAssistantUrl.normalize(prefs.getString(HomeAssistantFeature.KEY_URL, null)) ?: return
         currentDashboardPath = dashboard.urlPath
+        // Reflect the tap immediately; the page's own report will confirm it a moment later.
+        visibleDashboardPath = dashboard.urlPath
         // Persist origin + path together so resolveActiveDashboard can validate them atomically on restore.
         val origin = trustedOrigin
         if (origin != null) {
@@ -353,12 +429,17 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         }
         val target = HomeAssistantDashboards.urlFor(base, dashboard)
         lastLoadedUrl = target
+        // Overview IS the HA root, so the panel HA settles on next is Overview's — the report that
+        // follows this navigation is the app's only chance to learn it. Any other dashboard names
+        // its own panel, so nothing is pending.
+        expectingOverviewLanding = dashboard.urlPath == HomeAssistantDashboards.OVERVIEW_PATH
         val spaPath = HomeAssistantUrl.pathWithQuery(target)
         if (spaPath != null && HomeAssistantNav.shouldSpaNavigate(frontendReady, webView.url, trustedOrigin)) {
             webView.evaluateJavascript(HomeAssistantNav.navigateScript(spaPath), null)
         } else {
             webView.loadUrl(target)
         }
+        (activity as? ShellHost)?.refreshDashboardChips()
     }
 
     /** Builds the generation-stamped discovery JS for a given refresh [gen]. */
@@ -421,6 +502,9 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         lastDiscoveryOrigin = null
         lastLoadedUrl = null
         frontendReady = false
+        // Per-server: a different HA may send its root to a different panel.
+        overviewPanel = null
+        expectingOverviewLanding = false
         render()
     }
 
@@ -528,6 +612,20 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
             val argb = HomeAssistantNav.parseCssColorToArgb(css) ?: return
             webView.post { if (isAdded) (activity as? ShellHost)?.applyHaChromeColor(argb) }
         }
+
+        /** The section bar's back control was activated. Called on the WebView's background
+         *  JavaBridge thread — hop to the UI thread and only act while still attached. */
+        @android.webkit.JavascriptInterface
+        fun onHomeTap() {
+            webView.post { if (isAdded) goHome() }
+        }
+
+        /** HA's frontend reported a client-side navigation. Background JavaBridge thread — hop to the
+         *  UI thread and only act while still attached. */
+        @android.webkit.JavascriptInterface
+        fun onPath(path: String, currentPanel: String) {
+            webView.post { if (isAdded) onHaPathChanged(path, currentPanel) }
+        }
     }
 
     companion object {
@@ -539,10 +637,6 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         const val KEY_ACTIVE_DASHBOARD_ORIGIN = "ha_active_dashboard_origin"
         const val KEY_ACTIVE_DASHBOARD_PATH = "ha_active_dashboard_path"
 
-        // Hides Home Assistant's own sidebar + Lovelace header by inserting idempotent <style> tags
-        // into HA's nested shadow roots, so the WebView shows only the dashboard content. HA renders
-        // asynchronously, so an apply() runs on a bounded retry loop until both roots are styled (or
-        // ~5s elapses). Selectors target current HA; tune here if a future HA renames them.
         /** Set HA's own sidebar preference to "always_hidden" so the frontend renders the dashboard
          *  full-width (no docked 256px sidebar band). Injected at document start so HA reads it during
          *  app init; idempotent and scoped to this WebView's localStorage (does not affect other HA
@@ -550,94 +644,5 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         private const val DOCK_HIDDEN_JS =
             "try{localStorage.setItem('dockedSidebar',JSON.stringify('always_hidden'));}catch(e){}"
 
-        // Hides Home Assistant's own sidebar + drawer band + the entire Lovelace top app bar by
-        // inserting idempotent <style> tags into HA's nested shadow roots, so the WebView shows only
-        // dashboard content. The sidebar/drawer styles live in stable roots (home-assistant-main,
-        // ha-drawer) and survive in-app navigation; the header style lives inside the active panel's
-        // hui-root, which HA RECREATES on every SPA dashboard switch — so a one-shot inject is lost
-        // the moment the user taps another dashboard chip. To stay hidden, a MutationObserver on the
-        // stable partial-panel-resolver re-applies the header kill whenever the active panel swaps
-        // (no timing race against the swap). HA renders asynchronously, so the initial pass also runs
-        // on a bounded ~5s retry loop. The active panel wraps hui-root generically — classic
-        // dashboards use ha-panel-lovelace, the newer default uses ha-panel-home; both hold hui-root
-        // in their shadow root. The header kill collapses the whole bar (--header-height:0 +
-        // .header/.toolbar/app-header). Selectors target current HA — verify on-device (CDP) and tune
-        // here if a future HA renames them.
-        private val KIOSK_JS = """
-            (function(){
-              // dockedSidebar is already set at document-start by DOCK_HIDDEN_JS (onPageStarted), which
-              // is the load-bearing write (it must run before HA reads the pref). No need to repeat it here.
-              var HEADER_CSS=':host{--header-height:0px!important;}'+
-                '.header{display:none!important;}'+
-                '.toolbar{display:none!important;}'+
-                'app-header,ha-top-app-bar-fixed{display:none!important;}';
-              function sr(el){return el&&el.shadowRoot;}
-              function styled(root, id, css){
-                if(!root) return false;
-                if(root.querySelector('#'+id)) return true;
-                var s=document.createElement('style');
-                s.id=id; s.textContent=css;
-                root.appendChild(s);
-                return true;
-              }
-              function mainRoot(){
-                var ha=document.querySelector('home-assistant');
-                return sr(ha)&&sr(sr(ha).querySelector('home-assistant-main'));
-              }
-              function resolver(){ var m=mainRoot(); return m&&m.querySelector('partial-panel-resolver'); }
-              function activePanel(){ var r=resolver(); return r&&r.firstElementChild; }
-              function huiRoot(){
-                var r=resolver(); if(!r) return null;
-                var panel=r.firstElementChild;
-                var hui=panel&&(panel.tagName.toLowerCase()==='hui-root'?panel
-                  :(sr(panel)&&sr(panel).querySelector('hui-root')));
-                if(!hui){var lov=r.querySelector('ha-panel-lovelace');
-                  hui=lov&&sr(lov)&&sr(lov).querySelector('hui-root');}
-                return sr(hui);
-              }
-              // The top bar lives in different shadow roots per panel type: Lovelace/home dashboards
-              // nest it inside hui-root, while ha-panel-app (custom/ingress webapp panels) exposes its
-              // own div.header wrapper directly in the panel's shadow. Inject the kill into BOTH so the
-              // bar is hidden whichever panel is active (the .header/.toolbar selectors no-op where absent).
-              function applyHeader(){
-                var a=styled(sr(activePanel()),'rusty-kiosk-header',HEADER_CSS);
-                var b=styled(huiRoot(),'rusty-kiosk-header',HEADER_CSS);
-                return a||b;
-              }
-              function applyAll(){
-                var m=mainRoot();
-                var sidebar=styled(m,'rusty-kiosk-sidebar',
-                  'ha-sidebar{display:none!important;}'+
-                  'home-assistant-main,ha-drawer{--mdc-drawer-width:0px!important;}'+
-                  '.mdc-drawer-app-content{margin-left:0!important;margin-inline-start:0!important;}');
-                var drawer=m&&m.querySelector('ha-drawer');
-                var drawerDone=styled(sr(drawer),'rusty-kiosk-drawer',
-                  '.mdc-drawer-app-content{margin-left:0!important;margin-inline-start:0!important;}');
-                // Re-apply the header kill to the CURRENT active panel's hui-root every pass; a fresh
-                // panel from a dashboard swap starts unstyled and gets restyled here / by the observer.
-                var headerDone=applyHeader();
-                installObserver();
-                return sidebar&&drawerDone&&headerDone;
-              }
-              // One observer per page lifetime: when partial-panel-resolver swaps its panel child
-              // (dashboard switch), retry styling the new panel until its shadow root mounts. The
-              // retry runs ~5s because ingress panels (ha-panel-app) attach their shadow/iframe well
-              // after the element is inserted.
-              function installObserver(){
-                if(window.__rustyKioskObserver) return;
-                var r=resolver(); if(!r) return;
-                window.__rustyKioskObserver=new MutationObserver(function(){
-                  var k=0; var rt=setInterval(function(){ k++; if(applyHeader()||k>50) clearInterval(rt); },100);
-                });
-                window.__rustyKioskObserver.observe(r,{childList:true});
-              }
-              // ~20s bounded retry: a cold direct load boots the whole HA frontend, and an ingress
-              // panel attaches its shadow seconds after partial-panel-resolver mounts — well past a 5s
-              // window. applyHeader/applyAll are idempotent, so re-running each tick is cheap; the
-              // observer then maintains the header kill across later dashboard swaps.
-              var n=0;
-              var t=setInterval(function(){ n++; if(applyAll()||n>80) clearInterval(t); },250);
-            })();
-        """.trimIndent()
     }
 }

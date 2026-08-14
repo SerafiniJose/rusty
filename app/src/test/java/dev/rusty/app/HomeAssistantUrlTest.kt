@@ -54,4 +54,47 @@ class HomeAssistantUrlTest {
         assertFalse(HomeAssistantUrl.isSameOrigin("http://ha.local:8124/", origin))
         assertFalse(HomeAssistantUrl.isSameOrigin("http://ha.local:8123/x", null))
     }
+
+    // ---- HomeAssistantUrl.childUrlOrNull -------------------------------------
+
+    private val childBase = "http://192.168.2.78:8123"
+
+    @Test fun childUrlOrNull_assemblesSimplePath() {
+        assertEquals("http://192.168.2.78:8123/security", HomeAssistantUrl.childUrlOrNull(childBase, "/security"))
+    }
+
+    @Test fun childUrlOrNull_preservesQueryAndFragment() {
+        assertEquals("http://192.168.2.78:8123/a?b=1#c", HomeAssistantUrl.childUrlOrNull(childBase, "/a?b=1#c"))
+    }
+
+    @Test fun childUrlOrNull_rejectsUserinfoEscape() {
+        // "@evil.example/" has no leading '/', so naive base+path concatenation turns the trusted
+        // host into userinfo and evil.example into the real host — must be rejected outright.
+        assertNull(HomeAssistantUrl.childUrlOrNull(childBase, "@evil.example/"))
+    }
+
+    @Test fun childUrlOrNull_rejectsProtocolRelative() {
+        // Lands in path position (not exploitable), but rejected anyway: never a legitimate
+        // HA-reported path.
+        assertNull(HomeAssistantUrl.childUrlOrNull(childBase, "//evil.example/"))
+    }
+
+    @Test fun childUrlOrNull_rejectsAbsoluteUrl() {
+        assertNull(HomeAssistantUrl.childUrlOrNull(childBase, "https://evil.example"))
+    }
+
+    @Test fun childUrlOrNull_rejectsBlankOrNullPath() {
+        assertNull(HomeAssistantUrl.childUrlOrNull(childBase, null))
+        assertNull(HomeAssistantUrl.childUrlOrNull(childBase, ""))
+    }
+
+    @Test fun childUrlOrNull_rejectsInvalidBase() {
+        assertNull(HomeAssistantUrl.childUrlOrNull(null, "/security"))
+        assertNull(HomeAssistantUrl.childUrlOrNull("javascript://x", "/security"))
+    }
+
+    @Test fun childUrlOrNull_resultIsAlwaysSameOriginAsBase() {
+        val url = HomeAssistantUrl.childUrlOrNull(childBase, "/lovelace/0")
+        assertEquals(HomeAssistantUrl.origin(childBase), HomeAssistantUrl.origin(url))
+    }
 }

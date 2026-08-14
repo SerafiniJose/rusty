@@ -293,4 +293,33 @@ object HomeAssistantDashboards {
         val knownPaths = available.map { it.urlPath }.toSet()
         return if (storedPath in knownPaths) storedPath else OVERVIEW_PATH
     }
+
+    /**
+     * Maps a path reported by HA's frontend to the url_path of the dashboard it represents, or null
+     * when it is somewhere the chips cannot represent (HA config pages, an unknown panel).
+     *
+     * Only the first path segment matters: a Lovelace dashboard's views live under it
+     * (`/map/0` is still Mapa).
+     *
+     * [overviewPanel] is the HA panel key the app's synthetic Overview lands on, as learnt by
+     * [HomeAssistantNav.decidePathReport]: Overview navigates to the HA ROOT and HA redirects the
+     * root to its default panel, so landing there (e.g. `/home` or `/home/overview`) IS Overview,
+     * even though a panel with the same url_path may also exist in [available]. Without this, sitting
+     * on Overview would read as sitting on a foreign panel and the Overview chip would wrongly
+     * un-highlight. Null until learnt — then an unrecognised panel simply yields no chip, which is
+     * honest, rather than a guess that lights the wrong one. Pure.
+     */
+    fun activePathFor(
+        reportedPath: String?,
+        overviewPanel: String?,
+        available: List<HaDashboard>,
+    ): String? {
+        val raw = reportedPath?.trim() ?: return null
+        val segment = raw.substringBefore('?').substringBefore('#')
+            .trim('/').substringBefore('/')
+        if (segment.isEmpty()) return OVERVIEW_PATH
+        val overview = overviewPanel?.trim().orEmpty()
+        if (overview.isNotEmpty() && segment == overview) return OVERVIEW_PATH
+        return if (available.any { it.urlPath == segment }) segment else null
+    }
 }
