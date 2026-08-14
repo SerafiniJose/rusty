@@ -32,13 +32,14 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 | --- | --- | --- |
 | ![OLED screensaver face](screenshots/screensaver-oled.png) | ![Home Assistant dashboard](screenshots/home-assistant.png) | ![On-screen launcher](screenshots/launcher.png) |
 
-| Settings | Session & health |
+| Settings | Services & status |
 | --- | --- |
-| ![Settings](screenshots/settings.png) | ![Session and receiver health](screenshots/session.png) |
+| ![Settings](screenshots/settings.png) | ![Services and status](screenshots/services-status.png) |
 
-> Captured on an Amazon Echo Show 8 (1280×800). Cover art is a generated gradient and the track,
-> artist, listener and lyrics are placeholders — no copyrighted content. The Home Assistant shot
-> uses the public Home Assistant demo.
+> Captured on an Amazon Echo Show 8 (1280×800), except Services & status, which is from a Lenovo
+> Tab M10 because that page is taller than an 800 px screen. Cover art is a generated gradient and
+> the track, artist, listener and lyrics are placeholders — no copyrighted content. The Home
+> Assistant shot uses the public Home Assistant demo.
 
 ---
 
@@ -59,7 +60,9 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 - **Home Assistant media renderer** — optionally expose Rusty as a DLNA media player that Home Assistant auto-discovers as a `media_player` entity (nothing to install on the HA side). Speak TTS announcements ("the wash is done", a doorbell chime, a morning briefing) or stream internet radio to it from automations, scripts, or a dashboard card — Rusty pauses or fades Spotify while the message plays and resumes it afterwards.
 - **Spotify Canvas in now-playing** — optionally fill the now-playing screen with the track's looping Canvas video instead of static album art.
 - **Remote control** — an optional, off-by-default web page and HTTP API the device serves itself: switch what Rusty is showing (Spotify, Home Assistant, DLNA or the lock screen), bring its window forward or send it away, pick the lock screen's theme, turn the screen on/off, set brightness and media volume, and edit the Slideshow's album/person/tag filters from your phone or laptop. While it's on, the device announces itself on the network so a Home Assistant integration can discover it. See [Remote control](#remote-control).
-- **Playback takeover** — optionally have Rusty react when a phone or laptop starts playing on this receiver: switch the app to the Spotify page, bring it to the front over other apps, and/or wake the screen. Three independent toggles in **Settings → Spotify**, all off by default. See [Playback takeover](#playback-takeover).
+- **Playback takeover** — optionally have Rusty react when a phone or laptop starts playing on this receiver: switch the app to the Spotify page, and wake the screen and bring Rusty to the front. Two toggles in **Settings → Spotify**, both off by default. See [Playback takeover](#playback-takeover).
+- **Services & status** — one page showing every service and feature at a glance, each with its state, name and address, reachable from the info button on any screen.
+- **Update from the device** — check for a new release and install it from **About & updates**, or from the control page in another room. Android always asks for confirmation on the device screen.
 - **On-screen launcher** — an expandable button jumps between Spotify, Home Assistant, and the screensaver.
 - **Start on boot & Keep screen on** — optional toggles to launch Rusty when the device powers on and to hold the display awake while it's in front.
 - **Tabbed settings** — each feature gets its own settings page.
@@ -140,7 +143,9 @@ Under the toggle you may see a row asking to allow system brightness. It opens A
 system settings** screen for Rusty. Granting it lets the brightness slider move the **device's
 real display brightness**; without it, Rusty can only dim its own window, which looks the same
 from across the room but doesn't affect anything else on screen. The control page tells you which
-mode is in effect. It is entirely optional, and Remote control works without it.
+mode is in effect. It is entirely optional, and Remote control works without it. While the grant is
+missing the Remote control switch itself shows **amber** rather than green — the service is running
+and everything else works; the amber only flags the unclaimed brightness permission.
 
 ### Home Assistant
 

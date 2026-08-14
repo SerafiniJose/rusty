@@ -10,6 +10,39 @@ user-facing.
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-08-15
+
+### Added
+- Remote control from any browser on your network. An optional control page and
+  HTTP API Rusty serves itself on port 8765: switch what's on screen, bring Rusty
+  forward, turn the screen on or off, set brightness and volume, and re-aim the
+  Slideshow's filters. Off by default; read the security note in the README before
+  enabling it.
+- Services & status. One page showing every service and feature at a glance, each
+  with its state, name and address. Open it from the info button on any screen.
+- Update Rusty from Rusty. About & updates — and the control page — can check for a
+  new release and install it. Android always asks for confirmation on the device
+  screen.
+- Playback takeover. Rusty can react when someone starts playing on this receiver:
+  switch to the Spotify page, and wake the screen and come to the front. Two toggles
+  in Settings → Spotify, both off by default, and only a genuine new play triggers
+  them. Waking and coming forward needs the "Display over other apps" permission;
+  until it's granted the switch shows amber.
+- Screen control. Turn the display off or set its brightness remotely. Off is a
+  black overlay that keeps the panel awake, so turning it back on is instant.
+- Home Assistant chrome in Rusty's style: a section bar with its own back control,
+  dashboard chips that stay in step as you navigate, and a floating title instead of
+  a repainted header.
+
+### Changed
+- The Spotify-only session sheet is now the app-wide Services & status page.
+
+### Fixed
+- Home Assistant's sub pages — security, lights, climate, history — opened blank.
+- The Home Assistant dark theme did not stick: it painted for a moment and then
+  reverted to light on every load.
+- Turning the DLNA Player feature off left its renderer service running.
+
 ## [2.3.0] - 2026-07-23
 
 ### Added
@@ -129,7 +162,9 @@ new is additive, and the whole-screen features are off by default.
 - Transport controls, live receiver rename, selectable bitrate (96 / 160 / 320 kbps),
   a fullscreen mode, and a 12/24-hour clock.
 
-[Unreleased]: https://github.com/SerafiniJose/rusty/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/SerafiniJose/rusty/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/SerafiniJose/rusty/compare/v2.3.0...v2.4.0
+[2.3.0]: https://github.com/SerafiniJose/rusty/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/SerafiniJose/rusty/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/SerafiniJose/rusty/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/SerafiniJose/rusty/compare/v1.3.1...v2.0.0
