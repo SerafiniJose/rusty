@@ -21,6 +21,9 @@ local.properties
 
 # Rust build outputs
 /rust/target/
+# Standalone `cargo test` runs inside a vendored patch crate
+/rust/vendor/*/target/
+/rust/vendor/*/Cargo.lock
 .superpowers/
 .claude/
 
@@ -32,3 +35,6 @@ docs/
 
 # Local release procedure notes — kept locally, not tracked
 RELEASING.md
+
+# Knowledge-graph output from the graphify skill — local analysis, not app source
+graphify-out/

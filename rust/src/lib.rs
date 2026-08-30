@@ -102,6 +102,19 @@ const IDLE_SESSION_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 /// Spotify Web Player client id, used for keymaster access-token requests. Public/well-known.
 const TOKEN_CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
+/// The client id this receiver presents for everything: the zeroconf advertisement,
+/// the client token, login5, and spclient.
+///
+/// librespot defaults this per platform, so on Android it picks the Android client
+/// id — but a Connect receiver never mints its own credential. It replays whatever
+/// the controller handed over in the zeroconf blob, and Spotify only honours that
+/// credential under the client id that issued it. Presenting the Android id
+/// therefore works for a phone controller and is refused for a desktop one, which
+/// is left hanging on "Connecting..." forever (issue #9). go-librespot, which
+/// desktop controllers do work against, presents this single id throughout — and
+/// consistency matters as much as the value, because the client token is minted
+/// per client id and login5 rejects a request whose token was issued to another.
+const RECEIVER_CLIENT_ID: &str = TOKEN_CLIENT_ID;
 /// Scopes requested for the access token (lyrics + profile + playback read).
 const TOKEN_SCOPES: &str =
     "streaming,user-read-playback-state,user-read-currently-playing,user-read-private,user-read-email";
@@ -422,9 +435,9 @@ async fn start_discovery_loop(
         volume_steps: 64,
     };
 
-    // 0.8: discovery requires a client_id. On Android, SessionConfig::default() supplies
-    // the Android client_id; reuse it so discovery and the session agree.
-    let client_id = SessionConfig::default().client_id;
+    // 0.8: discovery requires a client_id. Advertise the same one the session
+    // presents, so a controller sees in getInfo what it will be authenticated under.
+    let client_id = RECEIVER_CLIENT_ID.to_string();
 
     // 0.8: librespot::discovery::Discovery::builder(device_id, client_id) -> Builder -> launch()
     let mut discovery = match librespot::discovery::Discovery::builder(
@@ -567,6 +580,7 @@ async fn build_active_session(
 ) -> Result<ActiveSession, Box<dyn std::error::Error>> {
     let session_config = SessionConfig {
         device_id,
+        client_id: RECEIVER_CLIENT_ID.to_string(),
         // 0.8: autoplay moved here from ConnectConfig. Preserve prior autoplay: true.
         autoplay: Some(true),
         ..SessionConfig::default()
@@ -1207,23 +1221,40 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_requestAccessToken(
     };
 
     handle.spawn(async move {
-        // 0.8: the `keymaster` module was removed. Access tokens now come from the session's
-        // TokenProvider, which hits the same hm://keymaster/token/authenticated endpoint over
-        // Mercury. Pass the web-player client id explicitly (as the old code did) so the requested
-        // scopes are permitted — plain get_token() would use the session's Android client id,
-        // which may be rejected for these scopes. `expires_in` is a Duration in 0.8.
-        match session
-            .token_provider()
-            .get_token_with_client_id(TOKEN_SCOPES, TOKEN_CLIENT_ID)
-            .await
-        {
+        // Prefer login5, which is where Spotify now mints access tokens: the session
+        // already holds one from connecting, so this is a cached read rather than a
+        // round trip. The old hm://keymaster/token/authenticated endpoint that
+        // `TokenProvider` talks to over Mercury answers 403 for this account —
+        // "Invalid client" while the receiver presented a mismatched client id, and
+        // "Invalid request" once it presented a coherent one — which is what left
+        // lyrics and Canvas blank even on sessions that connected fine.
+        //
+        // Mercury stays as a fallback rather than being deleted: it is the only path
+        // that can request a narrower scope set, and if Spotify's posture shifts
+        // again a working receiver should not depend on exactly one token source.
+        let token = match session.login5().auth_token().await {
+            Ok(token) => Ok(token),
+            Err(login5_error) => {
+                info!("login5 token unavailable ({login5_error}); falling back to Mercury");
+                session
+                    .token_provider()
+                    .get_token_with_client_id(TOKEN_SCOPES, TOKEN_CLIENT_ID)
+                    .await
+                    .map_err(|mercury_error| (login5_error, mercury_error))
+            }
+        };
+
+        match token {
             Ok(token) => {
                 let expires_in = token.expires_in.as_secs() as i32;
                 info!("Access token acquired (expires in {}s)", expires_in);
                 send_native_access_token(Some(&token.access_token), expires_in);
             }
-            Err(e) => {
-                error!("Failed to acquire access token: {:?}", e);
+            Err((login5_error, mercury_error)) => {
+                error!(
+                    "Failed to acquire access token: login5: {:?}; Mercury: {:?}",
+                    login5_error, mercury_error
+                );
                 send_native_access_token(None, 0);
             }
         }

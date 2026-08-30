@@ -49,3 +49,20 @@ hex = "0.4"
 # librespot release newer than 0.8.0 includes the fix.
 [patch.crates-io]
 librespot-audio = { path = "vendor/librespot-audio" }
+
+# Patch librespot-discovery so a failed Spotify Connect handshake answers the
+# client instead of killing the connection. In 0.8.0 the zeroconf HTTP service
+# ends in `.map(Result::unwrap)`, so any `Err` out of the `addUser` handler
+# panics the hyper connection task and the controller receives ZERO bytes —
+# which a Spotify client renders as "Connecting..." forever (see issue #9).
+# Drop this once a librespot release newer than 0.8.0 carries the fix.
+librespot-discovery = { path = "vendor/librespot-discovery" }
+# Patch librespot-core so a Spotify Connect credential is presented to login5
+# under the client id that actually minted it. In 0.8.0 the receiver offers only
+# its own platform's client id, so a credential handed over by a DESKTOP
+# controller is refused with INVALID_CREDENTIALS on an Android receiver and the
+# desktop client hangs on "Connecting..." forever, while the same account
+# connects fine from the phone (see issue #9). Drop this once a librespot
+# release newer than 0.8.0 carries the fix.
+librespot-core = { path = "vendor/librespot-core" }
+
