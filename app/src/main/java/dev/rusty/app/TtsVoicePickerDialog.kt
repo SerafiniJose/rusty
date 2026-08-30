@@ -46,6 +46,9 @@ class TtsVoicePickerDialog(
     private lateinit var rowsBox: LinearLayout
     private lateinit var catalogBox: LinearLayout
     private lateinit var catalogHeader: TextView
+    private lateinit var qualityBox: LinearLayout
+    private lateinit var qualityScroll: View
+    private lateinit var qualityHint: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var note: TextView
 
@@ -71,7 +74,15 @@ class TtsVoicePickerDialog(
         progressBar = root.findViewById(R.id.pbVoiceDownload)
         note = root.findViewById(R.id.tvVoiceNote)
         catalogHeader = root.findViewById(R.id.tvVoiceCatalogHeader)
-        catalogHeader.isVisible(model.catalogEntries().isNotEmpty())
+        qualityBox = root.findViewById(R.id.llVoiceQuality)
+        qualityScroll = root.findViewById(R.id.hsVoiceQuality)
+        qualityHint = root.findViewById(R.id.tvVoiceQualityHint)
+        // No curated catalog at all (a build without the asset): the whole download half —
+        // header, tier chips, hint — has nothing to talk about.
+        val hasCatalog = model.catalogEntries().isNotEmpty()
+        catalogHeader.isVisible(hasCatalog)
+        qualityScroll.isVisible(hasCatalog)
+        qualityHint.isVisible(hasCatalog)
 
         render(focusSelected = true)
 
@@ -90,7 +101,12 @@ class TtsVoicePickerDialog(
      * choice (dialog entry); a rebuild after an action instead restores focus to the catalog
      * entry that was acted on, so the remote never lands on nothing.
      */
-    private fun render(focusSelected: Boolean = false, refocusVoiceId: String? = null) {
+    private fun render(
+        focusSelected: Boolean = false,
+        refocusVoiceId: String? = null,
+        /** A tier chip that was just tapped, so the rebuild puts the D-pad back on it. */
+        refocusQuality: VoiceQuality? = null,
+    ) {
         val selectedId = model.selectedId()
         val font = ResourcesCompat.getFont(activity, R.font.hanken_regular)
         val accent = ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.accent_fallback))
@@ -158,9 +174,41 @@ class TtsVoicePickerDialog(
             }
         }
 
-        catalogBox.removeAllViews()
+        // The tier chips: the old Voice-quality dialog folded onto the catalog it filters. A
+        // tap persists the tier (the picker's pick-is-the-commit posture) and refilters only
+        // the rows below \u2014 the installed list above never changes with the tier.
+        qualityBox.removeAllViews()
         val quality = model.quality()
-        catalogHeader.text = "DOWNLOADABLE VOICES \u00b7 ${quality.label}"
+        var refocusChip: View? = null
+        VoiceQuality.entries.forEach { q ->
+            val chip = inflater.inflate(R.layout.item_voice_quality_chip, qualityBox, false)
+                as MaterialButton
+            chip.text = q.label
+            val active = q == quality
+            chip.setTextColor(
+                ContextCompat.getColor(activity, if (active) R.color.ink else R.color.muted_dim),
+            )
+            chip.backgroundTintList = ColorStateList.valueOf(
+                ContextCompat.getColor(
+                    activity,
+                    if (active) R.color.accent_chip_fill else R.color.surface_raised,
+                ),
+            )
+            chip.strokeColor = accent
+            chip.strokeWidth = if (active) dp(1) else 0
+            chip.contentDescription = "${q.label} quality \u2014 ${q.hint}"
+            chip.setOnClickListener {
+                if (q != model.quality()) {
+                    model.selectQuality(q)
+                    render(refocusQuality = q)
+                }
+            }
+            if (q == refocusQuality) refocusChip = chip
+            qualityBox.addView(chip)
+        }
+        qualityHint.text = quality.hint
+
+        catalogBox.removeAllViews()
         val entries = model.downloadableEntries()
         // Empty means either "you already have them all" or "this tier has none for these
         // languages" — both normal, and worth telling apart where the rows would have been.
@@ -201,6 +249,7 @@ class TtsVoicePickerDialog(
         paintDownloadState(download)
         when {
             refocusButton != null -> refocusButton?.requestFocus()
+            refocusChip != null -> refocusChip?.requestFocus()
             // D-pad entry lands on the current choice, so OK-without-moving is a no-op re-commit.
             focusSelected -> (selectedRadio ?: rowsBox.getChildAt(0))?.requestFocus()
         }
@@ -330,7 +379,7 @@ class TtsVoicePickerDialog(
     private fun rowLabel(v: VoiceInfo): String = buildString {
         if (v.language.isNotEmpty()) append(v.language).append(" · ")
         append(v.label)
-        // Only a downloaded voice names its tier: it is the thing the quality row chose, and an
+        // Only a downloaded voice names its tier: it is the thing the tier chips chose, and an
         // installed voice is never filtered out, so a Medium one must explain itself while the
         // catalog below offers Low. A system voice's self-reported bucket is not that choice.
         if (TtsVoices.parse(v.id) is VoiceSelector.Piper) {

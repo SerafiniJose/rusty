@@ -79,7 +79,13 @@ class TtsVoicePickerModel(
         prefs.edit().putString(TtsVoices.PREF_KEY, voice.id).apply()
     }
 
-    /** The settings row's one-line value for the current selection. */
+    /** How many Piper voices are on disk, for the settings row's "N downloaded" count. */
+    fun installedCount(): Int = store.installedRows(catalog).size
+
+    /** The settings row's one-line value: the selection plus the download count. */
+    fun rowValue(): String = TtsVoices.settingsRowValue(selectionLabel(), installedCount())
+
+    /** The current selection's human label. */
     fun selectionLabel(): String = when (val sel = TtsVoices.parse(selectedId())) {
         null, VoiceSelector.SystemDefault -> "System default"
         is VoiceSelector.System -> sel.voiceName

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One quality-tier filter chip in the voice picker. Selected state is painted in code:
+     accent-tinted fill + stroke, ink text; unselected stays the Secondary pill's raised grey. -->
+<com.google.android.material.button.MaterialButton
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/Widget.Rusty.Button.Secondary"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginEnd="8dp"
+    android:minWidth="0dp"
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp"
+    android:foreground="@drawable/bg_tv_focus"
+    android:textSize="13sp" />

@@ -109,7 +109,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
         android:fontFamily="@font/hanken_regular"
-        android:text="The password protects everything remote: the control page asks for it, and the Home Assistant integration must be configured with it. It travels over plain HTTP on your network."
+        android:text="Required by the control page and the Home Assistant integration."
         android:textColor="@color/muted_dim"
         android:textSize="12sp" />
 
@@ -131,57 +131,14 @@
         android:textColor="@color/muted_dim"
         android:textSize="12sp" />
 
-    <!-- Voice quality: the tier the catalog offers to download, chosen BEFORE the voice
-         because it decides which voices exist to choose from. Value + Change, the row pattern
-         used above; the label sits in a weighted column so a narrow card never squeezes it. -->
+    <!-- Announcement voice: the ONE voices row. Manage opens the card that holds everything —
+         the selectable voices, the quality tier (as filter chips over the catalog), and the
+         downloadable Piper catalog. The label sits in a weighted column so a narrow card never
+         squeezes it. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="@font/hanken_medium"
-                android:text="Voice quality"
-                android:textColor="@color/ink"
-                android:textSize="16sp" />
-
-            <TextView
-                android:id="@+id/tvTtsQualityValue"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:fontFamily="@font/hanken_regular"
-                android:maxLines="2"
-                android:text="Low"
-                android:textColor="@color/muted_dim"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnChangeTtsQuality"
-            style="@style/Widget.Rusty.Button.Secondary"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:foreground="@drawable/bg_tv_focus"
-            android:text="Change" />
-    </LinearLayout>
-
-    <!-- Announcement voice: which voice spoken announcements from the control page use.
-         Value + Change button; Change opens the card picker (with the downloadable catalog). -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -201,11 +158,11 @@
 
             <TextView
                 android:id="@+id/tvTtsVoiceValue"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:fontFamily="@font/hanken_regular"
-                android:maxLines="1"
+                android:maxLines="2"
                 android:text="System default"
                 android:textColor="@color/muted_dim"
                 android:textSize="13sp" />
@@ -217,7 +174,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:foreground="@drawable/bg_tv_focus"
-            android:text="Change" />
+            android:text="Manage" />
     </LinearLayout>
 
     <!-- Only visible while the DLNA player is not running: announcements play through it. -->

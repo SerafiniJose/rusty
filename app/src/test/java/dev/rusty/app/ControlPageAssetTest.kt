@@ -35,17 +35,24 @@ class ControlPageAssetTest {
     }
 
     /**
-     * Voice selection and Piper downloads are the device's job (Settings -> DLNA Player ->
-     * "Announcement voice"), not the LAN page's: the page only composes and sends text. The
-     * TTS routes stay live on the server for other clients — this pins the page only.
+     * The Announce card lets the user pick among the voices ALREADY ON the device: a dropdown
+     * fed by GET /api/tts/voices (installed rows only), persisting through POST /api/tts/voice —
+     * the same device-wide setting the on-device picker edits. Downloading and deleting voices
+     * stays the device's job, so the catalog/download UI must not creep into the page.
      */
-    @Test fun page_hasNoVoicePickerUi() {
+    @Test fun page_hasAnnounceVoicePicker() {
         listOf(
-            "voice-card", "voice-chips", "voice-catalog-chips", "voice-progress", "voice-summary",
-            "/api/tts/voice", "loadVoices", "renderVoiceCatalog", "scheduleVoicePoll",
-            "catalogChipLabel", "Announcement voice",
+            "announce-voice", "/api/tts/voices", "\"/api/tts/voice\"", "loadVoices",
         ).forEach { marker ->
-            assertFalse("voice-picker marker still present: $marker", page.contains(marker))
+            assertTrue("voice-picker marker missing: $marker", page.contains(marker))
+        }
+        // Only installed voices are offered; a voice needing a download never shows here.
+        assertTrue("picker must filter on the installed flag", page.contains("v.installed"))
+        listOf(
+            "voice-catalog", "/api/tts/voices/download", "/api/tts/voices/delete",
+            "voice-progress", "sizeBytes",
+        ).forEach { marker ->
+            assertFalse("catalog/download UI must stay on-device: $marker", page.contains(marker))
         }
     }
 

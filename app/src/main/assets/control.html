@@ -102,6 +102,9 @@
      ================================================================ */
   #dock {
     display: flex;
+    /* .card sets flex-direction: column; without this the dock stacks and `align-items:
+       center` centers everything horizontally instead of vertically centering the row. */
+    flex-direction: row;
     align-items: center;
     gap: 14px;
     padding: 18px 16px;
@@ -324,6 +327,31 @@
   }
   .announce-input input:focus { outline: none; }
   .announce-input input::placeholder { color: var(--muted); }
+
+  /* Which of the device's downloaded voices speaks — the same setting the on-device picker
+     edits, so a change here persists device-wide, not just for the next announcement.
+     Collapsed, the row shows ONE chip naming the active voice (chevron = it opens); tapping
+     it unfolds every installed voice in the lock-screen theme-chips style, and picking one
+     saves it and folds the row back. */
+  .voice-line { display: flex; align-items: center; gap: 12px; }
+  .voice-line .lab { flex: none; }
+  .voice-line .chips { flex: 1; min-width: 0; }
+  #announce-voices .chip { display: inline-flex; align-items: center; gap: 8px; }
+  /* The selected voice carries the dock's LED, so "this is what will speak" reads at a glance. */
+  #announce-voices .chip[aria-pressed="true"]::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px 1px var(--accent-glow);
+    flex: none;
+  }
+  #announce-voices .chip .sub { font-size: 0.7rem; color: var(--muted); }
+  #announce-voices .chip .chev {
+    width: 7px; height: 7px; margin-left: 2px; flex: none;
+    border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+    transform: rotate(-45deg);
+  }
+  /* Save in flight: the tapped chip pulses like the segmented switch's pending thumb. */
+  #announce-voices .chip.pending { animation: thumbpulse 1.1s ease-in-out infinite; }
   .send {
     flex: none; width: 44px; height: 44px;
     border-radius: 50%; border: 0;
@@ -479,7 +507,7 @@
     <span id="led" class="dock-led"></span>
     <div class="dock-id">
       <h1 id="dev-name">Rusty</h1>
-      <p><span id="dev-state">Idle</span> &middot; <span id="dev-version" class="mono"></span></p>
+      <p><span id="dev-state">Idle</span></p>
     </div>
     <div id="eq" class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
   </section>
@@ -568,6 +596,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M12 5l7 7-7 7"/></svg>
       </button>
     </div>
+    <div class="voice-line" id="voice-line" hidden>
+      <span class="lab" id="announce-voice-label">Voice</span>
+      <div id="announce-voices" class="chips" role="group" aria-labelledby="announce-voice-label"></div>
+    </div>
     <p id="announce-status" class="status" role="status" aria-live="polite" hidden></p>
     <p id="announce-error" class="error-text" hidden></p>
   </section>
@@ -615,6 +647,7 @@
         <span class="chev" aria-hidden="true">&rsaquo;</span>
       </summary>
       <div class="body">
+        <p class="status">Installed <span id="dev-version" class="mono"></span></p>
         <pre id="update-notes" class="notice update-notes" hidden></pre>
         <div id="update-progress" class="progress" hidden><i id="update-progress-bar"></i></div>
         <p id="update-error" class="error-text" hidden></p>
@@ -714,6 +747,7 @@
       "bright-fader", "bright-range", "bright-val", "bright-fill", "screen-mode-hint", "screen-error",
       "volume-card", "vol-fader", "vol-range", "vol-val", "vol-fill", "volume-error",
       "announce-text", "announce-send", "announce-status", "announce-error",
+      "voice-line", "announce-voices",
       "lockscreen-strip", "theme-chips", "lockscreen-error",
       "albums-list", "albums-error", "people-list", "people-error", "tags-list", "tags-error",
       "filters-save", "filters-status", "filters-summary",
@@ -1627,6 +1661,116 @@
       });
   }
 
+  /**
+   * The picker offers only voices already on the device (`installed`), because a voice that
+   * still needs a download belongs to the on-device settings flow, not a one-tap dropdown.
+   * Selecting persists through POST /api/tts/voice — the device's own setting, shared with
+   * the settings-panel picker and HA announcements.
+   */
+  var announceVoiceSelected = null;
+  var announceVoices = [];
+  var voicePickerOpen = false;
+
+  /** Voice labels arrive as "Name — Language, gender"; chips show the name, with the BCP-47
+   *  tag as a small suffix, and keep the full label for assistive tech via aria-label. */
+  function voiceChip(v, withChevron) {
+    var chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip";
+    chip.setAttribute("aria-pressed", String(v.id === announceVoiceSelected));
+    var short = v.label.split(" — ")[0];
+    if (short !== v.label) chip.setAttribute("aria-label", v.label);
+    chip.appendChild(document.createTextNode(short));
+    if (v.language) {
+      var sub = document.createElement("span");
+      sub.className = "sub";
+      sub.textContent = v.language;
+      chip.appendChild(sub);
+    }
+    if (withChevron) {
+      var chev = document.createElement("i");
+      chev.className = "chev";
+      chip.appendChild(chev);
+    }
+    return chip;
+  }
+
+  function renderVoicePicker() {
+    var box = el["announce-voices"];
+    while (box.firstChild) box.removeChild(box.firstChild);
+    el["voice-line"].hidden = announceVoices.length === 0;
+    if (!announceVoices.length) return;
+
+    var multiple = announceVoices.length > 1;
+    if (!voicePickerOpen || !multiple) {
+      // Collapsed: one chip standing for the whole picker. With a single voice there is
+      // nothing to choose, so it renders without the chevron and stays inert.
+      var current = announceVoices[0];
+      announceVoices.forEach(function (v) {
+        if (v.id === announceVoiceSelected) current = v;
+      });
+      var chip = voiceChip(current, multiple);
+      chip.setAttribute("aria-pressed", "true");
+      chip.setAttribute("aria-expanded", "false");
+      chip.disabled = !multiple;
+      if (multiple) {
+        chip.addEventListener("click", function () {
+          voicePickerOpen = true;
+          renderVoicePicker();
+        });
+      }
+      box.appendChild(chip);
+      return;
+    }
+
+    announceVoices.forEach(function (v) {
+      var chip = voiceChip(v, false);
+      chip.addEventListener("click", function () { onVoicePick(v.id, chip); });
+      box.appendChild(chip);
+    });
+  }
+
+  function renderVoices(data) {
+    // Only voices already on the device: a voice that still needs a download belongs to the
+    // on-device settings flow, not a one-tap chip.
+    announceVoices = ((data && data.voices) || []).filter(function (v) { return v.installed; });
+    announceVoiceSelected = (data && data.selected) || null;
+    renderVoicePicker();
+  }
+
+  function loadVoices() {
+    return getJSON("/api/tts/voices")
+      .then(renderVoices)
+      .catch(function () {
+        // Announcements still speak with the device's stored voice; only the picker is out.
+        announceVoices = [];
+        renderVoicePicker();
+      });
+  }
+
+  function onVoicePick(id, chip) {
+    if (id === announceVoiceSelected) {
+      // The already-active chip just folds the row back — no write.
+      voicePickerOpen = false;
+      renderVoicePicker();
+      return;
+    }
+    setNotice(el["announce-error"], null);
+    chip.classList.add("pending");
+    var box = el["announce-voices"];
+    Array.prototype.forEach.call(box.children, function (b) { b.disabled = true; });
+    writeJSON("/api/tts/voice", "POST", { id: id })
+      .then(function (data) {
+        voicePickerOpen = false;
+        renderVoices(data);
+      })
+      .catch(function (err) {
+        // Stay expanded so the user sees the row snap back to the real selection.
+        setNotice(el["announce-error"], err.message);
+        return loadVoices();
+      });
+  }
+
   function setupAnnounce() {
     el["announce-send"].addEventListener("click", onAnnounceSend);
     el["announce-text"].addEventListener("keydown", function (ev) {
@@ -1656,6 +1800,7 @@
 
     refresh();
     loadFilters();
+    loadVoices();
     refreshUpdate();
     setInterval(refresh, REFRESH_INTERVAL_MS);
   }

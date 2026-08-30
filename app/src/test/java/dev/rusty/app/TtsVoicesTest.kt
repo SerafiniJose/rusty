@@ -82,6 +82,19 @@ class TtsVoicesTest {
         assertEquals(VoiceQuality.HIGH, TtsVoices.selectedQuality("high"))
     }
 
+    @Test fun settingsRowValue_namesSelectionAndDownloadCount() {
+        assertEquals(
+            "CarlFM — Spanish (Spain), male · 1 downloaded",
+            TtsVoices.settingsRowValue("CarlFM — Spanish (Spain), male", 1),
+        )
+        assertEquals(
+            "System default · 3 downloaded",
+            TtsVoices.settingsRowValue("System default", 3),
+        )
+        // No downloads: the count says nothing the selection doesn't, so it stays off the row.
+        assertEquals("System default", TtsVoices.settingsRowValue("System default", 0))
+    }
+
     @Test fun catalogFor_keepsOnlyTheChosenTier() {
         val entries = listOf(
             catalogEntry("en_US-amy-low", "low"),

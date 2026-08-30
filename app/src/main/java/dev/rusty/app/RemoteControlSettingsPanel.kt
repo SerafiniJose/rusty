@@ -134,79 +134,15 @@ class RemoteControlSettingsPanel(private val ctx: SettingsPanelContext) : Settin
 
         changePassword.setOnClickListener { openPasswordDialog() }
 
-        // -- announcement quality ---------------------------------------------------------------
-
-        // Reads and writes the tier only; the same model the picker uses, so both surfaces
-        // agree without the panel touching prefs itself.
-        val qualityModel = TtsVoicePickerModel(activity, engine = null)
-        val qualityValue = panel.findViewById<TextView>(R.id.tvTtsQualityValue)
-        val changeQuality = panel.findViewById<MaterialButton>(R.id.btnChangeTtsQuality)
-
-        fun repaintQuality() {
-            val quality = qualityModel.quality()
-            qualityValue.text = "${quality.label} \u2014 ${quality.hint}"
-        }
-        repaintQuality()
-
-        /** Four rows built from [VoiceQuality] itself, so the vocabulary has one home. A pick
-         *  IS the commit, the voice picker's posture exactly. */
-        fun openQualityDialog() {
-            val root = activity.layoutInflater.inflate(R.layout.dialog_voice_quality, null)
-            val card = Dialog(activity)
-            card.requestWindowFeature(Window.FEATURE_NO_TITLE)
-            card.setContentView(root)
-            card.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            card.followDisplaySize(activity)
-
-            val rows = root.findViewById<LinearLayout>(R.id.llQualityRows)
-            val selected = qualityModel.quality()
-            val font = ResourcesCompat.getFont(activity, R.font.hanken_regular)
-            val accent = ColorStateList.valueOf(
-                ContextCompat.getColor(activity, R.color.accent_fallback),
-            )
-            val density = activity.resources.displayMetrics.density
-            fun dp(value: Int) = (value * density).toInt()
-
-            var checkedRow: RadioButton? = null
-            VoiceQuality.entries.forEach { quality ->
-                val radio = RadioButton(activity).apply {
-                    text = "${quality.label} \u2014 ${quality.hint}"
-                    isChecked = quality == selected
-                    typeface = font
-                    textSize = 14f
-                    setTextColor(ContextCompat.getColor(activity, R.color.ink))
-                    buttonTintList = accent
-                    foreground = ContextCompat.getDrawable(activity, R.drawable.bg_tv_focus_switch)
-                    setPadding(dp(6), dp(10), dp(6), dp(10))
-                    setOnClickListener {
-                        qualityModel.selectQuality(quality)
-                        repaintQuality()
-                        card.dismiss()
-                    }
-                }
-                if (radio.isChecked) checkedRow = radio
-                rows.addView(
-                    radio,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ),
-                )
-            }
-            card.show()
-            // The remote lands on the current choice, not on the first row.
-            checkedRow?.requestFocus()
-        }
-
-        changeQuality.setOnClickListener { openQualityDialog() }
-
         // -- announcement voice ---------------------------------------------------------------
+        // The one voices row: quality lives INSIDE the picker card as filter chips over the
+        // catalog, so the panel no longer owns a tier row or dialog of its own.
 
         val voiceValue = panel.findViewById<TextView>(R.id.tvTtsVoiceValue)
         val changeVoice = panel.findViewById<MaterialButton>(R.id.btnChangeTtsVoice)
         val rendererHint = panel.findViewById<TextView>(R.id.tvAnnounceRendererHint)
         // Labelling and persistence live in the model, shared with the control routes.
-        fun repaintVoice(model: TtsVoicePickerModel) { voiceValue.text = model.selectionLabel() }
+        fun repaintVoice(model: TtsVoicePickerModel) { voiceValue.text = model.rowValue() }
         repaintVoice(TtsVoicePickerModel(activity, engine = null))
 
         // Announcements only make sound through the running DLNA player; the row still works

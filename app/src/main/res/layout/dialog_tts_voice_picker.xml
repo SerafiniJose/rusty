@@ -62,10 +62,37 @@
                 android:layout_marginTop="14dp"
                 android:fontFamily="@font/hanken_semibold"
                 android:letterSpacing="0.08"
-                android:text="DOWNLOADABLE VOICES"
+                android:text="GET MORE VOICES"
                 android:textAllCaps="true"
                 android:textColor="@color/muted_dim"
                 android:textSize="11sp" />
+
+            <!-- Quality tier as filter chips sitting directly on the catalog they narrow — the
+                 tier persists (the old Voice-quality row's pref exactly) and only the catalog
+                 filters: installed voices above never hide. Horizontal scroll, not wrap, so a
+                 narrow card keeps one tidy row and the D-pad walks it left-to-right. -->
+            <HorizontalScrollView
+                android:id="@+id/hsVoiceQuality"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/llVoiceQuality"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
+
+            <TextView
+                android:id="@+id/tvVoiceQualityHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:fontFamily="@font/hanken_regular"
+                android:textColor="@color/muted_dim"
+                android:textSize="12sp" />
 
             <!-- Each entry is an action button plus ALWAYS-visible size/license/attribution:
                  every Piper voice carries its own dataset terms, and this is where the user

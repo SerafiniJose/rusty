@@ -214,6 +214,16 @@ object TtsVoices {
     fun pickerRows(piper: List<VoiceInfo>, system: List<VoiceInfo>): List<VoiceInfo> =
         listOf(defaultRow()) + piper + system
 
+    /**
+     * The settings row's one-line value now that the row is the ONLY entry point to voices:
+     * the selection, plus how many voices are on disk — the count is what tells the user the
+     * Manage card has content beyond the selection. Zero downloads is just the selection; the
+     * card itself explains how to get more.
+     */
+    fun settingsRowValue(selectionLabel: String, installedCount: Int): String =
+        if (installedCount <= 0) selectionLabel
+        else "$selectionLabel · $installedCount downloaded"
+
     // -- downloadable catalog labels -------------------------------------------------------
 
     /**
