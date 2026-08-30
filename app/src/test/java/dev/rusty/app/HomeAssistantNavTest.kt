@@ -254,12 +254,28 @@ class HomeAssistantNavTest {
         assertFalse(js.contains("background:var(--primary-background-color,#111)!important;"))
     }
 
-    @Test fun kioskJs_reservesNoHeaderStrip() {
-        // The floating design must not reserve header height on any panel type — every path
-        // collapses HA's header entirely, or dashboards would keep a 52px empty gap.
+    @Test fun kioskJs_reservesNoHeaderStripOnFloatlessPanels() {
+        // Panels that get NO float (Overview, the user's own dashboard views, ingress panels)
+        // must not reserve header height — a strip there is a 52px empty gap over nothing.
         val js = HomeAssistantNav.kioskJs()
         assertFalse(js.contains("--header-height:52px"))
         assertTrue(js.contains("--header-height:0px!important"))
+    }
+
+    @Test fun kioskJs_padsContentClearOfTheFloatOnFloatedPages() {
+        // Regression: the float (back pill + section title, fixed at 12px, 40px tall, bottom
+        // ~53px) sat OVER the page content because the scaffold's content wrapper was unpadded
+        // to 0 — on ha-panel-security the first cards rendered under the "Security" title
+        // (measured on-device: hui-view-container top=0 vs float bottom 53.5). Pages that carry
+        // the float must push their content below it: the scaffold's adjust wrapper gets a 60px
+        // pad, and deep Lovelace views get the same 60px via hui-root's --header-height (its
+        // view container pads by that var even with the toolbar hidden).
+        val js = HomeAssistantNav.kioskJs()
+        assertTrue(js.contains(
+            ".top-app-bar-fixed-adjust,.mdc-top-app-bar--fixed-adjust{padding-top:60px!important;}"))
+        assertFalse(js.contains(
+            ".top-app-bar-fixed-adjust,.mdc-top-app-bar--fixed-adjust{padding-top:0!important;}"))
+        assertTrue(js.contains("--header-height:60px!important"))
     }
 
     @Test fun kioskJs_floatTitleMirrorsHasHiddenBarTitle() {

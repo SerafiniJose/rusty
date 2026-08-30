@@ -2,120 +2,89 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0d">
 <title>Rusty Remote Control</title>
 <style>
   /*
-   * "Source deck": the page is laid out as an appliance faceplate rather than a settings form.
-   * A lit source selector across the top answers the question you actually opened the page to ask
-   * ("what is Rusty showing?"), the two continuous values are lit slabs you can drag anywhere on
-   * (a thin slider thumb is unfindable one-handed in the dark), and the once-a-month tasks —
-   * slideshow sources, software update — are collapsed into the Service strip at the bottom.
+   * Status-dock design: the page opens on what the device is doing right now (dock LED + live
+   * meter), a single segmented switch answers "what is it showing", two channel-strip faders
+   * replace slider-in-a-box controls, the lock-screen theme sits in the Source card that
+   * selects it, and once-a-month tasks (slideshow sources, software) collapse into a Service
+   * accordion at the bottom. Voices are the device's own settings, not this page's.
    */
   :root {
-    color-scheme: dark;
-    --bg: #101311;
-    --accent: #4caf7d;
-    --accent-ink: #06150d;
-    --accent-dim: #2b6647;
-    --card-bg: #171b18;
-    --card-border: #262c27;
-    --slab-bg: #121512;
-    --text: #eef2ef;
-    --muted: #9aa89f;
+    --bg: #0a0b0d;
+    --bg-glow: rgba(69, 212, 131, 0.07);
+    --card: #131518;
+    --card-border: #24272c;
+    --card-top: rgba(255, 255, 255, 0.045);
+    --slab: #0d0f11;
+    --text: #f2f4f3;
+    --muted: #8b929c;
+    --accent: #45d483;
+    --accent-ink: #04120a;
+    --accent-glow: rgba(69, 212, 131, 0.35);
+    --pending: #e2c069;
     --error: #ff8a80;
-    --pending: #d8c07a;
+    --radius: 16px;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, monospace;
   }
 
-  * , *::before, *::after { box-sizing: border-box; }
+  * , *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
   /* `.card`/`.notice` etc. below set their own `display`, which otherwise wins the cascade over
      the user-agent's `[hidden] { display: none }` (same specificity, author beats UA) and leaves
      a "hidden" element visible. Force it. */
   [hidden] { display: none !important; }
 
-  html, body {
+  html { color-scheme: dark; }
+
+  body {
     margin: 0;
-    padding: 0;
-    background: var(--bg);
+    background:
+      radial-gradient(60vh 60vh at 85% -10%, var(--bg-glow), transparent 70%),
+      var(--bg);
     color: var(--text);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 16px/1.45 -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom));
     max-width: 100%;
     overflow-x: hidden;
   }
 
-  body {
-    padding: 16px;
-    padding-bottom: 48px;
+  main { max-width: 760px; margin: 0 auto; display: grid; gap: 14px; }
+
+  /* Bento on wide screens: everything spans the row except Screen and Volume, which pair up —
+     they are the device's two output levels and read as one row of faders. */
+  @media (min-width: 720px) {
+    main { grid-template-columns: 1fr 1fr; }
+    #dock, #source-card, #announce-card, #service-card { grid-column: 1 / -1; }
+    /* Fixed-volume device: nothing left to pair with, so Screen takes the whole row rather
+       than sitting half-width beside a hole. */
+    body.no-volume #screen-card { grid-column: 1 / -1; }
   }
 
-  main {
-    max-width: 640px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  a, button, input, [tabindex] {
-    font: inherit;
-    color: inherit;
-  }
+  a, button, input, [tabindex] { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:disabled { opacity: 0.45; cursor: default; }
 
   :focus { outline: none; }
-  :focus-visible {
-    outline: 3px solid var(--accent);
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
-
-  header {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 4px 4px 8px;
-  }
-
-  header h1 {
-    margin: 0;
-    font-size: 1.4rem;
-  }
-
-  header p {
-    margin: 0;
-    color: var(--muted);
-    font-size: 0.9rem;
-  }
-
-  .banner {
-    background: #3a1f1f;
-    border: 1px solid var(--error);
-    color: var(--error);
-    border-radius: 10px;
-    padding: 12px 16px;
-    font-size: 0.9rem;
-  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 
   .card {
-    background: var(--card-bg);
+    background: linear-gradient(var(--card-top), transparent 28%), var(--card);
     border: 1px solid var(--card-border);
-    border-radius: 14px;
+    border-radius: var(--radius);
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
   }
 
-  .card h2 {
-    margin: 0;
-    font-size: 1.05rem;
-  }
-
-  /* Small caps label, the faceplate's engraved lettering. */
   .lab {
     margin: 0;
-    font-size: 0.7rem;
-    letter-spacing: 0.14em;
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--muted);
     display: flex;
@@ -123,518 +92,314 @@
     gap: 8px;
   }
 
-  /* Icons are inline SVG drawn in currentColor, so a lamp's icon lights with its label and
-     needs no second asset for the lit state. Deliberately generic shapes — a note, a house,
-     a display, a moon — rather than any service's mark. */
-  .ico {
-    display: inline-flex;
-    flex: none;
-    width: 15px;
-    height: 15px;
-  }
-
+  .ico { display: inline-flex; width: 15px; height: 15px; flex: none; }
   .ico svg { width: 100%; height: 100%; display: block; }
 
-  .row {
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ================================================================
+     Status dock: what the device is doing, at a glance.
+     ================================================================ */
+  #dock {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 48px;
+    gap: 14px;
+    padding: 18px 16px;
   }
 
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .field-label {
-    display: flex;
-    justify-content: space-between;
-    color: var(--muted);
-    font-size: 0.9rem;
-  }
-
-  button {
+  .dock-led {
+    width: 9px; height: 9px; border-radius: 50%;
     background: var(--accent);
-    color: var(--accent-ink);
-    border: none;
-    border-radius: 10px;
-    padding: 0 20px;
-    min-height: 48px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  button.secondary {
-    background: transparent;
-    color: var(--text);
-    border: 1px solid var(--card-border);
-  }
-
-  input[type="checkbox"] {
-    width: 22px;
-    height: 22px;
-    min-width: 22px;
-    accent-color: var(--accent);
-  }
-
-  .notice {
-    margin: 0;
-    background: #23261f;
-    border: 1px solid var(--card-border);
-    color: var(--muted);
-    border-radius: 8px;
-    padding: 10px 12px;
-    font-size: 0.85rem;
-  }
-
-  .error {
-    margin: 0;
-    color: var(--error);
-    font-size: 0.85rem;
-  }
-
-  .status {
-    margin: 0;
-    color: var(--accent);
-    font-size: 0.85rem;
-  }
-
-  /* ---- source lamps ------------------------------------------------------
-     Four fixed positions, always in the same order: the lamp you want is where it was last
-     time even when a feature is switched off in Rusty's settings (that one goes dark and
-     struck through rather than vanishing and reflowing the row under your thumb). */
-
-  .lamps {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-  }
-
-  .lamp {
-    background: #1c211d;
-    border: 1px solid #2f3630;
-    border-radius: 8px;
-    color: var(--muted);
-    min-height: 62px;
-    padding: 8px 2px 7px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    font-size: 0.62rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    cursor: pointer;
-  }
-
-  .lamp .bulb {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #333b35;
+    box-shadow: 0 0 10px 2px var(--accent-glow);
     flex: none;
   }
+  .dock-led.idle { background: var(--muted); box-shadow: none; opacity: 0.6; }
 
-  .lamp .ico { width: 22px; height: 22px; }
+  .dock-id { min-width: 0; flex: 1; }
+  .dock-id h1 { margin: 0; font-size: 1.15rem; font-weight: 650; letter-spacing: -0.01em; }
+  .dock-id p { margin: 2px 0 0; color: var(--muted); font-size: 0.82rem;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  .lamp .name { line-height: 1.1; text-align: center; }
+  .eq { display: flex; align-items: flex-end; gap: 3px; height: 26px; flex: none; }
+  .eq i { width: 4px; border-radius: 2px; background: var(--accent); height: 30%; opacity: 0.9; }
+  .eq.playing i { animation: eq 1.1s ease-in-out infinite; }
+  .eq.playing i:nth-child(2) { animation-delay: -0.9s; }
+  .eq.playing i:nth-child(3) { animation-delay: -0.6s; }
+  .eq.playing i:nth-child(4) { animation-delay: -0.3s; }
+  .eq.playing i:nth-child(5) { animation-delay: -0.7s; }
+  .eq:not(.playing) i { height: 18%; background: var(--muted); opacity: 0.45; }
+  @keyframes eq { 0%,100% { height: 22%; } 50% { height: 96%; } }
 
-  .lamp.on {
-    color: #d6f2e2;
-    border-color: var(--accent-dim);
-    background:
-      radial-gradient(120% 90% at 50% 0%, rgba(76,175,125,0.28), rgba(76,175,125,0.04) 70%),
-      #16211b;
+  /* ================================================================
+     Source: segmented selector with a sliding thumb.
+     ================================================================ */
+  .segmented {
+    position: relative;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    background: var(--slab);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 4px;
   }
-
-  .lamp.on .bulb {
-    background: var(--accent);
-    box-shadow: 0 0 10px 2px rgba(76,175,125,0.6);
+  .segmented.inert { opacity: 0.5; }
+  .segmented .thumb {
+    position: absolute;
+    top: 4px; bottom: 4px; left: 4px;
+    width: 25%;
+    border-radius: 9px;
+    background: #1d2126;
+    border: 1px solid #2c3138;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.45);
+    transition: transform 0.28s cubic-bezier(0.3, 0.9, 0.3, 1), width 0.28s cubic-bezier(0.3, 0.9, 0.3, 1);
+    pointer-events: none;
   }
-
-  /* Requested but not yet confirmed by a poll. Never styled like `.on`: the device is still
-     showing the old panel, and saying otherwise is the one lie this page must not tell. */
-  .lamp.pending {
-    color: #efe2bd;
-    border-color: #6b5c2f;
-    background: #1f1e17;
+  .segmented .thumb.pending { animation: thumbpulse 1.1s ease-in-out infinite; }
+  .segmented.inert .thumb { display: none; }
+  @keyframes thumbpulse { 50% { border-color: var(--pending); } }
+  .segmented button {
+    position: relative;
+    z-index: 1;
+    background: none; border: 0;
+    min-height: 48px;
+    border-radius: 9px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 550;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px;
   }
+  .segmented button .ico { width: 17px; height: 17px; }
+  .segmented button[aria-pressed="true"] { color: var(--text); }
+  .segmented button[aria-pressed="true"] .ico { color: var(--accent); }
 
-  .lamp.pending .bulb {
-    background: #6b5c2f;
-    animation: warm 1.1s ease-in-out infinite;
+  /* Settings that belong to the selected source, inset under the switch that selects it —
+     currently the lock screen's theme. Always present: the lock screen is what the device
+     falls back to, so it stays settable while Spotify or Home is on, and the card never
+     changes height when the source changes. */
+  .context-strip {
+    background: var(--slab);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 11px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
   }
+  .context-strip .lab { font-size: 0.62rem; }
 
-  @keyframes warm {
-    0%, 100% { background: #6b5c2f; box-shadow: 0 0 0 0 rgba(216,192,122,0); }
-    50%      { background: var(--pending); box-shadow: 0 0 10px 2px rgba(216,192,122,0.5); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .lamp.pending .bulb { animation: none; background: var(--pending); }
-  }
-
-  .lamp.failed { color: var(--error); border-color: #6d3b36; }
-  .lamp.failed .bulb { background: var(--error); }
-
-  .lamp[disabled] { cursor: default; }
-
-  /* The only reason a rendered lamp is unpressable: no app window to take the switch. A panel
-     switched off in Rusty's settings is not drawn at all (it isn't a place you can go), so the
-     row holds only real destinations. */
-  .lamps.inert .lamp { opacity: 0.45; }
-
-  /* ---- foreground switch -------------------------------------------------
-     A real <button role="switch">, not a checkbox skin: it has to be reachable and operable by
-     a D-pad on the TV browser, and Enter/Space on a button is the one interaction every engine
-     agrees on. */
+  /* Screen's heading row is as tall as its 44px power button; Volume has no button, so match
+     the height explicitly or the two faders sit at different heights side by side. */
+  #volume-heading { min-height: 44px; }
 
   .switch-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 48px;
-    border-top: 1px solid var(--card-border);
-    padding-top: 4px;
-    font-size: 0.95rem;
+    display: flex; align-items: center; justify-content: space-between;
+    min-height: 44px; gap: 12px;
   }
+  .switch-row .sub { color: var(--muted); font-size: 0.8rem; margin-top: 1px; }
 
   .switch {
-    position: relative;
-    flex: none;
-    width: 62px;
-    min-height: 34px;
-    height: 34px;
-    padding: 0;
+    width: 50px; height: 30px; flex: none;
     border-radius: 999px;
-    background: #2a312c;
-    border: 1px solid #39413a;
-    cursor: pointer;
-  }
-
-  .switch i {
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background: var(--muted);
-    transition: left 140ms ease, background 140ms ease;
-  }
-
-  .switch[aria-checked="true"] { background: var(--accent-dim); border-color: var(--accent); }
-  .switch[aria-checked="true"] i { left: 33px; background: var(--accent); }
-
-  /* In flight: the knob sits mid-travel so neither end reads as confirmed — a bring-to-front is
-     silently dropped on some OEM builds, and this must not look like it landed. */
-  .switch.pending i {
-    left: 18px;
-    background: var(--pending);
-    animation: warm 1.1s ease-in-out infinite;
-  }
-
-  .switch:disabled { opacity: 0.45; cursor: default; }
-
-  @media (prefers-reduced-motion: reduce) {
-    .switch i { transition: none; }
-    .switch.pending i { animation: none; }
-  }
-
-  /* ---- theme chips ------------------------------------------------------- */
-
-  /* A 2x2 grid rather than a wrapping flex row: "Slideshow" is long enough that flex leaves a
-     3+1 orphan, and fixed cells also give a D-pad a predictable up/down path between chips. */
-  .chips {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-
-  .chip {
-    background: transparent;
     border: 1px solid var(--card-border);
-    border-radius: 999px;
-    color: var(--muted);
-    min-height: 48px;
-    padding: 0 18px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .chip.on {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-ink);
-  }
-
-  /* ---- slabs -------------------------------------------------------------
-     A range input styled as a lit slab: the whole 52px height is the drag target and the fill
-     IS the value. Still a real <input type="range">, so arrow keys, a D-pad and screen readers
-     all keep working — the styling is skin-deep on purpose. */
-
-  .slab {
-    position: relative;
-    height: 52px;
-    border: 1px solid #2f3630;
-    border-radius: 6px;
-    background: var(--slab-bg);
-    overflow: hidden;
-  }
-
-  .slab:focus-within {
-    outline: 3px solid var(--accent);
-    outline-offset: 2px;
-  }
-
-  .slab .fill {
-    position: absolute;
-    top: 0; bottom: 0; left: 0;
-    width: var(--fill, 0%);
-    background: linear-gradient(90deg, rgba(76,175,125,0.14), rgba(76,175,125,0.34));
-    border-right: 2px solid var(--accent);
-    pointer-events: none;
-  }
-
-  .slab .readout {
-    position: absolute;
-    left: 14px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 1.25rem;
-    font-variant-numeric: tabular-nums;
-    pointer-events: none;
-  }
-
-  .slab input[type="range"] {
-    -webkit-appearance: none;
-    appearance: none;
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    margin: 0;
+    background: var(--slab);
     padding: 0;
-    background: transparent;
-    cursor: pointer;
+    position: relative;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .switch i {
+    position: absolute; top: 3px; left: 3px;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #565e68;
+    transition: transform 0.22s cubic-bezier(0.3, 0.9, 0.3, 1), background 0.2s;
+  }
+  .switch[aria-checked="true"] { background: rgba(69, 212, 131, 0.18); border-color: var(--accent); }
+  .switch[aria-checked="true"] i { transform: translateX(20px); background: var(--accent); }
+  /* In flight: the knob sits mid-travel so neither end reads as confirmed. */
+  .switch.pending i { transform: translateX(10px); background: var(--pending); animation: warm 1.1s ease-in-out infinite; }
+  @keyframes warm {
+    0%, 100% { background: var(--pending); box-shadow: 0 0 0 0 rgba(226,192,105,0); }
+    50%      { box-shadow: 0 0 10px 2px rgba(226,192,105,0.5); }
   }
 
-  /* Transparent track + thumb: the `.fill` div underneath is what is actually seen, so the
-     thumb only has to carry the hit area. */
-  .slab input[type="range"]::-webkit-slider-runnable-track { height: 52px; background: transparent; }
-  .slab input[type="range"]::-webkit-slider-thumb {
+  /* ================================================================
+     Faders: sliders as channel strips.
+     ================================================================ */
+  .fader { display: flex; flex-direction: column; gap: 8px; }
+  .fader-head { display: flex; align-items: baseline; justify-content: space-between; }
+  .fader-head .val { font-family: var(--mono); font-size: 1.35rem; font-weight: 600;
+                     transition: transform 0.15s, color 0.15s; }
+  .fader.dragging .val { transform: scale(1.12); color: var(--accent); }
+  .fader-head .unit { color: var(--muted); font-size: 0.8rem; margin-left: 2px; }
+
+  .fader-track { position: relative; height: 44px; }
+  .fader-track .ticks {
+    position: absolute; inset: 0 2px;
+    background-image: repeating-linear-gradient(to right,
+      #262b31 0 1px, transparent 1px calc(100% / 10));
+    background-size: calc(100% - 1px) 8px;
+    background-position: 0 center;
+    background-repeat: no-repeat;
+    opacity: 0.9;
+    pointer-events: none;
+  }
+  .fader-track input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    margin: 0; background: none;
+  }
+  .fader-track input::-webkit-slider-runnable-track { height: 100%; background: none; }
+  .fader-track input::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 26px;
-    height: 52px;
-    background: transparent;
-    border: none;
+    width: 20px; height: 36px; margin-top: 4px;
+    border-radius: 7px;
+    background: linear-gradient(#f4f6f5, #c9cfd4);
+    border: 1px solid #0a0b0d;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.4);
   }
-  .slab input[type="range"]::-moz-range-track { height: 52px; background: transparent; }
-  .slab input[type="range"]::-moz-range-thumb {
-    width: 26px;
-    height: 52px;
-    background: transparent;
-    border: none;
-    border-radius: 0;
+  .fader-track input::-moz-range-track { height: 100%; background: none; }
+  .fader-track input::-moz-range-thumb {
+    width: 20px; height: 36px; border-radius: 7px;
+    background: linear-gradient(#f4f6f5, #c9cfd4);
+    border: 1px solid #0a0b0d;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
   }
+  .fader-track .fill {
+    position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    height: 6px; border-radius: 3px;
+    background: linear-gradient(90deg, rgba(69,212,131,0.5), var(--accent));
+    box-shadow: 0 0 12px var(--accent-glow);
+    pointer-events: none;
+    width: 0%;
+  }
+  .fader.off .fill { background: #333941; box-shadow: none; }
+  .fader.off .val { color: var(--muted); }
 
-  .slab.off { opacity: 0.45; }
+  /* Visually hidden but still reachable by assistive tech — the announcement Brightness's
+     static label deliberately no longer carries (see .pwr's aria-label + aria-pressed instead). */
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
 
   .pwr {
-    background: transparent;
-    border: 1px solid #2f3630;
+    width: 44px; height: 44px; flex: none;
     border-radius: 50%;
-    width: 48px;
-    min-height: 48px;
-    padding: 0;
+    border: 1px solid var(--card-border);
+    background: var(--slab);
+    display: grid; place-items: center;
     color: var(--muted);
-    font-size: 1.1rem;
-    display: grid;
-    place-items: center;
+    transition: color 0.2s, border-color 0.2s, box-shadow 0.25s;
   }
+  .pwr[aria-pressed="true"] {
+    color: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 14px var(--accent-glow), inset 0 0 8px rgba(69,212,131,0.15);
+  }
+  .pwr svg { width: 19px; height: 19px; }
 
-  .pwr[aria-pressed="true"] { color: var(--accent); border-color: var(--accent-dim); }
+  /* ================================================================
+     Announce
+     ================================================================ */
+  .announce-input {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--slab);
+    border: 1px solid var(--card-border);
+    border-radius: 999px;
+    padding: 4px 4px 4px 16px;
+    transition: border-color 0.2s;
+  }
+  .announce-input:focus-within { border-color: var(--accent); }
+  .announce-input input {
+    flex: 1; min-width: 0;
+    background: none; border: 0; color: var(--text);
+    font: inherit; min-height: 44px;
+  }
+  .announce-input input:focus { outline: none; }
+  .announce-input input::placeholder { color: var(--muted); }
+  .send {
+    flex: none; width: 44px; height: 44px;
+    border-radius: 50%; border: 0;
+    background: var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center;
+    transition: transform 0.12s;
+  }
+  .send:active { transform: scale(0.92); }
+  .send svg { width: 18px; height: 18px; }
 
-  /* ---- service strip ----------------------------------------------------- */
+  /* Accent pill action button — the same physical language as `.send`, stretched into a
+     text button for standalone actions like "Save Filters" / "Update" that aren't part of a
+     composer. */
+  .btn {
+    min-height: 44px;
+    padding: 0 20px;
+    border-radius: 999px;
+    border: 0;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: transform 0.12s, opacity 0.2s;
+  }
+  .btn:active:not(:disabled) { transform: scale(0.97); }
 
-  .service summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 52px;
-    padding: 0 2px;
-    cursor: pointer;
+  /* ================================================================
+     Service accordion + chips + toast
+     ================================================================ */
+  details.service { border-top: 1px solid var(--card-border); }
+  details.service:first-of-type { border-top: 0; }
+  details.service summary {
     list-style: none;
-    font-size: 0.95rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    min-height: 52px; cursor: pointer; font-weight: 550; font-size: 0.95rem;
   }
+  details.service summary::-webkit-details-marker { display: none; }
+  details.service summary .hint { color: var(--muted); font-weight: 400; font-size: 0.83rem;
+    margin-left: auto; text-align: right; }
+  details.service summary .chev { flex: none; color: var(--muted); transition: transform 0.2s; }
+  details[open] summary .chev { transform: rotate(90deg); }
+  details.service .body { padding: 2px 0 14px; display: flex; flex-direction: column; gap: 12px; }
 
-  .service summary::-webkit-details-marker { display: none; }
-
-  .service summary .hint {
-    color: var(--muted);
-    font-size: 0.85rem;
-    text-align: right;
-  }
-
-  .service summary .hint::after { content: " \203A"; }
-  .service[open] summary .hint::after { content: " \2039"; }
-
-  .service + .service { border-top: 1px solid var(--card-border); }
-
-  .service .body {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 4px 0 12px;
-  }
-
-  fieldset.filter-group {
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border-radius: 999px;
     border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 12px;
-    margin: 0;
-    min-width: 0;
-  }
-
-  fieldset.filter-group legend {
-    padding: 0 6px;
+    background: var(--slab);
     color: var(--muted);
+    padding: 0 14px; min-height: 44px;
     font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
   }
-
-  .filter-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    max-height: 220px;
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-
-  .filter-empty {
-    color: var(--muted);
-    font-size: 0.85rem;
-    padding: 8px 0;
-  }
-
-  .filter-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 48px;
-    padding: 0 4px;
-    border-radius: 8px;
-    cursor: pointer;
-    word-break: break-all;
-    overflow-wrap: anywhere;
-  }
-
-  .filter-row:hover {
-    background: #1e2320;
-  }
-
-  .filter-row span {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .filter-row .id-fallback {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.8rem;
-  }
-
-  /* Announce: a text field styled like a slab. */
-  .announce-row {
-    display: flex;
-    gap: 10px;
-  }
-
-  .announce-row input[type="text"] {
-    flex: 1;
-    min-width: 0;
-    min-height: 48px;
-    padding: 0 14px;
-    border-radius: 10px;
-    border: 1px solid var(--card-border);
-    background: var(--slab-bg);
+  .chip[aria-pressed="true"] {
+    border-color: var(--accent);
     color: var(--text);
-    font: inherit;
+    background: rgba(69, 212, 131, 0.12);
   }
 
-  .announce-row input[type="text"]::placeholder {
-    color: var(--muted);
-  }
-
-  /* Voice picker: a native <select> rather than chips — an engine can carry dozens of voices,
-     and the platform picker is the one control that stays usable at that count on TV and phone
-     alike (D-pad opens it, OK commits). */
-  #voice-select {
-    width: 100%;
-    min-height: 48px;
-    padding: 0 14px;
-    border-radius: 10px;
-    border: 1px solid var(--card-border);
-    background: var(--slab-bg);
-    color: var(--text);
-    font: inherit;
-  }
-
-  /* Downloadable (Piper) voices: one compact row per catalog entry under the picker —
-     name + size/license meta on the left, a single action button on the right. */
-  .voice-catalog {
-    margin-top: 12px;
-    border-top: 1px solid var(--card-border);
-  }
-
-  .voice-cat-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 0;
-    border-bottom: 1px solid var(--card-border);
-  }
-
-  .voice-cat-row .meta {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .voice-cat-row .meta .name {
-    display: block;
-    font-size: 0.92rem;
-  }
-
-  .voice-cat-row .meta .sub {
-    display: block;
+  .filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .filter-group .group-label {
     color: var(--muted);
     font-size: 0.78rem;
-    overflow-wrap: anywhere;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
+  .filter-empty { color: var(--muted); font-size: 0.83rem; }
 
-  .voice-cat-row button {
-    flex: none;
-    min-height: 40px;
-    padding: 0 14px;
-    background: var(--slab-bg);
-    color: var(--text);
-    border: 1px solid var(--card-border);
-  }
+  .progress { height: 6px; border-radius: 3px; background: var(--slab); overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, rgba(69,212,131,0.5), var(--accent)); }
+
+  .notice { margin: 0; color: var(--muted); font-size: 0.83rem;
+    border-left: 2px solid var(--card-border); padding-left: 10px; }
+  .status { margin: 0; color: var(--accent); font-size: 0.83rem; }
+  .error-text { margin: 0; color: var(--error); font-size: 0.83rem; }
 
   /* Release notes arrive as plain text with newline-separated bullets; keep them a <pre>
      so the line structure survives, but wrap like body text on narrow screens. */
@@ -643,160 +408,195 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+
+  #toast {
+    position: fixed;
+    left: 50%; bottom: calc(20px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 20px);
+    background: #1b1e22;
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-size: 0.88rem;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.55);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s, transform 0.25s;
+    display: flex; align-items: center; gap: 8px;
+    max-width: min(420px, calc(100vw - 32px));
+    z-index: 10;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.stuck { border-color: var(--error); }
+  #toast .tdot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+  #toast.stuck .tdot { background: var(--error); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
 </style>
 </head>
 <body>
 <main>
-  <header>
-    <h1 id="device-name">Rusty</h1>
-    <p id="device-version"></p>
-  </header>
 
-  <div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
+  <!-- Status dock -->
+  <section id="dock" class="card" aria-label="Device status">
+    <span id="led" class="dock-led"></span>
+    <div class="dock-id">
+      <h1 id="dev-name">Rusty</h1>
+      <p><span id="dev-state">Idle</span> &middot; <span id="dev-version" class="mono"></span></p>
+    </div>
+    <div id="eq" class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+  </section>
 
+  <!-- Source -->
   <section id="source-card" class="card" aria-labelledby="source-heading">
-    <p class="lab" id="source-heading"><span class="ico" data-icon="source"></span>Source</p>
-    <div id="source-lamps" class="lamps" role="group" aria-labelledby="source-heading"></div>
-    <p id="source-status" class="lab" role="status" aria-live="polite"></p>
+    <p class="lab" id="source-heading">Source</p>
+    <div id="segmented" class="segmented" role="group" aria-labelledby="source-heading">
+      <span id="seg-thumb" class="thumb"></span>
+    </div>
+    <p id="source-status" class="notice" role="status" aria-live="polite"></p>
+
+    <div id="lockscreen-strip" class="context-strip" hidden>
+      <p class="lab" id="lockscreen-heading">Lock screen theme</p>
+      <div id="theme-chips" class="chips" role="group" aria-labelledby="lockscreen-heading"></div>
+      <p id="lockscreen-error" class="error-text" hidden></p>
+    </div>
 
     <div class="switch-row">
-      <span id="foreground-label">On screen</span>
-      <button id="foreground-switch" type="button" role="switch" aria-checked="false"
-              aria-labelledby="foreground-label" class="switch"><i></i></button>
+      <div>
+        <span id="foreground-label">On screen</span>
+        <div class="sub">Bring Rusty in front of other apps</div>
+      </div>
+      <button id="foreground-switch" type="button" class="switch" role="switch" aria-checked="false"
+              aria-labelledby="foreground-label"><i></i></button>
     </div>
 
     <p id="source-note" class="notice" hidden>
-      Rusty isn't on screen right now — it can't change what it's showing until it's back.
+      Rusty isn't on screen right now &mdash; it can't change what it's showing until it's back.
     </p>
     <p id="foreground-note" class="notice" hidden>
       Rusty can't move its own window: grant "Display over other apps" to Rusty on the device.
     </p>
-    <p id="source-error" class="error" hidden></p>
+    <p id="source-error" class="error-text" hidden></p>
   </section>
 
+  <!-- Screen -->
   <section id="screen-card" class="card" aria-labelledby="screen-heading">
-    <div class="row">
-      <p class="lab" id="screen-heading"><span class="ico" data-icon="screen"></span>Screen</p>
-      <button id="screen-toggle" type="button" class="pwr" aria-pressed="false"
-              aria-label="Screen on or off">&#9211;</button>
+    <div class="switch-row" style="min-height:auto">
+      <p class="lab" id="screen-heading">Screen</p>
+      <button id="screen-pwr" type="button" class="pwr" aria-pressed="false" aria-label="Screen on or off">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v9"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>
+      </button>
     </div>
-    <p id="screen-availability-note" class="notice" hidden>
-      No screen is currently attached to the app right now — commands are saved and will apply as
-      soon as the app is active.
-    </p>
-    <div id="brightness-slab" class="slab">
-      <i class="fill"></i>
-      <span class="readout" id="brightness-value">1</span>
-      <input id="brightness-range" type="range" min="1" max="100" value="1"
-             aria-label="Screen brightness">
+    <p id="screen-availability-note" class="notice" hidden></p>
+    <p id="screen-status-label" class="sr-only" role="status" aria-live="polite">Screen is off</p>
+    <div id="bright-fader" class="fader">
+      <div class="fader-head">
+        <span>Brightness</span>
+        <span><span id="bright-val" class="val mono">1</span><span class="unit">%</span></span>
+      </div>
+      <div class="fader-track">
+        <span class="ticks"></span>
+        <span id="bright-fill" class="fill"></span>
+        <input id="bright-range" type="range" min="1" max="100" value="1" aria-label="Screen brightness">
+      </div>
     </div>
-    <p id="screen-status-label" class="lab">Screen is off</p>
-    <p id="screen-mode-hint" class="notice" hidden>
-      System brightness permission not granted — controlling app window only.
-    </p>
-    <p id="screen-error" class="error" hidden></p>
+    <p id="screen-mode-hint" class="notice" hidden></p>
+    <p id="screen-error" class="error-text" hidden></p>
   </section>
 
+  <!-- Volume -->
   <section id="volume-card" class="card" aria-labelledby="volume-heading" hidden>
-    <p class="lab" id="volume-heading"><span class="ico" data-icon="volume"></span>Volume</p>
-    <div id="volume-slab" class="slab">
-      <i class="fill"></i>
-      <span class="readout" id="volume-value">0</span>
-      <input id="volume-range" type="range" min="0" max="100" value="0" aria-label="Volume">
+    <p class="lab" id="volume-heading">Volume</p>
+    <div id="vol-fader" class="fader">
+      <div class="fader-head">
+        <span>Level</span>
+        <span><span id="vol-val" class="val mono">0</span><span class="unit">%</span></span>
+      </div>
+      <div class="fader-track">
+        <span class="ticks"></span>
+        <span id="vol-fill" class="fill"></span>
+        <input id="vol-range" type="range" min="0" max="100" value="0" aria-label="Volume">
+      </div>
     </div>
-    <p id="volume-error" class="error" hidden></p>
+    <p id="volume-error" class="error-text" hidden></p>
   </section>
 
+  <!-- Announce -->
   <section id="announce-card" class="card" aria-labelledby="announce-heading">
-    <p class="lab" id="announce-heading"><span class="ico" data-icon="announce"></span>Announce</p>
-
-    <div class="announce-row">
+    <p class="lab" id="announce-heading">Announce</p>
+    <div class="announce-input">
       <input id="announce-text" type="text" maxlength="4000" autocomplete="off"
              placeholder="Type a message to speak&hellip;" aria-label="Message to speak on the device">
-      <button id="announce-send" type="button">Speak</button>
+      <button id="announce-send" type="button" class="send" aria-label="Speak on the device">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M12 5l7 7-7 7"/></svg>
+      </button>
     </div>
-
     <p id="announce-status" class="status" role="status" aria-live="polite" hidden></p>
-    <p id="announce-note" class="notice" hidden></p>
-    <p id="announce-error" class="error" hidden></p>
+    <p id="announce-error" class="error-text" hidden></p>
   </section>
 
-  <section class="card" aria-labelledby="service-heading">
+  <!-- Service -->
+  <section id="service-card" class="card" aria-labelledby="service-heading">
     <p class="lab" id="service-heading">Service</p>
 
-    <details id="lockscreen-card" class="service">
-      <summary>
-        Lock screen theme
-        <span class="hint" id="lockscreen-summary">Clock</span>
-      </summary>
-      <div class="body">
-        <div id="theme-chips" class="chips" role="group" aria-label="Lock screen theme"></div>
-        <p id="lockscreen-error" class="error" hidden></p>
-      </div>
-    </details>
-
-    <details id="voice-card" class="service">
-      <summary>
-        Announcement voice
-        <span class="hint" id="voice-summary">System default</span>
-      </summary>
-      <div class="body">
-        <select id="voice-select" aria-label="Announcement voice" hidden></select>
-        <p id="voice-status" class="status" hidden>Loading voices&hellip;</p>
-        <div id="voice-catalog" class="voice-catalog" hidden></div>
-        <p class="notice">More system voices install through Android's own text-to-speech
-          settings on the device; the voices above download straight onto it.</p>
-        <p id="voice-error" class="error" hidden></p>
-      </div>
-    </details>
-
-    <details id="filters-card" class="service">
+    <details class="service" id="filters-card">
       <summary>
         Slideshow sources
-        <span class="hint" id="filters-summary">Albums, people and tags</span>
+        <span id="filters-summary" class="hint">Everything</span>
+        <span class="chev" aria-hidden="true">&rsaquo;</span>
       </summary>
       <div class="body">
-        <fieldset class="filter-group">
-          <legend>Albums</legend>
-          <p id="albums-error" class="error" hidden></p>
-          <div id="albums-list" class="filter-list"></div>
-        </fieldset>
+        <div class="filter-group">
+          <span id="albums-label" class="group-label">Albums</span>
+          <p id="albums-error" class="error-text" hidden></p>
+          <div id="albums-list" class="chips" role="group" aria-labelledby="albums-label"></div>
+        </div>
 
-        <fieldset class="filter-group">
-          <legend>People</legend>
-          <p id="people-error" class="error" hidden></p>
-          <div id="people-list" class="filter-list"></div>
-        </fieldset>
+        <div class="filter-group">
+          <span id="people-label" class="group-label">People</span>
+          <p id="people-error" class="error-text" hidden></p>
+          <div id="people-list" class="chips" role="group" aria-labelledby="people-label"></div>
+        </div>
 
-        <fieldset class="filter-group">
-          <legend>Tags</legend>
-          <p id="tags-error" class="error" hidden></p>
-          <div id="tags-list" class="filter-list"></div>
-        </fieldset>
+        <div class="filter-group">
+          <span id="tags-label" class="group-label">Tags</span>
+          <p id="tags-error" class="error-text" hidden></p>
+          <div id="tags-list" class="chips" role="group" aria-labelledby="tags-label"></div>
+        </div>
 
-        <div class="row">
+        <div class="switch-row">
           <p id="filters-status" class="status" role="status" aria-live="polite" hidden></p>
-          <button id="filters-save" type="button" disabled>Save Filters</button>
+          <button id="filters-save" type="button" class="btn" disabled>Save Filters</button>
         </div>
       </div>
     </details>
 
-    <details id="update-card" class="service">
+    <details class="service" id="update-card">
       <summary>
         Software
-        <span class="hint" id="update-summary">Checking&hellip;</span>
+        <span id="update-summary" class="hint">Checking&hellip;</span>
+        <span class="chev" aria-hidden="true">&rsaquo;</span>
       </summary>
       <div class="body">
         <pre id="update-notes" class="notice update-notes" hidden></pre>
-        <p id="update-error" class="error" hidden></p>
-        <div class="row">
+        <div id="update-progress" class="progress" hidden><i id="update-progress-bar"></i></div>
+        <p id="update-error" class="error-text" hidden></p>
+        <div class="switch-row">
           <p id="update-status" class="status" role="status" aria-live="polite">Checking for updates&hellip;</p>
-          <button id="update-button" type="button" hidden>Update</button>
+          <button id="update-button" type="button" class="btn" hidden>Update</button>
         </div>
       </div>
     </details>
   </section>
 </main>
+
+<div id="toast" role="status" aria-live="polite"><span class="tdot"></span><span id="toast-text"></span></div>
 
 <script>
 (function () {
@@ -805,19 +605,15 @@
   var REFRESH_INTERVAL_MS = 5000;
 
   /**
-   * Line icons, drawn in currentColor so a lit lamp lights its icon too. Deliberately generic
-   * shapes rather than any service's mark: a note for the music receiver, a house for Home
-   * Assistant, a display for the DLNA renderer, a moon for the idle lock screen.
+   * Line icons, drawn in currentColor. Deliberately generic shapes rather than any service's
+   * mark: a note for the music receiver, a house for Home Assistant, a display for the DLNA
+   * renderer, a moon for the idle lock screen.
    */
   var ICONS = {
-    source: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h4"/></svg>',
     spotify: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17V4l11-2v13"/><circle cx="6" cy="17" r="3"/><circle cx="17" cy="15" r="3"/></svg>',
     home_assistant: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5.5 9.8V20h13V9.8"/><path d="M10 20v-5h4v5"/></svg>',
     dlna: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 21h7"/><path d="M12 17v4"/></svg>',
-    lockscreen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.3A8.5 8.5 0 1 1 9.7 3.5a6.7 6.7 0 0 0 10.8 10.8z"/></svg>',
-    screen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M2 12h2.4M19.6 12H22M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M19.1 4.9l-1.7 1.7M6.6 17.4l-1.7 1.7"/></svg>',
-    volume: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5v5h3.5L13 19V5L7.5 9.5H4z"/><path d="M16.5 9.2a4 4 0 0 1 0 5.6"/><path d="M19 6.8a7.5 7.5 0 0 1 0 10.4"/></svg>',
-    announce: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10v4h3l8 4V6l-8 4H3z"/><path d="M6 14v5"/><path d="M18 9.5l3-1M18 12h3.5M18 14.5l3 1"/></svg>'
+    lockscreen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.3A8.5 8.5 0 1 1 9.7 3.5a6.7 6.7 0 0 0 10.8 10.8z"/></svg>'
   };
 
   /**
@@ -841,9 +637,9 @@
 
   /**
    * How long a request may stay unconfirmed before the control gives up and offers a retry, and
-   * how fast to poll while one is outstanding. Shared by the lamps and the foreground switch:
-   * both command something the device applies asynchronously and can fail to apply silently, so
-   * both wait for `/api/state` to agree rather than trusting their own POST.
+   * how fast to poll while one is outstanding. Shared by the segmented switch and the foreground
+   * switch: both command something the device applies asynchronously and can fail to apply
+   * silently, so both wait for `/api/state` to agree rather than trusting their own POST.
    */
   var PENDING_TIMEOUT_MS = 8000;
   var PENDING_POLL_MS = 1200;
@@ -852,16 +648,12 @@
   var savedFilters = { albumIds: [], personIds: [], tagIds: [] };
   var filterResults = { albums: null, people: null, tags: null };
 
-  /** The panel requested but not yet reported back by /api/state, and when it was asked for.
-   *  A switch is applied asynchronously on the device (it commits a fragment transaction on the
-   *  main thread), so the POST's own response still names the OLD panel — only a later poll can
-   *  confirm it, and until then the lamp stays "warming" rather than lit. */
+  /** The panel requested but not yet reported back by /api/state, and when it was asked for. */
   var pendingPanel = null;
   var pendingSince = 0;
 
   /** The foreground state requested but not yet confirmed (`true`/`false`), or null when nothing
-   *  is in flight. Bringing Rusty forward is an activity start that some OEM builds drop without
-   *  a word, so this must resolve against a poll exactly like a panel switch. */
+   *  is in flight. */
   var pendingForeground = null;
   var foregroundSince = 0;
 
@@ -872,32 +664,53 @@
 
   function cacheElements() {
     [
-      "device-name", "device-version", "banner",
-      "source-lamps", "source-status", "source-note", "source-error",
+      "dev-name", "dev-version", "dev-state", "led", "eq",
+      "source-card", "segmented", "seg-thumb", "source-status", "source-note", "source-error",
       "foreground-switch", "foreground-note",
-      "lockscreen-card", "theme-chips", "lockscreen-error", "lockscreen-summary",
-      "screen-card", "screen-availability-note", "screen-status-label", "screen-toggle",
-      "brightness-slab", "brightness-range", "brightness-value", "screen-mode-hint", "screen-error",
-      "volume-card", "volume-slab", "volume-range", "volume-value", "volume-error",
-      "announce-text", "announce-send",
-      "announce-status", "announce-note", "announce-error",
-      "voice-card", "voice-summary", "voice-select", "voice-status", "voice-error", "voice-catalog",
+      "screen-card", "screen-availability-note", "screen-status-label", "screen-pwr",
+      "bright-fader", "bright-range", "bright-val", "bright-fill", "screen-mode-hint", "screen-error",
+      "volume-card", "vol-fader", "vol-range", "vol-val", "vol-fill", "volume-error",
+      "announce-text", "announce-send", "announce-status", "announce-error",
+      "lockscreen-strip", "theme-chips", "lockscreen-error",
       "albums-list", "albums-error", "people-list", "people-error", "tags-list", "tags-error",
       "filters-save", "filters-status", "filters-summary",
-      "update-status", "update-notes", "update-error", "update-button", "update-summary"
+      "update-status", "update-notes", "update-error", "update-button", "update-summary",
+      "update-progress", "update-progress-bar",
+      "toast", "toast-text"
     ].forEach(function (id) {
       el[id] = document.getElementById(id);
     });
   }
 
-  function showBanner(message) {
-    el.banner.textContent = message;
-    el.banner.hidden = false;
+  // ---- toast: transient confirmations + sticky unreachable-device state ----
+
+  var toastTimer = null;
+
+  /** Transient confirmation — auto-hides after ~2600 ms, UNLESS the sticky unreachable state is
+   *  showing, in which case it must not steal or shorten that banner. */
+  function toast(message) {
+    if (el.toast.classList.contains("stuck")) return;
+    clearTimeout(toastTimer);
+    el["toast-text"].textContent = message;
+    el.toast.classList.add("show");
+    toastTimer = setTimeout(function () {
+      el.toast.classList.remove("show");
+    }, 2600);
   }
 
-  function hideBanner() {
-    el.banner.hidden = true;
-    el.banner.textContent = "";
+  /** Shown on a poll failure; stays up until the next successful poll. Never cleared by the
+   *  transient timer above. */
+  function showUnreachable(message) {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+    el["toast-text"].textContent = message;
+    el.toast.classList.add("show", "stuck");
+  }
+
+  function hideUnreachable() {
+    if (!el.toast.classList.contains("stuck")) return;
+    el.toast.classList.remove("stuck", "show");
+    el["toast-text"].textContent = "";
   }
 
   function setNotice(node, message) {
@@ -915,48 +728,41 @@
    * mid-drag. A range input only fires "change" when the drag ends, so between the first touch
    * and the release the 5s poll would otherwise keep overwriting `.value` with the device's
    * (still old) number and the thumb would snap back under the finger, several times per drag.
-   *
-   * Two signals, because neither alone covers every input mode: `document.activeElement` catches
-   * keyboard/D-pad adjustment (arrow keys move a focused slider and it stays focused), and the
-   * pointer-capture flag catches a touch or mouse drag, which on some engines does not focus the
-   * element at all. The value we skip is never lost — the drag ends with a "change" that writes
-   * the user's number to the device, and the very next poll renders whatever it settled on.
    */
   function setSliderValue(node, value) {
     if (node === document.activeElement || node.dataset.dragging === "1") return;
     node.value = String(value);
   }
 
-  /** Paints the slab behind a range input to match its current value. Called both from polls and
-   *  from live "input" events, so the fill tracks a drag even though nothing is sent until the
-   *  drag ends (see [trackDragging] and the change-not-input rule). */
-  function paintSlab(slab, input, readout) {
+  /** Paints a fader's fill + readout to match its range input's current value. */
+  function paintFader(input, fill, val) {
     var min = Number(input.min);
     var max = Number(input.max);
     var value = Number(input.value);
     var pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
-    slab.style.setProperty("--fill", pct + "%");
-    readout.textContent = String(value);
+    fill.style.width = pct + "%";
+    val.textContent = String(value);
   }
 
   function paintBrightness() {
-    paintSlab(el["brightness-slab"], el["brightness-range"], el["brightness-value"]);
+    paintFader(el["bright-range"], el["bright-fill"], el["bright-val"]);
   }
 
   function paintVolume() {
-    paintSlab(el["volume-slab"], el["volume-range"], el["volume-value"]);
+    paintFader(el["vol-range"], el["vol-fill"], el["vol-val"]);
   }
 
-  /** Marks a slider as being dragged for as long as a pointer is down on it (see
-   *  [setSliderValue]). Pointer events cover mouse, touch and pen with one listener set;
-   *  `pointercancel` matters because a scroll gesture stealing the pointer never sends `up`. */
-  function trackDragging(node) {
-    node.addEventListener("pointerdown", function () {
-      node.dataset.dragging = "1";
+  /** Marks a fader as being dragged for as long as a pointer is down on it (see
+   *  [setSliderValue]), and lifts the readout via `.dragging` on the wrapper. */
+  function wireFaderDrag(input, fader) {
+    input.addEventListener("pointerdown", function () {
+      input.dataset.dragging = "1";
+      fader.classList.add("dragging");
     });
     ["pointerup", "pointercancel", "blur"].forEach(function (type) {
-      node.addEventListener(type, function () {
-        node.dataset.dragging = "0";
+      input.addEventListener(type, function () {
+        input.dataset.dragging = "0";
+        fader.classList.remove("dragging");
       });
     });
   }
@@ -996,13 +802,6 @@
 
   // ---- rendering ----
 
-  function renderDevice(device) {
-    el["device-name"].textContent = device.name;
-    el["device-version"].textContent = "v" + device.version;
-  }
-
-  // ---- source lamps ----
-
   function labelFor(id) {
     for (var i = 0; i < PANELS.length; i++) {
       if (PANELS[i].id === id) return PANELS[i].full;
@@ -1010,66 +809,95 @@
     return id;
   }
 
-  /** Fills every `<span class="ico" data-icon="…">` in the document from [ICONS]. Static markup
-   *  only — the icon set is a closed constant, never anything from the response. */
-  function paintStaticIcons(root) {
-    root.querySelectorAll(".ico[data-icon]").forEach(function (node) {
-      var svg = ICONS[node.getAttribute("data-icon")];
-      if (svg) node.innerHTML = svg;
-    });
+  /** Paints the status dock: device identity, activity line, LED and level meter. */
+  function renderDevice(data) {
+    var device = data.device;
+    el["dev-name"].textContent = device.name;
+    el["dev-version"].textContent = "v" + device.version;
+
+    var playing = !!(data.playing && (data.playing.spotify || data.playing.dlna));
+    el["led"].classList.toggle("idle", !playing);
+    el["eq"].classList.toggle("playing", playing);
+
+    var stateText;
+    if (data.playing && data.playing.spotify) {
+      stateText = "Playing on Spotify";
+    } else if (data.playing && data.playing.dlna) {
+      stateText = "Playing via DLNA";
+    } else if (data.panel && data.panel.active) {
+      stateText = "Showing " + labelFor(data.panel.active);
+    } else {
+      stateText = "Idle";
+    }
+    el["dev-state"].textContent = stateText;
   }
 
-  /**
-   * The lamp row currently drawn, as a comma-joined key. The row is rebuilt only when the set of
-   * available panels actually changes — rebuilding on every 5s poll would drop D-pad focus out of
-   * the row mid-press and restart the pending lamp's animation.
-   */
-  var lampsKey = null;
+  // ---- source: segmented switch ----
 
-  function renderLamps(available) {
+  /**
+   * The segment row currently drawn, as a comma-joined key. Rebuilt only when the set of
+   * available panels actually changes — rebuilding on every 5s poll would drop D-pad focus out of
+   * the row mid-press and restart the pending segment's animation.
+   */
+  var segKey = null;
+  var lastSegTarget = null;
+  var lastSegPending = false;
+
+  function segButtons() {
+    return Array.prototype.slice.call(el.segmented.querySelectorAll("button"));
+  }
+
+  function buildSegmented(available) {
     var wanted = PANELS.filter(function (p) {
       return available.indexOf(p.id) !== -1;
     });
     var key = wanted.map(function (p) { return p.id; }).join(",");
-    if (key === lampsKey) return;
-    lampsKey = key;
+    if (key === segKey) return;
+    segKey = key;
 
-    el["source-lamps"].innerHTML = "";
-    // Equal columns for however many destinations this device actually has, so three lamps fill
-    // the row rather than leaving a gap where a switched-off feature used to be.
-    el["source-lamps"].style.gridTemplateColumns =
-      "repeat(" + Math.max(wanted.length, 1) + ", 1fr)";
+    segButtons().forEach(function (b) { b.remove(); });
 
     wanted.forEach(function (panel) {
       var button = document.createElement("button");
       button.type = "button";
-      button.className = "lamp";
-      button.id = "lamp-" + panel.id;
-      button.setAttribute("data-panel", panel.id);
+      button.setAttribute("data-id", panel.id);
       button.setAttribute("aria-pressed", "false");
       button.setAttribute("aria-label", panel.full);
 
-      var bulb = document.createElement("i");
-      bulb.className = "bulb";
       var icon = document.createElement("span");
       icon.className = "ico";
       icon.innerHTML = ICONS[panel.id] || "";
-      var name = document.createElement("span");
-      name.className = "name";
-      name.textContent = panel.label;
-
-      button.appendChild(bulb);
       button.appendChild(icon);
-      button.appendChild(name);
+      button.appendChild(document.createTextNode(panel.label));
+
       button.addEventListener("click", function () {
         onSelectPanel(panel.id);
       });
-      el["source-lamps"].appendChild(button);
+      el.segmented.appendChild(button);
     });
   }
 
+  /** Slides the thumb under the button for `id`, sized/positioned from its own box — a rebuild
+   *  must call this afresh, and so must a window resize. */
+  function moveThumbToId(id, pending) {
+    var buttons = segButtons();
+    var idx = -1;
+    buttons.forEach(function (b, i) {
+      if (b.getAttribute("data-id") === id) idx = i;
+    });
+    if (idx === -1) return;
+    var btn = buttons[idx];
+    el["seg-thumb"].style.width = btn.offsetWidth + "px";
+    el["seg-thumb"].style.transform = "translateX(" + (btn.offsetLeft - 4) + "px)";
+    el["seg-thumb"].classList.toggle("pending", !!pending);
+  }
+
+  window.addEventListener("resize", function () {
+    if (lastSegTarget) moveThumbToId(lastSegTarget, lastSegPending);
+  });
+
   /**
-   * Paints the lamp row from a snapshot.
+   * Paints the segmented source switch from a snapshot.
    *
    * `panel.active === null` means no app window is attached, so nothing can take a switch: the
    * whole row goes inert and the note explains why, rather than leaving four live-looking buttons
@@ -1091,33 +919,27 @@
       }
     }
 
-    renderLamps(available);
-    el["source-lamps"].classList.toggle("inert", !attached);
-    // Only toggled, never rewritten: the note's wording lives in the markup, and routing it
-    // through setNotice would blank the text the first time it was hidden.
+    buildSegmented(available);
+    el.segmented.classList.toggle("inert", !attached);
     el["source-note"].hidden = attached;
 
-    PANELS.forEach(function (p) {
-      var button = document.getElementById("lamp-" + p.id);
-      if (!button) return; // switched off in Rusty's settings — not drawn at all
-      var isOn = attached && active === p.id;
-      var isPending = pendingPanel === p.id;
-
-      button.classList.toggle("on", isOn && !isPending);
-      button.classList.toggle("pending", isPending);
-      button.setAttribute("aria-pressed", String(isOn));
-      // The only reason a drawn lamp can't be pressed: nothing is attached to take the switch.
-      button.disabled = !attached;
-      button.title = p.full;
+    var targetId = pendingPanel || active;
+    segButtons().forEach(function (b) {
+      var isOn = !pendingPanel && attached && b.getAttribute("data-id") === active;
+      b.setAttribute("aria-pressed", String(isOn));
+      // The only reason a drawn segment can't be pressed: nothing is attached to take the switch.
+      b.disabled = !attached;
     });
 
-    if (pendingPanel) {
-      el["source-status"].textContent = (attached ? labelFor(active) + " → " : "") +
-        labelFor(pendingPanel) + " · sending";
-    } else if (attached) {
-      el["source-status"].textContent = labelFor(active);
-    } else {
-      el["source-status"].textContent = "—";
+    lastSegTarget = targetId;
+    lastSegPending = pendingPanel !== null;
+    if (targetId) moveThumbToId(targetId, lastSegPending);
+
+    var sourceStatusText = pendingPanel ?
+      (attached ? labelFor(active) + " → " : "") + labelFor(pendingPanel) + " · sending" :
+      attached ? labelFor(active) : "—";
+    if (el["source-status"].textContent !== sourceStatusText) {
+      el["source-status"].textContent = sourceStatusText;
     }
   }
 
@@ -1154,21 +976,17 @@
   function renderLockscreen(panel) {
     var lockscreen = (panel && panel.lockscreen) || null;
     var themes = (lockscreen && lockscreen.themes) || [];
-    // `hidden` on a <details> needs the [hidden] rule at the top of this file to beat the
+    // `hidden` on the strip needs the [hidden] rule at the top of this file to beat the
     // element's own `display`, same as the cards.
-    el["lockscreen-card"].hidden = themes.length === 0;
+    el["lockscreen-strip"].hidden = themes.length === 0;
     if (themes.length === 0) return;
 
     var current = lockscreen.theme;
-    // Keeps the collapsed Service row honest about what is inside it.
-    el["lockscreen-summary"].textContent = THEME_LABELS[current] || current;
-    // Rebuilt rather than diffed: the selectable set changes when the Slideshow feature is
-    // switched off on the device, and the list is four items long.
     el["theme-chips"].innerHTML = "";
     themes.forEach(function (theme) {
       var chip = document.createElement("button");
       chip.type = "button";
-      chip.className = "chip" + (theme === current ? " on" : "");
+      chip.className = "chip";
       chip.setAttribute("data-theme", theme);
       chip.setAttribute("aria-pressed", String(theme === current));
       chip.textContent = THEME_LABELS[theme] || theme;
@@ -1180,29 +998,28 @@
   }
 
   function renderScreen(screen) {
-    // `available` is a single flag — "is a visible window attached?" — but the two controls on this
-    // card do not share that constraint, and captioning both with it made the page lie. Turning the
-    // screen on or off is an overlay plus FLAG_KEEP_SCREEN_ON, which only a VISIBLE window can hold,
-    // so that half genuinely waits for the app to come back. Brightness in system mode is a
-    // Settings.System write: it moves the device's panel with Rusty in the background, and telling
-    // the user it was merely "saved" while the screen visibly dims is worse than saying nothing.
+    // `available` is a single flag — "is a visible window attached?" — but the two controls on
+    // this card do not share that constraint. Turning the screen on or off is an overlay plus
+    // FLAG_KEEP_SCREEN_ON, which only a VISIBLE window can hold, so that half genuinely waits for
+    // the app to come back. Brightness in system mode is a Settings.System write: it moves the
+    // device's panel with Rusty in the background, so it keeps working while unattached.
     setNotice(el["screen-availability-note"], screen.available ? null : screen.writable ?
       "Rusty isn't on screen right now — brightness still applies to the device, but turning the " +
       "screen on or off waits until the app is active." :
       "No screen is currently attached to the app right now — commands are saved and will apply " +
       "as soon as the app is active.");
 
-    el["screen-status-label"].textContent = screen.on ? "Screen is on" : "Screen is off";
-    el["screen-toggle"].setAttribute("aria-pressed", String(screen.on));
+    var screenStatusText = screen.on ? "Screen is on" : "Screen is off";
+    if (el["screen-status-label"].textContent !== screenStatusText) {
+      el["screen-status-label"].textContent = screenStatusText;
+    }
+    el["screen-pwr"].setAttribute("aria-pressed", String(screen.on));
+    el["screen-pwr"].setAttribute("aria-label", screen.on ? "Turn screen off" : "Turn screen on");
 
-    setSliderValue(el["brightness-range"], screen.brightness);
-    // Brightness is only meaningful while the screen is on: with the panel faked off, moving this
-    // slider changes nothing anyone can see, so offering it invites the user to "set" a value
-    // whose effect only appears at some later wake. Disabled rather than hidden so the card does
-    // not reflow (and so a D-pad user's focus order is stable) — the reported number stays
-    // visible, it just cannot be commanded from here until the screen is back on.
-    el["brightness-range"].disabled = !screen.on;
-    el["brightness-slab"].classList.toggle("off", !screen.on);
+    setSliderValue(el["bright-range"], screen.brightness);
+    var brightnessOff = !screen.on || !screen.writable; // visual only
+    el["bright-fader"].classList.toggle("off", brightnessOff);
+    el["bright-range"].disabled = !screen.on; // matches pre-redesign behavior
     paintBrightness();
 
     setNotice(el["screen-mode-hint"], screen.mode === "window" ?
@@ -1211,15 +1028,17 @@
 
   function renderVolume(volume) {
     el["volume-card"].hidden = !!volume.fixed;
+    // Widens the Screen card to the whole row once there is no Volume card to pair with.
+    document.body.classList.toggle("no-volume", !!volume.fixed);
     if (!volume.fixed) {
-      setSliderValue(el["volume-range"], volume.value);
+      setSliderValue(el["vol-range"], volume.value);
       paintVolume();
     }
   }
 
   function renderState(data) {
     state = data;
-    renderDevice(data.device);
+    renderDevice(data);
     renderPanel(data.panel);
     renderApp(data.app);
     renderLockscreen(data.panel);
@@ -1233,10 +1052,10 @@
     return getJSON("/api/state")
       .then(function (data) {
         renderState(data);
-        hideBanner();
+        hideUnreachable();
       })
       .catch(function (err) {
-        showBanner("Unable to reach the device: " + err.message);
+        showUnreachable("Unable to reach the device: " + err.message);
       });
   }
 
@@ -1285,7 +1104,8 @@
       })
       .then(function () {
         // The response reports the pre-switch snapshot by design, so this refresh is only the
-        // first of the fast polls — the lamp settles when the device actually reports the change.
+        // first of the fast polls — the segment settles when the device actually reports the
+        // change.
         return refresh();
       });
   }
@@ -1305,8 +1125,6 @@
         setNotice(el["source-error"], err.message);
       })
       .then(function () {
-        // As with a panel switch, the response reports the pre-command state; the fast poll is
-        // what actually resolves the switch.
         return refresh();
       });
   }
@@ -1316,6 +1134,9 @@
     // A theme is a preference write on the device, applied before it answers, so unlike a panel
     // switch there is nothing to wait for — no pending state, just re-read and repaint.
     writeJSON("/api/lockscreen", "POST", { theme: theme })
+      .then(function () {
+        toast("Lock screen theme set.");
+      })
       .catch(function (err) {
         setNotice(el["lockscreen-error"], err.message);
       })
@@ -1328,16 +1149,16 @@
 
   function sendScreen(partial) {
     var body = Object.assign({ on: state ? state.screen.on : true }, partial);
-    el["screen-toggle"].disabled = true;
-    el["brightness-range"].disabled = true;
+    el["screen-pwr"].disabled = true;
+    el["bright-range"].disabled = true;
     setNotice(el["screen-error"], null);
     return writeJSON("/api/screen", "POST", body)
       .catch(function (err) {
         setNotice(el["screen-error"], err.message);
       })
       .then(function () {
-        el["screen-toggle"].disabled = false;
-        el["brightness-range"].disabled = false;
+        el["screen-pwr"].disabled = false;
+        el["bright-range"].disabled = false;
         return refresh();
       });
   }
@@ -1347,20 +1168,20 @@
   }
 
   function onBrightnessChange() {
-    sendScreen({ brightness: Number(el["brightness-range"].value) });
+    sendScreen({ brightness: Number(el["bright-range"].value) });
   }
 
   // ---- volume card ----
 
   function onVolumeChange() {
     setNotice(el["volume-error"], null);
-    el["volume-range"].disabled = true;
-    writeJSON("/api/volume", "POST", { value: Number(el["volume-range"].value) })
+    el["vol-range"].disabled = true;
+    writeJSON("/api/volume", "POST", { value: Number(el["vol-range"].value) })
       .catch(function (err) {
         setNotice(el["volume-error"], err.message);
       })
       .then(function () {
-        el["volume-range"].disabled = false;
+        el["vol-range"].disabled = false;
         return refresh();
       });
   }
@@ -1388,10 +1209,14 @@
 
   /** Keeps the collapsed Service row honest about what is inside it. */
   function renderFiltersSummary() {
-    var total = savedFilters.albumIds.length + savedFilters.personIds.length +
-      savedFilters.tagIds.length;
-    el["filters-summary"].textContent = total === 0 ? "Everything" :
-      total + (total === 1 ? " filter" : " filters");
+    var parts = [];
+    function add(count, singular, plural) {
+      if (count > 0) parts.push(count + " " + (count === 1 ? singular : plural));
+    }
+    add(savedFilters.albumIds.length, "album", "albums");
+    add(savedFilters.personIds.length, "person", "people");
+    add(savedFilters.tagIds.length, "tag", "tags");
+    el["filters-summary"].textContent = parts.length ? parts.join(", ") : "Everything";
   }
 
   function renderFilterGroup(kind) {
@@ -1437,27 +1262,18 @@
     }
 
     ids.forEach(function (id) {
-      var row = document.createElement("label");
-      row.className = "filter-row";
-
-      var checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.value = id;
-      checkbox.checked = saved.indexOf(id) !== -1;
-      checkbox.setAttribute("data-kind", kind);
-
-      var label = document.createElement("span");
-      var name = byId[id];
-      if (name) {
-        label.textContent = name;
-      } else {
-        label.textContent = id;
-        label.className = "id-fallback";
-      }
-
-      row.appendChild(checkbox);
-      row.appendChild(label);
-      listEl.appendChild(row);
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip";
+      chip.setAttribute("data-kind", kind);
+      chip.setAttribute("data-id", id);
+      var pressed = saved.indexOf(id) !== -1;
+      chip.setAttribute("aria-pressed", String(pressed));
+      chip.textContent = byId[id] || id;
+      chip.addEventListener("click", function () {
+        chip.setAttribute("aria-pressed", String(chip.getAttribute("aria-pressed") !== "true"));
+      });
+      listEl.appendChild(chip);
     });
   }
 
@@ -1469,12 +1285,12 @@
   }
 
   /**
-   * Loads saved filter IDs + the three Immich lists, then renders the checkbox groups.
+   * Loads saved filter IDs + the three Immich lists, then renders the chip groups.
    *
    * `#filters-save` ships `disabled` in the markup and MUST stay disabled until this settles:
    * `checkedIds()` reads whatever is currently in the DOM, and until `renderAllFilterGroups()`
-   * has populated the three `.filter-list` containers, that DOM is empty. A Save click landing
-   * in that window would PUT `{albumIds:[],personIds:[],tagIds:[]}` and, on success, overwrite
+   * has populated the three chip containers, that DOM is empty. A Save click landing in that
+   * window would PUT `{albumIds:[],personIds:[],tagIds:[]}` and, on success, overwrite
    * `savedFilters` with it — silently wiping every previously saved filter. Re-enabling only
    * happens in the `.then`/`.catch` pair below, on every exit path (including an unexpected
    * failure), so Save is never left permanently disabled either -- it must still work after a
@@ -1513,10 +1329,10 @@
   }
 
   function checkedIds(kind) {
-    var boxes = el[kind + "-list"].querySelectorAll('input[type="checkbox"]');
+    var chips = el[kind + "-list"].querySelectorAll('.chip[aria-pressed="true"]');
     var ids = [];
-    boxes.forEach(function (box) {
-      if (box.checked) ids.push(box.value);
+    chips.forEach(function (chip) {
+      ids.push(chip.getAttribute("data-id"));
     });
     return ids;
   }
@@ -1534,6 +1350,7 @@
         savedFilters = body;
         renderFiltersSummary();
         setNotice(el["filters-status"], "Saved.");
+        toast("Slideshow filters saved.");
       })
       .catch(function (err) {
         setNotice(el["filters-status"], "Save failed: " + err.message);
@@ -1569,6 +1386,15 @@
     }
   }
 
+  function paintUpdateProgress(progress) {
+    if (typeof progress === "number") {
+      el["update-progress"].hidden = false;
+      el["update-progress-bar"].style.width = progress + "%";
+    } else {
+      el["update-progress"].hidden = true;
+    }
+  }
+
   function renderUpdate(data) {
     var install = data.install || { phase: "idle" };
 
@@ -1579,6 +1405,7 @@
       el["update-summary"].textContent = "Downloading…";
       el["update-button"].hidden = false;
       el["update-button"].disabled = true;
+      paintUpdateProgress(install.progress);
       setNotice(el["update-error"], null);
       ensureUpdatePolling(UPDATE_POLL_FAST_MS);
       return;
@@ -1588,12 +1415,14 @@
       el["update-summary"].textContent = "Confirm on device";
       el["update-button"].hidden = false;
       el["update-button"].disabled = true;
+      paintUpdateProgress(null);
       setNotice(el["update-error"], null);
       ensureUpdatePolling(UPDATE_POLL_SLOW_MS);
       return;
     }
 
     stopUpdatePolling();
+    paintUpdateProgress(null);
     setNotice(el["update-error"], install.phase === "error" ? (install.error || "Install failed.") : null);
 
     if (data.status === "update_available" && data.latest) {
@@ -1642,253 +1471,6 @@
       .then(function () {
         return refreshUpdate();
       });
-  }
-
-  // ---- announcement voice ----
-
-  /**
-   * Loaded lazily, on the first open of the Voice row: enumerating voices makes the device spin
-   * up its TTS engine (seconds on a freshly booted box), which the page must not pay on every
-   * state poll. After the first load the list is kept; a re-open re-reads only if the first
-   * attempt failed.
-   */
-  var voicesLoaded = false;
-  var voicesLoading = false;
-
-  function voiceOptionLabel(v) {
-    var label = v.label;
-    if (v.quality === "high" || v.quality === "very_high") label += " ★";
-    if (!v.installed) label += " (needs download)";
-    else if (v.requiresNetwork) label += " (online)";
-    return label;
-  }
-
-  function renderVoices(data) {
-    var select = el["voice-select"];
-    select.innerHTML = "";
-    var byLanguage = {};
-    data.voices.forEach(function (v) {
-      var key = v.language || "";
-      (byLanguage[key] = byLanguage[key] || []).push(v);
-    });
-    // The languageless bucket (the "System default" row) renders first, ungrouped.
-    (byLanguage[""] || []).forEach(function (v) {
-      var opt = document.createElement("option");
-      opt.value = v.id;
-      opt.textContent = voiceOptionLabel(v);
-      select.appendChild(opt);
-    });
-    Object.keys(byLanguage).filter(Boolean).sort().forEach(function (lang) {
-      var group = document.createElement("optgroup");
-      group.label = lang;
-      byLanguage[lang].forEach(function (v) {
-        var opt = document.createElement("option");
-        opt.value = v.id;
-        opt.textContent = voiceOptionLabel(v);
-        group.appendChild(opt);
-      });
-      select.appendChild(group);
-    });
-    select.value = data.selected;
-    // A selection the list doesn't carry (e.g. the engine changed) still must not render as the
-    // first arbitrary option — fall back to the default row, which is always present.
-    if (select.value !== data.selected) select.value = "system:default";
-    select.hidden = false;
-    paintVoiceSummary(data);
-    renderVoiceCatalog(data);
-  }
-
-  function paintVoiceSummary(data) {
-    var match = null;
-    data.voices.forEach(function (v) { if (v.id === data.selected) match = v; });
-    el["voice-summary"].textContent = match ? match.label : "System default";
-  }
-
-  function loadVoices() {
-    if (voicesLoaded || voicesLoading) return;
-    voicesLoading = true;
-    setNotice(el["voice-error"], null);
-    el["voice-status"].hidden = false;
-    getJSON("/api/tts/voices")
-      .then(function (data) {
-        voicesLoaded = true;
-        renderVoices(data);
-      })
-      .catch(function (err) {
-        setNotice(el["voice-error"], err.message);
-      })
-      .then(function () {
-        voicesLoading = false;
-        el["voice-status"].hidden = true;
-      });
-  }
-
-  function onVoiceChange() {
-    var id = el["voice-select"].value;
-    setNotice(el["voice-error"], null);
-    el["voice-select"].disabled = true;
-    writeJSON("/api/tts/voice", "POST", { id: id })
-      .then(function (data) {
-        // The Ok body is the fresh list — repaint from it, the prefs-are-truth pattern the
-        // lockscreen picker uses.
-        renderVoices(data);
-      })
-      .catch(function (err) {
-        setNotice(el["voice-error"], err.message);
-      })
-      .then(function () {
-        el["voice-select"].disabled = false;
-      });
-  }
-
-  // ---- downloadable (Piper) voices ----
-
-  /** Poll handle while a download runs; the page re-reads the voices payload until the
-   *  phase leaves the busy set — the update card's accepted-then-observe pattern. */
-  var voicePollTimer = null;
-  /** Consecutive failed polls; past the cap the poll gives up with a notice instead of
-   *  retrying forever against a device that went away. */
-  var voicePollFailures = 0;
-  var VOICE_POLL_MAX_FAILURES = 5;
-  /** Last download-error text already shown, so the sticky ERROR snapshot (it stays in every
-   *  payload until the next download) doesn't re-raise the same notice on every repaint. */
-  var voiceErrorShown = null;
-
-  function voiceMegabytes(bytes) {
-    return Math.round(bytes / (1024 * 1024)) + " MB";
-  }
-
-  function downloadBusy(download) {
-    return download && (download.phase === "downloading" ||
-      download.phase === "verifying" || download.phase === "extracting");
-  }
-
-  function catalogButtonLabel(entry, download) {
-    if (download && download.voiceId && ("piper:" + download.voiceId) === entry.id) {
-      if (download.phase === "downloading") {
-        return typeof download.progress === "number" ? download.progress + "%" : "Downloading…";
-      }
-      if (download.phase === "verifying") return "Verifying…";
-      if (download.phase === "extracting") return "Unpacking…";
-    }
-    return entry.installed ? "Delete" : "Download";
-  }
-
-  function renderVoiceCatalog(data) {
-    var box = el["voice-catalog"];
-    var entries = data.catalog || [];
-    box.hidden = entries.length === 0;
-    box.innerHTML = "";
-    if (entries.length === 0) return;
-    var download = data.download || null;
-    var busy = downloadBusy(download);
-
-    entries.forEach(function (entry) {
-      var row = document.createElement("div");
-      row.className = "voice-cat-row";
-
-      var meta = document.createElement("span");
-      meta.className = "meta";
-      var name = document.createElement("span");
-      name.className = "name";
-      name.textContent = entry.label + (entry.installed ? " ✓" : "");
-      // License and source shown BEFORE the download decision — each Piper voice carries its
-      // own dataset terms, and this line is where the user sees them.
-      var sub = document.createElement("span");
-      sub.className = "sub";
-      sub.textContent = voiceMegabytes(entry.sizeBytes) + " · " + entry.license +
-        " · " + entry.attribution;
-      meta.appendChild(name);
-      meta.appendChild(sub);
-
-      var button = document.createElement("button");
-      button.type = "button";
-      button.textContent = catalogButtonLabel(entry, download);
-      // One download slot: while anything is in flight every action is parked, not queued.
-      button.disabled = busy;
-      button.addEventListener("click", function () {
-        if (entry.installed) onVoiceDelete(entry);
-        else onVoiceDownload(entry);
-      });
-
-      row.appendChild(meta);
-      row.appendChild(button);
-      box.appendChild(row);
-    });
-
-    if (download && download.phase === "error") {
-      var message = "Voice download failed: " + (download.error || "unknown error");
-      if (message !== voiceErrorShown) {
-        voiceErrorShown = message;
-        setNotice(el["voice-error"], message);
-      }
-    }
-    if (busy) scheduleVoicePoll();
-  }
-
-  function scheduleVoicePoll() {
-    if (voicePollTimer) return;
-    voicePollTimer = setTimeout(function () {
-      voicePollTimer = null;
-      getJSON("/api/tts/voices")
-        .then(function (data) {
-          voicePollFailures = 0;
-          // While the download is busy, repaint only the catalog rows and the summary — a
-          // full renderVoices would rebuild the <select> under the user every 1.5 s. The
-          // final (non-busy) poll does the full render, picking up the new voice.
-          if (downloadBusy(data.download)) {
-            paintVoiceSummary(data);
-            renderVoiceCatalog(data);
-          } else {
-            renderVoices(data);
-          }
-        })
-        .catch(function () {
-          // Transient poll failure (device busy writing 67 MB): try again rather than
-          // abandoning the progress display — but not forever against a dead device.
-          voicePollFailures++;
-          if (voicePollFailures < VOICE_POLL_MAX_FAILURES) {
-            scheduleVoicePoll();
-          } else {
-            voicePollFailures = 0;
-            setNotice(el["voice-error"],
-              "Lost contact with the device — reopen this section to refresh.");
-          }
-        });
-    }, 1500);
-  }
-
-  function onVoiceDownload(entry) {
-    setNotice(el["voice-error"], null);
-    voiceErrorShown = null;
-    voicePollFailures = 0;
-    writeJSON("/api/tts/voices/download", "POST", { id: entry.id })
-      .then(function () {
-        scheduleVoicePoll();
-      })
-      .catch(function (err) {
-        setNotice(el["voice-error"], err.message);
-      });
-  }
-
-  function onVoiceDelete(entry) {
-    setNotice(el["voice-error"], null);
-    writeJSON("/api/tts/voices/delete", "POST", { id: entry.id })
-      .then(function (data) {
-        // The Ok body is the fresh voices payload (selection already fallen back if it
-        // named the deleted voice).
-        renderVoices(data);
-      })
-      .catch(function (err) {
-        setNotice(el["voice-error"], err.message);
-      });
-  }
-
-  function setupVoicePicker() {
-    el["voice-card"].addEventListener("toggle", function () {
-      if (el["voice-card"].open) loadVoices();
-    });
-    el["voice-select"].addEventListener("change", onVoiceChange);
   }
 
   // ---- announcements ----
@@ -1957,22 +1539,20 @@
 
   function init() {
     cacheElements();
-    paintStaticIcons(document);
 
     el["foreground-switch"].addEventListener("click", onToggleForeground);
-    el["screen-toggle"].addEventListener("click", onToggleScreen);
-    el["brightness-range"].addEventListener("change", onBrightnessChange);
-    el["volume-range"].addEventListener("change", onVolumeChange);
+    el["screen-pwr"].addEventListener("click", onToggleScreen);
+    el["bright-range"].addEventListener("change", onBrightnessChange);
+    el["vol-range"].addEventListener("change", onVolumeChange);
     // "input" paints only — the write still happens on "change", so a drag sends one command
     // at the end rather than one per pixel.
-    el["brightness-range"].addEventListener("input", paintBrightness);
-    el["volume-range"].addEventListener("input", paintVolume);
+    el["bright-range"].addEventListener("input", paintBrightness);
+    el["vol-range"].addEventListener("input", paintVolume);
     el["filters-save"].addEventListener("click", onSaveFilters);
     el["update-button"].addEventListener("click", onUpdateClick);
     setupAnnounce();
-    setupVoicePicker();
-    trackDragging(el["brightness-range"]);
-    trackDragging(el["volume-range"]);
+    wireFaderDrag(el["bright-range"], el["bright-fader"]);
+    wireFaderDrag(el["vol-range"], el["vol-fader"]);
 
     refresh();
     loadFilters();

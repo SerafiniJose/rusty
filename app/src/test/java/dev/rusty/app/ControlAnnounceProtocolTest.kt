@@ -157,8 +157,8 @@ class ControlAnnounceProtocolTest {
     }
 
     @Test fun announceText_overSmallBodyCap_is413() {
-        // The text route keeps the standard 16 KiB budget even though the parser now lets
-        // announce-sized bodies through to route().
+        // The text route keeps the standard 16 KiB budget even though the parser's own cap is a
+        // flat 64 KiB for every route, so a body this size reaches route() before being rejected.
         val big = """{"text":"${"a".repeat(ControlProtocol.MAX_API_BODY_BYTES)}"}"""
         assertEquals(413, route(req("POST", "/api/announce/text", body = big)).status)
     }

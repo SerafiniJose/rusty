@@ -318,8 +318,10 @@ object HomeAssistantNav {
           var INK='var(--primary-text-color,#F3EEE7)';
           var HAIRLINE='var(--divider-color,#2A2730)';
           // The floating back control + page title. Replaces the old full-width 52px repainted bar,
-          // which cost every section page a screen-wide strip: the cluster floats over the content
-          // top-left (mirroring the corner-parked shell clock top-right), reserving nothing.
+          // which painted a screen-wide strip on every section page: the cluster floats over the
+          // top-left (mirroring the corner-parked shell clock top-right). Pages that carry the
+          // float pad their content 60px clear of it (BAR_CSS / HUI_BAR_CSS); floatless pages
+          // reserve nothing.
           // position:fixed inside a shadow root is still viewport-relative, and pointer-events are
           // confined to the pill so the content under the title stays tappable.
           var FLOAT_CSS=
@@ -334,11 +336,14 @@ object HomeAssistantNav {
               'letter-spacing:.18em!important;text-transform:uppercase!important;'+
               'color:'+INK+'!important;font-weight:600!important;opacity:.92!important;}';
           // Injected into <ha-top-app-bar-fixed>'s own shadow root — never onto the element itself,
-          // which slots the page content. Hides HA's bar outright (the float replaces it), unpads
-          // the content wrapper so the reclaimed strip is actually used, and defines the float.
+          // which slots the page content. Hides HA's bar outright (the float replaces it) and pads
+          // the content wrapper just clear of the float: the pill sits at 12px and is 40px tall
+          // (bottom ~53px), so an unpadded page rendered its first cards UNDER the section title —
+          // on-device, ha-panel-security's hui-view-container started at 0. 60px keeps the content
+          // below the float while still returning the rest of HA's taller stock bar to the page.
           var BAR_CSS=
             'header.top-app-bar,header.mdc-top-app-bar{display:none!important;}'+
-            '.top-app-bar-fixed-adjust,.mdc-top-app-bar--fixed-adjust{padding-top:0!important;}'+
+            '.top-app-bar-fixed-adjust,.mdc-top-app-bar--fixed-adjust{padding-top:60px!important;}'+
             FLOAT_CSS;
           // A Lovelace panel renders its own toolbar inside hui-root instead of a scaffold, and HA
           // puts an ha-icon-button-arrow-prev in it exactly when the current view has somewhere to go
@@ -348,7 +353,10 @@ object HomeAssistantNav {
           // only those, the float is injected — Overview and the user's own dashboard views report no
           // arrow and stay exactly as they were. The whole .header (HA's back arrow, search / Assist /
           // edit chrome) stays hidden; the float is the only navigation affordance left.
-          var HUI_BAR_CSS=':host{--header-height:0px!important;}'+
+          // Same clearance on deep views: hui-root pads its view container by --header-height
+          // even with the toolbar hidden, so 60px (not 0) keeps the area/subview content from
+          // rendering under the floating back control + title.
+          var HUI_BAR_CSS=':host{--header-height:60px!important;}'+
             '.header{display:none!important;}'+
             FLOAT_CSS;
           function sr(el){return el&&el.shadowRoot;}

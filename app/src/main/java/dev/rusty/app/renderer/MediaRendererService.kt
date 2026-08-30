@@ -368,8 +368,8 @@ class MediaRendererService : Service(), RendererRuntime {
     // -- Local announcements (control API) --------------------------------------------------
 
     /**
-     * Plays a locally-stored announcement (a voice message uploaded to the control page, or a
-     * TTS clip synthesized on-device) through the SAME SetUri → Play chain a network control
+     * Plays a locally-stored announcement (a TTS clip synthesized on-device from text typed on
+     * the control page) through the SAME SetUri → Play chain a network control
      * point sends, so it inherits the whole announcement choreography for free: Spotify
      * pause/duck arbitration, fade timing, GENA eventing and the DLNA screen's now-playing UI.
      * Reached via [instance], mirroring the rename path: a stopped renderer must answer "not
