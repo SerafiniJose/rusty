@@ -10,6 +10,26 @@ user-facing.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-08-30
+
+### Added
+- Spoken announcements. Type a message on the control page and Rusty says it
+  out loud; music ducks and resumes around it.
+- Downloadable voices. Piper neural voices speak entirely on the device.
+  Manage voices and quality in Settings → Remote Control.
+- Optional password protecting the control page and API.
+- Report an issue link in About & updates.
+
+### Changed
+- The control page is redesigned as a status deck: live status up top, a
+  sliding source switch, and drag-anywhere faders.
+- Spotify settings are regrouped into collapsible sections.
+
+### Fixed
+- Desktop Spotify clients can connect to Rusty again.
+- Home Assistant pages with a floating section title no longer overlap their
+  content.
+
 ## [2.4.0] - 2026-08-15
 
 ### Added
@@ -162,7 +182,8 @@ new is additive, and the whole-screen features are off by default.
 - Transport controls, live receiver rename, selectable bitrate (96 / 160 / 320 kbps),
   a fullscreen mode, and a 12/24-hour clock.
 
-[Unreleased]: https://github.com/SerafiniJose/rusty/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/SerafiniJose/rusty/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/SerafiniJose/rusty/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/SerafiniJose/rusty/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/SerafiniJose/rusty/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/SerafiniJose/rusty/compare/v2.1.0...v2.2.0
