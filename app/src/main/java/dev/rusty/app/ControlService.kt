@@ -14,18 +14,27 @@ import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.Uri
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import dev.rusty.app.renderer.LanAddress
+import dev.rusty.app.renderer.MediaRendererService
 import dev.rusty.app.renderer.RendererRuntimeHolder
 import dev.rusty.app.renderer.RendererTransport
+import java.io.File
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Composition root for the remote-control feature: the foreground service that owns the HTTP
@@ -117,6 +126,11 @@ class ControlService : Service() {
     @Volatile
     private var server: ControlHttpServer? = null
 
+    /** The live [ControlServiceRuntime], kept only so [onDestroy] can release what it lazily
+     *  acquired (the TTS engine). Written on the main thread in onStartCommand. */
+    @Volatile
+    private var runtime: ControlServiceRuntime? = null
+
     /**
      * Guards against a re-delivered start command rebinding (or regressing the status). Read and
      * set on the main thread (`onStartCommand`); CLEARED from [serverExecutor] on the bind-failure
@@ -193,6 +207,9 @@ class ControlService : Service() {
         ControlServerStatus.publish(ControlServerStatus.State.Starting)
 
         val runtime = ControlServiceRuntime(applicationContext)
+        // Held so onDestroy can release the resources the runtime lazily acquires (its TTS
+        // engine binds a system service that only shutdown() disconnects).
+        this.runtime = runtime
         runCatching { serverExecutor.execute { bindServer(runtime) } }
             .onFailure { e ->
                 Log.w(TAG, "control server could not be scheduled", e)
@@ -226,6 +243,15 @@ class ControlService : Service() {
             }
         }
         serverExecutor.shutdown()
+        // After the server is queued to stop: no new request can reach the runtime. But release()
+        // can still BLOCK — engine shutdown, and the announce lock it takes to unmap the Piper
+        // model may be held by a synthesis already in flight for tens of seconds — so it runs on
+        // its own thread rather than risking an ANR here on the main thread. Daemon: teardown
+        // must never pin the process.
+        runtime?.let { rt ->
+            Thread({ rt.release() }, "control-release").apply { isDaemon = true }.start()
+        }
+        runtime = null
         ServiceNotifications.stopped(this, ServiceNotifications.Kind.CONTROL)
         // Belt and braces: the framework removes an FGS notification with the service, but this
         // one is also re-posted from background threads ([publishRunningLocked]), so cancel it
@@ -559,6 +585,22 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
         const val KEY_DEVICE_NAME = "device_name"
         const val DEFAULT_DEVICE_NAME = "Rusty Speaker"
         const val CONTROL_PAGE_ASSET = "control.html"
+
+        /** TTS engine bind + init; generous because a just-booted device is the common slow case. */
+        const val TTS_INIT_TIMEOUT_MS = 10_000L
+
+        /** Synthesis of up to [ControlAnnounce.MAX_TEXT_CHARS] chars; engines write faster than
+         *  realtime, so this bounds a hung engine, not a long text. */
+        const val TTS_SYNTH_TIMEOUT_MS = 30_000L
+
+        /** How old an announcement file must be before it is pruned. Longer than any plausible
+         *  clip so a file still being streamed is never deleted under the player. */
+        const val ANNOUNCE_PRUNE_AGE_MS = 10 * 60_000L
+
+        /** After a failed engine init, how long further attempts short-circuit to null. Without
+         *  it a device with no working TTS engine would pay [TTS_INIT_TIMEOUT_MS] on EVERY
+         *  voice-list poll (the page polls every 1.5 s during a download). */
+        const val TTS_INIT_COOLDOWN_MS = 60_000L
     }
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -768,6 +810,286 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
     override fun immichList(kind: String): ControlImmichResult = immich.list(kind)
 
     override fun controlPageHtml(): String = pageHtml
+
+    // -- announcements (TTS through the DLNA pipeline) --------------------
+
+    /**
+     * Serializes announcements on their OWN lock, never [commandLock]: TTS synthesis can take
+     * seconds, and a screen/volume command must not queue behind it. Serialization matters for
+     * the shared TTS engine (one utterance listener slot) and keeps two uploads from ever
+     * racing the SetUri → Play chain into the renderer interleaved.
+     */
+    private val announceLock = Any()
+
+    /** Non-null after the first successful lazy init; released by [release]. */
+    @Volatile private var tts: TextToSpeech? = null
+    @Volatile private var released = false
+
+    /** Wall-clock of the last FAILED engine init, for [TTS_INIT_COOLDOWN_MS]; 0 = never failed. */
+    @Volatile private var lastTtsInitFailureMs = 0L
+
+    /**
+     * Serializes engine init/publish/teardown WITHOUT involving [announceLock], so a voice-list
+     * poll looking the engine up can never queue behind a 30 s synthesis. Where both locks are
+     * held the order is announceLock → ttsInitLock ([announceText] → [ttsEngine]); nothing takes
+     * them the other way around.
+     */
+    private val ttsInitLock = Any()
+
+    // -- downloadable Piper voices ---------------------------------------------------------
+
+    private val piperStore = PiperVoiceStore(context)
+    private val piperEngine = PiperEngine()
+
+    /** The curated catalog shipped in assets; a parse failure (a build mistake — the file is
+     *  checked in and tested) degrades to "no downloadable voices", never a crash. */
+    private val piperCatalog: List<PiperVoice> by lazy { PiperVoiceStore.loadCatalog(context) }
+
+    /** Single download slot on its own thread — a 67 MB fetch must not occupy an HTTP pool
+     *  thread (the pool is what answers the page's progress polls). */
+    private val voiceDownloadExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "voice-download").apply { isDaemon = true }
+    }
+    private val voiceDownloads by lazy {
+        VoiceDownloadManager(
+            executor = voiceDownloadExecutor,
+            download = piperStore::download,
+            verify = piperStore::verify,
+            extract = { voice, archive ->
+                piperStore.extract(voice, archive)
+                // A repair re-download just replaced the voice's files on disk; the engine may
+                // still hold the OLD model mapped under the same id, so drop it — the next
+                // Piper announcement reloads from the fresh files. Runs on the download thread,
+                // after the atomic publish, serialized with any announcement in flight.
+                synchronized(announceLock) { piperEngine.release() }
+            },
+        )
+    }
+
+    override fun announceText(text: String): ControlAnnounceResult = synchronized(announceLock) {
+        val renderer = MediaRendererService.instance ?: return ControlAnnounceResult.RendererUnavailable
+        val selector = TtsVoices.parse(selectedVoicePref()) ?: VoiceSelector.SystemDefault
+        val file = newAnnouncementFile("tts", "wav")
+        // The selector prefix routes synthesis. No silent cross-engine fallback in either
+        // direction — the user chose that voice; a failure is the route's 503.
+        if (selector is VoiceSelector.Piper) {
+            if (!piperStore.isInstalled(selector.voiceId)) return ControlAnnounceResult.TtsUnavailable
+            val ok = piperEngine.synthesizeToFile(
+                selector.voiceId, piperStore.voiceDir(selector.voiceId), text, file,
+            )
+            if (!ok) return ControlAnnounceResult.TtsUnavailable
+        } else {
+            val engine = ttsEngine() ?: return ControlAnnounceResult.TtsUnavailable
+            applySelectedVoice(engine)
+            // synthesizeToFile writes WAV regardless of engine.
+            if (!synthesizeBlocking(engine, text, file)) return ControlAnnounceResult.TtsUnavailable
+        }
+        play(renderer, file, "audio/wav", "Announcement")
+    }
+
+    private fun play(renderer: MediaRendererService, file: File, mime: String, title: String): ControlAnnounceResult =
+        // Same process, so a plain file:// URI is playable by the renderer's ExoPlayer with no
+        // FileProvider or loopback HTTP hop. playAnnouncement returns false only when the
+        // service tore down between the instance read above and now.
+        if (renderer.playAnnouncement(Uri.fromFile(file).toString(), mime, title)) ControlAnnounceResult.Ok
+        else ControlAnnounceResult.RendererUnavailable
+
+    /**
+     * A FRESH file per announcement, never overwrite-in-place: ExoPlayer may still be reading the
+     * previous clip when the next one arrives (SetUri replaces it asynchronously on the main
+     * thread), and rewriting a file mid-read would corrupt live playback. Older siblings are
+     * pruned on a lag long enough that nothing still playing can be deleted under the player.
+     */
+    private fun newAnnouncementFile(prefix: String, ext: String): File {
+        val dir = File(context.cacheDir, "announce").apply { mkdirs() }
+        val now = System.currentTimeMillis()
+        dir.listFiles()
+            ?.filter { now - it.lastModified() > ANNOUNCE_PRUNE_AGE_MS }
+            ?.forEach { runCatching { it.delete() } }
+        return File(dir, "$prefix-$now.$ext")
+    }
+
+    // -- voice selection (system TTS) ------------------------------------------------------
+
+    /**
+     * Deliberately NOT under [announceLock]: this is what the page polls every 1.5 s during a
+     * voice download, and an announcement in flight may hold that lock for tens of seconds —
+     * queueing polls behind it would eat the HTTP pool. Every read below is individually
+     * thread-safe (prefs, a disk listing, the download manager's own lock, the kept engine
+     * reference / [ttsInitLock]); the writers keep taking [announceLock], so a poll racing one
+     * of them just serves the listing from a moment earlier.
+     */
+    override fun ttsVoices(): ControlTtsVoices {
+        val selected = selectedVoicePref()
+        val installed = piperStore.installedIds()
+        // Installed catalog voices list as selectable rows ahead of the system voices; a device
+        // without a working system TTS engine still answers (default row + Piper rows) rather
+        // than 500ing the picker.
+        val piperRows = piperStore.installedRows(piperCatalog)
+        val systemRows = ttsEngine()?.let { SystemTtsVoices.list(it) } ?: emptyList()
+        return ControlTtsVoices(
+            selected = selected,
+            voices = listOf(SystemTtsVoices.defaultRow()) + piperRows + systemRows,
+            catalog = piperCatalog.map { ControlCatalogVoice(it, it.id in installed) },
+            download = voiceDownloads.snapshot(),
+        )
+    }
+
+    override fun setTtsVoice(selector: VoiceSelector): ControlTtsVoiceResult = synchronized(announceLock) {
+        when (selector) {
+            VoiceSelector.SystemDefault -> Unit
+            is VoiceSelector.System -> {
+                val engine = ttsEngine() ?: return ControlTtsVoiceResult.TtsUnavailable
+                val known = runCatching { engine.voices }.getOrNull()
+                    ?.any { it.name == selector.voiceName } == true
+                if (!known) return ControlTtsVoiceResult.UnknownVoice
+            }
+            // Selectable once its files are on disk; the catalog knowing the id is not enough.
+            is VoiceSelector.Piper ->
+                if (!piperStore.isInstalled(selector.voiceId)) return ControlTtsVoiceResult.UnknownVoice
+        }
+        prefs.edit().putString(TtsVoices.PREF_KEY, TtsVoices.format(selector)).apply()
+        // Re-listed under the same lock so the Ok body reports exactly what was persisted.
+        ControlTtsVoiceResult.Ok(ttsVoices())
+    }
+
+    override fun downloadTtsVoice(voiceId: String): ControlVoiceDownloadStart {
+        val voice = piperCatalog.firstOrNull { it.id == voiceId }
+            ?: return ControlVoiceDownloadStart.UNKNOWN_VOICE
+        if (piperStore.freeBytes() < PiperCatalog.requiredBytes(voice.sizeBytes)) {
+            return ControlVoiceDownloadStart.NO_SPACE
+        }
+        // A re-download of an installed voice is allowed on purpose: extract() publishes
+        // atomically over the old directory, so it doubles as a repair path.
+        return if (voiceDownloads.start(voice)) ControlVoiceDownloadStart.STARTED
+        else ControlVoiceDownloadStart.BUSY
+    }
+
+    override fun deleteTtsVoice(voiceId: String): ControlVoiceDeleteResult = synchronized(announceLock) {
+        // Refuse to delete the voice the single download slot is mid-flight on: the extractor's
+        // atomic publish would race the recursive delete. Any OTHER voice deletes fine.
+        val download = voiceDownloads.snapshot()
+        if (download.busy && download.voiceId == voiceId) return ControlVoiceDeleteResult.Busy
+        if (!piperStore.isInstalled(voiceId)) return ControlVoiceDeleteResult.NotInstalled
+        // The engine may hold this voice's model mapped; drop it before the files go. The next
+        // Piper announcement reloads whatever is selected then.
+        piperEngine.release()
+        piperStore.delete(voiceId)
+        if (TtsVoices.parse(selectedVoicePref()) == VoiceSelector.Piper(voiceId)) {
+            prefs.edit().putString(TtsVoices.PREF_KEY, TtsVoices.SYSTEM_DEFAULT).apply()
+        }
+        ControlVoiceDeleteResult.Ok(ttsVoices())
+    }
+
+    private fun selectedVoicePref(): String {
+        val raw = prefs.getString(TtsVoices.PREF_KEY, null) ?: return TtsVoices.SYSTEM_DEFAULT
+        // A corrupted or future-format pref must not leak to clients as an unparseable id.
+        return if (TtsVoices.parse(raw) != null) raw else TtsVoices.SYSTEM_DEFAULT
+    }
+
+    /**
+     * Points the kept engine at the persisted selection before each synthesis. An unknown or
+     * uninstalled selection falls back to the engine default rather than failing the
+     * announcement — the voice is a preference, not a precondition. Falling back (and the
+     * SystemDefault case) RESETS `voice`: the engine is kept between announcements, so a stale
+     * selection would otherwise stick after the user switches back to default.
+     */
+    private fun applySelectedVoice(engine: TextToSpeech) {
+        val selector = TtsVoices.parse(selectedVoicePref()) ?: VoiceSelector.SystemDefault
+        val target = (selector as? VoiceSelector.System)?.let { sel ->
+            runCatching { engine.voices }.getOrNull()?.firstOrNull { it.name == sel.voiceName }
+        }
+        runCatching {
+            engine.voice = target ?: engine.defaultVoice ?: return
+        }
+    }
+
+    /**
+     * Lazy, blocking TTS init — pool threads only, same cost class as [updateCheck]. The engine is
+     * kept for the life of the runtime once up: init binds a system service and takes noticeable
+     * time, and announcements tend to come in bursts. A failed init is retried by a later call
+     * rather than latched — the usual cause (engine still booting after device start) is transient
+     * — but only after [TTS_INIT_COOLDOWN_MS], so a device with no working engine answers its
+     * voice-list polls instantly instead of paying the init timeout on each one.
+     */
+    private fun ttsEngine(): TextToSpeech? {
+        tts?.let { return it }
+        if (released) return null
+        synchronized(ttsInitLock) {
+            tts?.let { return it }
+            if (released) return null
+            if (System.currentTimeMillis() - lastTtsInitFailureMs < TTS_INIT_COOLDOWN_MS) return null
+            val ready = CountDownLatch(1)
+            var status = TextToSpeech.ERROR
+            val engine = TextToSpeech(context) { s ->
+                status = s
+                ready.countDown()
+            }
+            val initialised = runCatching { ready.await(TTS_INIT_TIMEOUT_MS, TimeUnit.MILLISECONDS) }
+                .getOrDefault(false) && status == TextToSpeech.SUCCESS
+            if (!initialised) {
+                runCatching { engine.shutdown() }
+                lastTtsInitFailureMs = System.currentTimeMillis()
+                Log.w(TAG, "TTS engine failed to initialise; retrying after cooldown")
+                return null
+            }
+            // release() may have run while we waited on the latch (it could not take
+            // ttsInitLock yet, but `released` is volatile); a kept engine would leak its
+            // service binding past the runtime's death.
+            if (released) {
+                runCatching { engine.shutdown() }
+                return null
+            }
+            tts = engine
+            return engine
+        }
+    }
+
+    /** Blocks until the engine reports the utterance written (or failed/timed out). The listener
+     *  filters by utterance id so a stale callback from an earlier synthesis cannot satisfy it. */
+    private fun synthesizeBlocking(engine: TextToSpeech, text: String, out: File): Boolean {
+        val id = "announce-" + System.nanoTime()
+        val done = CountDownLatch(1)
+        val ok = AtomicBoolean(false)
+        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {}
+            override fun onDone(utteranceId: String?) {
+                if (utteranceId == id) {
+                    ok.set(true)
+                    done.countDown()
+                }
+            }
+            @Deprecated("pre-21 signature; still invoked by some engines")
+            override fun onError(utteranceId: String?) {
+                if (utteranceId == id) done.countDown()
+            }
+
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                if (utteranceId == id) done.countDown()
+            }
+        })
+        if (engine.synthesizeToFile(text, Bundle(), out, id) != TextToSpeech.SUCCESS) return false
+        val finished = runCatching { done.await(TTS_SYNTH_TIMEOUT_MS, TimeUnit.MILLISECONDS) }.getOrDefault(false)
+        return finished && ok.get() && out.length() > 0
+    }
+
+    /** Idempotent; called (off the main thread — engine shutdown and the announce lock can both
+     *  block) by the service's onDestroy after the HTTP server is stopped. */
+    fun release() {
+        released = true   // volatile write FIRST: an init mid-await sees it and discards its engine
+        val engine = synchronized(ttsInitLock) {
+            val e = tts
+            tts = null
+            e
+        }
+        engine?.let { runCatching { it.shutdown() } }
+        // Under the announce lock: a Piper synthesis that beat the server shutdown may still be
+        // inside the engine; unmapping the model out from under it is native code.
+        synchronized(announceLock) { piperEngine.release() }
+        // A download in flight is abandoned mid-pipeline; its .tmp/.part debris is overwritten
+        // by the next attempt. Daemon thread, so it cannot pin the process either way.
+        voiceDownloadExecutor.shutdownNow()
+    }
 
     // -- update check / install ----------------------------------------------------------
 

@@ -559,6 +559,83 @@
     font-size: 0.8rem;
   }
 
+  /* Announce: a text field styled like a slab. */
+  .announce-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  .announce-row input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid var(--card-border);
+    background: var(--slab-bg);
+    color: var(--text);
+    font: inherit;
+  }
+
+  .announce-row input[type="text"]::placeholder {
+    color: var(--muted);
+  }
+
+  /* Voice picker: a native <select> rather than chips — an engine can carry dozens of voices,
+     and the platform picker is the one control that stays usable at that count on TV and phone
+     alike (D-pad opens it, OK commits). */
+  #voice-select {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid var(--card-border);
+    background: var(--slab-bg);
+    color: var(--text);
+    font: inherit;
+  }
+
+  /* Downloadable (Piper) voices: one compact row per catalog entry under the picker —
+     name + size/license meta on the left, a single action button on the right. */
+  .voice-catalog {
+    margin-top: 12px;
+    border-top: 1px solid var(--card-border);
+  }
+
+  .voice-cat-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--card-border);
+  }
+
+  .voice-cat-row .meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .voice-cat-row .meta .name {
+    display: block;
+    font-size: 0.92rem;
+  }
+
+  .voice-cat-row .meta .sub {
+    display: block;
+    color: var(--muted);
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+  }
+
+  .voice-cat-row button {
+    flex: none;
+    min-height: 40px;
+    padding: 0 14px;
+    background: var(--slab-bg);
+    color: var(--text);
+    border: 1px solid var(--card-border);
+  }
+
   /* Release notes arrive as plain text with newline-separated bullets; keep them a <pre>
      so the line structure survives, but wrap like body text on narrow screens. */
   .update-notes {
@@ -630,6 +707,20 @@
     <p id="volume-error" class="error" hidden></p>
   </section>
 
+  <section id="announce-card" class="card" aria-labelledby="announce-heading">
+    <p class="lab" id="announce-heading"><span class="ico" data-icon="announce"></span>Announce</p>
+
+    <div class="announce-row">
+      <input id="announce-text" type="text" maxlength="4000" autocomplete="off"
+             placeholder="Type a message to speak&hellip;" aria-label="Message to speak on the device">
+      <button id="announce-send" type="button">Speak</button>
+    </div>
+
+    <p id="announce-status" class="status" role="status" aria-live="polite" hidden></p>
+    <p id="announce-note" class="notice" hidden></p>
+    <p id="announce-error" class="error" hidden></p>
+  </section>
+
   <section class="card" aria-labelledby="service-heading">
     <p class="lab" id="service-heading">Service</p>
 
@@ -641,6 +732,21 @@
       <div class="body">
         <div id="theme-chips" class="chips" role="group" aria-label="Lock screen theme"></div>
         <p id="lockscreen-error" class="error" hidden></p>
+      </div>
+    </details>
+
+    <details id="voice-card" class="service">
+      <summary>
+        Announcement voice
+        <span class="hint" id="voice-summary">System default</span>
+      </summary>
+      <div class="body">
+        <select id="voice-select" aria-label="Announcement voice" hidden></select>
+        <p id="voice-status" class="status" hidden>Loading voices&hellip;</p>
+        <div id="voice-catalog" class="voice-catalog" hidden></div>
+        <p class="notice">More system voices install through Android's own text-to-speech
+          settings on the device; the voices above download straight onto it.</p>
+        <p id="voice-error" class="error" hidden></p>
       </div>
     </details>
 
@@ -710,7 +816,8 @@
     dlna: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 21h7"/><path d="M12 17v4"/></svg>',
     lockscreen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.3A8.5 8.5 0 1 1 9.7 3.5a6.7 6.7 0 0 0 10.8 10.8z"/></svg>',
     screen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M2 12h2.4M19.6 12H22M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M19.1 4.9l-1.7 1.7M6.6 17.4l-1.7 1.7"/></svg>',
-    volume: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5v5h3.5L13 19V5L7.5 9.5H4z"/><path d="M16.5 9.2a4 4 0 0 1 0 5.6"/><path d="M19 6.8a7.5 7.5 0 0 1 0 10.4"/></svg>'
+    volume: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5v5h3.5L13 19V5L7.5 9.5H4z"/><path d="M16.5 9.2a4 4 0 0 1 0 5.6"/><path d="M19 6.8a7.5 7.5 0 0 1 0 10.4"/></svg>',
+    announce: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10v4h3l8 4V6l-8 4H3z"/><path d="M6 14v5"/><path d="M18 9.5l3-1M18 12h3.5M18 14.5l3 1"/></svg>'
   };
 
   /**
@@ -772,6 +879,9 @@
       "screen-card", "screen-availability-note", "screen-status-label", "screen-toggle",
       "brightness-slab", "brightness-range", "brightness-value", "screen-mode-hint", "screen-error",
       "volume-card", "volume-slab", "volume-range", "volume-value", "volume-error",
+      "announce-text", "announce-send",
+      "announce-status", "announce-note", "announce-error",
+      "voice-card", "voice-summary", "voice-select", "voice-status", "voice-error", "voice-catalog",
       "albums-list", "albums-error", "people-list", "people-error", "tags-list", "tags-error",
       "filters-save", "filters-status", "filters-summary",
       "update-status", "update-notes", "update-error", "update-button", "update-summary"
@@ -1534,6 +1644,315 @@
       });
   }
 
+  // ---- announcement voice ----
+
+  /**
+   * Loaded lazily, on the first open of the Voice row: enumerating voices makes the device spin
+   * up its TTS engine (seconds on a freshly booted box), which the page must not pay on every
+   * state poll. After the first load the list is kept; a re-open re-reads only if the first
+   * attempt failed.
+   */
+  var voicesLoaded = false;
+  var voicesLoading = false;
+
+  function voiceOptionLabel(v) {
+    var label = v.label;
+    if (v.quality === "high" || v.quality === "very_high") label += " ★";
+    if (!v.installed) label += " (needs download)";
+    else if (v.requiresNetwork) label += " (online)";
+    return label;
+  }
+
+  function renderVoices(data) {
+    var select = el["voice-select"];
+    select.innerHTML = "";
+    var byLanguage = {};
+    data.voices.forEach(function (v) {
+      var key = v.language || "";
+      (byLanguage[key] = byLanguage[key] || []).push(v);
+    });
+    // The languageless bucket (the "System default" row) renders first, ungrouped.
+    (byLanguage[""] || []).forEach(function (v) {
+      var opt = document.createElement("option");
+      opt.value = v.id;
+      opt.textContent = voiceOptionLabel(v);
+      select.appendChild(opt);
+    });
+    Object.keys(byLanguage).filter(Boolean).sort().forEach(function (lang) {
+      var group = document.createElement("optgroup");
+      group.label = lang;
+      byLanguage[lang].forEach(function (v) {
+        var opt = document.createElement("option");
+        opt.value = v.id;
+        opt.textContent = voiceOptionLabel(v);
+        group.appendChild(opt);
+      });
+      select.appendChild(group);
+    });
+    select.value = data.selected;
+    // A selection the list doesn't carry (e.g. the engine changed) still must not render as the
+    // first arbitrary option — fall back to the default row, which is always present.
+    if (select.value !== data.selected) select.value = "system:default";
+    select.hidden = false;
+    paintVoiceSummary(data);
+    renderVoiceCatalog(data);
+  }
+
+  function paintVoiceSummary(data) {
+    var match = null;
+    data.voices.forEach(function (v) { if (v.id === data.selected) match = v; });
+    el["voice-summary"].textContent = match ? match.label : "System default";
+  }
+
+  function loadVoices() {
+    if (voicesLoaded || voicesLoading) return;
+    voicesLoading = true;
+    setNotice(el["voice-error"], null);
+    el["voice-status"].hidden = false;
+    getJSON("/api/tts/voices")
+      .then(function (data) {
+        voicesLoaded = true;
+        renderVoices(data);
+      })
+      .catch(function (err) {
+        setNotice(el["voice-error"], err.message);
+      })
+      .then(function () {
+        voicesLoading = false;
+        el["voice-status"].hidden = true;
+      });
+  }
+
+  function onVoiceChange() {
+    var id = el["voice-select"].value;
+    setNotice(el["voice-error"], null);
+    el["voice-select"].disabled = true;
+    writeJSON("/api/tts/voice", "POST", { id: id })
+      .then(function (data) {
+        // The Ok body is the fresh list — repaint from it, the prefs-are-truth pattern the
+        // lockscreen picker uses.
+        renderVoices(data);
+      })
+      .catch(function (err) {
+        setNotice(el["voice-error"], err.message);
+      })
+      .then(function () {
+        el["voice-select"].disabled = false;
+      });
+  }
+
+  // ---- downloadable (Piper) voices ----
+
+  /** Poll handle while a download runs; the page re-reads the voices payload until the
+   *  phase leaves the busy set — the update card's accepted-then-observe pattern. */
+  var voicePollTimer = null;
+  /** Consecutive failed polls; past the cap the poll gives up with a notice instead of
+   *  retrying forever against a device that went away. */
+  var voicePollFailures = 0;
+  var VOICE_POLL_MAX_FAILURES = 5;
+  /** Last download-error text already shown, so the sticky ERROR snapshot (it stays in every
+   *  payload until the next download) doesn't re-raise the same notice on every repaint. */
+  var voiceErrorShown = null;
+
+  function voiceMegabytes(bytes) {
+    return Math.round(bytes / (1024 * 1024)) + " MB";
+  }
+
+  function downloadBusy(download) {
+    return download && (download.phase === "downloading" ||
+      download.phase === "verifying" || download.phase === "extracting");
+  }
+
+  function catalogButtonLabel(entry, download) {
+    if (download && download.voiceId && ("piper:" + download.voiceId) === entry.id) {
+      if (download.phase === "downloading") {
+        return typeof download.progress === "number" ? download.progress + "%" : "Downloading…";
+      }
+      if (download.phase === "verifying") return "Verifying…";
+      if (download.phase === "extracting") return "Unpacking…";
+    }
+    return entry.installed ? "Delete" : "Download";
+  }
+
+  function renderVoiceCatalog(data) {
+    var box = el["voice-catalog"];
+    var entries = data.catalog || [];
+    box.hidden = entries.length === 0;
+    box.innerHTML = "";
+    if (entries.length === 0) return;
+    var download = data.download || null;
+    var busy = downloadBusy(download);
+
+    entries.forEach(function (entry) {
+      var row = document.createElement("div");
+      row.className = "voice-cat-row";
+
+      var meta = document.createElement("span");
+      meta.className = "meta";
+      var name = document.createElement("span");
+      name.className = "name";
+      name.textContent = entry.label + (entry.installed ? " ✓" : "");
+      // License and source shown BEFORE the download decision — each Piper voice carries its
+      // own dataset terms, and this line is where the user sees them.
+      var sub = document.createElement("span");
+      sub.className = "sub";
+      sub.textContent = voiceMegabytes(entry.sizeBytes) + " · " + entry.license +
+        " · " + entry.attribution;
+      meta.appendChild(name);
+      meta.appendChild(sub);
+
+      var button = document.createElement("button");
+      button.type = "button";
+      button.textContent = catalogButtonLabel(entry, download);
+      // One download slot: while anything is in flight every action is parked, not queued.
+      button.disabled = busy;
+      button.addEventListener("click", function () {
+        if (entry.installed) onVoiceDelete(entry);
+        else onVoiceDownload(entry);
+      });
+
+      row.appendChild(meta);
+      row.appendChild(button);
+      box.appendChild(row);
+    });
+
+    if (download && download.phase === "error") {
+      var message = "Voice download failed: " + (download.error || "unknown error");
+      if (message !== voiceErrorShown) {
+        voiceErrorShown = message;
+        setNotice(el["voice-error"], message);
+      }
+    }
+    if (busy) scheduleVoicePoll();
+  }
+
+  function scheduleVoicePoll() {
+    if (voicePollTimer) return;
+    voicePollTimer = setTimeout(function () {
+      voicePollTimer = null;
+      getJSON("/api/tts/voices")
+        .then(function (data) {
+          voicePollFailures = 0;
+          // While the download is busy, repaint only the catalog rows and the summary — a
+          // full renderVoices would rebuild the <select> under the user every 1.5 s. The
+          // final (non-busy) poll does the full render, picking up the new voice.
+          if (downloadBusy(data.download)) {
+            paintVoiceSummary(data);
+            renderVoiceCatalog(data);
+          } else {
+            renderVoices(data);
+          }
+        })
+        .catch(function () {
+          // Transient poll failure (device busy writing 67 MB): try again rather than
+          // abandoning the progress display — but not forever against a dead device.
+          voicePollFailures++;
+          if (voicePollFailures < VOICE_POLL_MAX_FAILURES) {
+            scheduleVoicePoll();
+          } else {
+            voicePollFailures = 0;
+            setNotice(el["voice-error"],
+              "Lost contact with the device — reopen this section to refresh.");
+          }
+        });
+    }, 1500);
+  }
+
+  function onVoiceDownload(entry) {
+    setNotice(el["voice-error"], null);
+    voiceErrorShown = null;
+    voicePollFailures = 0;
+    writeJSON("/api/tts/voices/download", "POST", { id: entry.id })
+      .then(function () {
+        scheduleVoicePoll();
+      })
+      .catch(function (err) {
+        setNotice(el["voice-error"], err.message);
+      });
+  }
+
+  function onVoiceDelete(entry) {
+    setNotice(el["voice-error"], null);
+    writeJSON("/api/tts/voices/delete", "POST", { id: entry.id })
+      .then(function (data) {
+        // The Ok body is the fresh voices payload (selection already fallen back if it
+        // named the deleted voice).
+        renderVoices(data);
+      })
+      .catch(function (err) {
+        setNotice(el["voice-error"], err.message);
+      });
+  }
+
+  function setupVoicePicker() {
+    el["voice-card"].addEventListener("toggle", function () {
+      if (el["voice-card"].open) loadVoices();
+    });
+    el["voice-select"].addEventListener("change", onVoiceChange);
+  }
+
+  // ---- announcements ----
+
+  /**
+   * Both announce routes answer 202 the moment the clip is handed to the DLNA pipeline; actual
+   * playback (and any decode failure) happens asynchronously on the device, so the page shows a
+   * transient "playing" status rather than pretending to know the outcome — the same
+   * accepted-not-confirmed posture as the panel switch.
+   */
+  var ANNOUNCE_STATUS_CLEAR_MS = 4000;
+
+  var announceStatusTimer = null;
+
+  function announceStatus(message, sticky) {
+    if (announceStatusTimer) {
+      clearTimeout(announceStatusTimer);
+      announceStatusTimer = null;
+    }
+    if (!message) {
+      el["announce-status"].hidden = true;
+      el["announce-status"].textContent = "";
+      return;
+    }
+    el["announce-status"].textContent = message;
+    el["announce-status"].hidden = false;
+    if (!sticky) {
+      announceStatusTimer = setTimeout(function () { announceStatus(null); }, ANNOUNCE_STATUS_CLEAR_MS);
+    }
+  }
+
+  function onAnnounceSend() {
+    // The Enter-key path doesn't go through the button, so a held-down Enter (key auto-repeat)
+    // would double-send without this mirror of the button's disabled state.
+    if (el["announce-send"].disabled) return;
+    var text = el["announce-text"].value.trim();
+    if (!text) {
+      el["announce-text"].focus();
+      return;
+    }
+    setNotice(el["announce-error"], null);
+    announceStatus("Sending…", true);
+    el["announce-send"].disabled = true;
+    writeJSON("/api/announce/text", "POST", { text: text })
+      .then(function () {
+        el["announce-text"].value = "";
+        announceStatus("Speaking on the device…");
+      })
+      .catch(function (err) {
+        announceStatus(null);
+        setNotice(el["announce-error"], err.message);
+      })
+      .then(function () {
+        el["announce-send"].disabled = false;
+      });
+  }
+
+  function setupAnnounce() {
+    el["announce-send"].addEventListener("click", onAnnounceSend);
+    el["announce-text"].addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") onAnnounceSend();
+    });
+  }
+
   // ---- wiring ----
 
   function init() {
@@ -1550,6 +1969,8 @@
     el["volume-range"].addEventListener("input", paintVolume);
     el["filters-save"].addEventListener("click", onSaveFilters);
     el["update-button"].addEventListener("click", onUpdateClick);
+    setupAnnounce();
+    setupVoicePicker();
     trackDragging(el["brightness-range"]);
     trackDragging(el["volume-range"]);
 

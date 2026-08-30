@@ -1,0 +1,103 @@
+{
+  "voices": [
+    {
+      "id": "en_US-amy-medium",
+      "label": "Amy — English (US), female",
+      "language": "en-US",
+      "quality": "normal",
+      "sizeBytes": 67223746,
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-medium.tar.bz2",
+      "sha256": "9a5d1fc497f85e8022b785bff5f8105203b1e33099ee6265203efc70b0cb0264",
+      "license": "See dataset terms",
+      "attribution": "Piper voice 'amy' (rhasspy/piper), dataset: Mycroft mimic3-voices — https://github.com/MycroftAI/mimic3-voices"
+    },
+    {
+      "id": "en_US-joe-medium",
+      "label": "Joe — English (US), male",
+      "language": "en-US",
+      "quality": "normal",
+      "sizeBytes": 67169394,
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-joe-medium.tar.bz2",
+      "sha256": "261b903a1fb2ce621e2b5b14233cd41223c3b9f9590f896c11daee4df22d9bd3",
+      "license": "CC0",
+      "attribution": "Piper voice 'joe' (rhasspy/piper), dataset: OHF voice-datasets — https://github.com/OHF-Voice/voice-datasets"
+    },
+    {
+      "id": "en_GB-alan-medium",
+      "label": "Alan — English (UK), male",
+      "language": "en-GB",
+      "quality": "normal",
+      "sizeBytes": 67220121,
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-alan-medium.tar.bz2",
+      "sha256": "a48d4017da0f77668b27bed63fe6e04dd64c6397e1fadad4f460efb0ef7c9012",
+      "license": "See dataset terms",
+      "attribution": "Piper voice 'alan' (rhasspy/piper), dataset: Mycroft mimic3 'apope' — https://github.com/MycroftAI/mimic3-voices"
+    },
+    {
+      "id": "es_ES-davefx-medium",
+      "label": "DaveFX — Spanish (Spain), male",
+      "language": "es-ES",
+      "quality": "normal",
+      "sizeBytes": 67184952,
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-davefx-medium.tar.bz2",
+      "sha256": "a3f6beb54a9cb893279f72978a22f807a4d9fc9c7848157b524d5cc7b7f58b22",
+      "license": "CC0",
+      "attribution": "Piper voice 'davefx' (rhasspy/piper), dataset: Nabu Casa voice-datasets — https://github.com/NabuCasa/voice-datasets"
+    },
+    {
+      "id": "es_MX-ald-medium",
+      "label": "Ald — Spanish (Mexico), male",
+      "language": "es-MX",
+      "quality": "normal",
+      "sizeBytes": 67196497,
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_MX-ald-medium.tar.bz2",
+      "sha256": "c60cf7bc853eb01a875fba0756523fecf9d9f46c763b19785d223fc981fb4fb6",
+      "license": "Unlicense",
+      "attribution": "Piper voice 'ald' (rhasspy/piper), dataset: Ald Mexican Spanish speech dataset — https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset"
+    },
+    {
+      "id": "fr_FR-siwis-medium",
+      "label": "Siwis — French, female",
+      "language": "fr-FR",
+      "quality": "normal",
+      "sizeBytes": 67207459,
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-siwis-medium.tar.bz2",
+      "sha256": "375909aa30842b3a4efa10b1beb1d761af792960ae6873b4d53889f96c66195b",
+      "license": "CC BY 4.0",
+      "attribution": "Piper voice 'siwis' (rhasspy/piper), dataset: SIWIS French Speech Synthesis Database — https://datashare.is.ed.ac.uk/handle/10283/2353"
+    },
+    {
+      "id": "de_DE-thorsten-medium",
+      "label": "Thorsten — German, male",
+      "language": "de-DE",
+      "quality": "normal",
+      "sizeBytes": 67214254,
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-thorsten-medium.tar.bz2",
+      "sha256": "50487d9c95fdf2191f31d2588569381063ba1591dcd4c7d4bdd30f12b2191714",
+      "license": "CC0",
+      "attribution": "Piper voice 'thorsten' (rhasspy/piper), dataset: Thorsten-Voice — https://github.com/thorstenMueller/Thorsten-Voice"
+    },
+    {
+      "id": "it_IT-paola-medium",
+      "label": "Paola — Italian, female",
+      "language": "it-IT",
+      "quality": "normal",
+      "sizeBytes": 67221173,
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-it_IT-paola-medium.tar.bz2",
+      "sha256": "7541f75778afa164e44e34baaef63befad7698595df26a95ca944b63ef1a16b4",
+      "license": "See dataset terms",
+      "attribution": "Piper voice 'paola' (rhasspy/piper), dataset: Voice-Dataset-Italian — https://huggingface.co/datasets/paolapersico1/Voice-Dataset-Italian"
+    },
+    {
+      "id": "it_IT-riccardo-x_low",
+      "label": "Riccardo — Italian, male (small)",
+      "language": "it-IT",
+      "quality": "low",
+      "sizeBytes": 26496614,
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-it_IT-riccardo-x_low.tar.bz2",
+      "sha256": "8ad0791558ae2b3e96054fc5756ae3ae2f6457fb1765bc01f43bbab85e0a7021",
+      "license": "See dataset terms",
+      "attribution": "Piper voice 'riccardo' (rhasspy/piper), dataset: M-AILABS Speech Dataset — https://www.caito.de/2019/01/03/the-m-ailabs-speech-dataset/"
+    }
+  ]
+}

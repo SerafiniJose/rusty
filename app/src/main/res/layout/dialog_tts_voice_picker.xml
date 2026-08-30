@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single-choice picker for the announcement voice. Height is set in code from the window
+     bounds (~80%) so the row list scrolls inside the card, like the Immich filter picker. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_popup_card"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:fontFamily="@font/hanken_semibold"
+            android:text="Announcement voice"
+            android:textColor="@color/ink"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/btnVoiceClose"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="@drawable/bg_tv_focus"
+            android:gravity="center"
+            android:text="✕"
+            android:textColor="@color/muted_dim"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="10dp"
+        android:layout_weight="1"
+        android:scrollbars="vertical">
+
+        <LinearLayout
+            android:id="@+id/llVoiceRows"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:fontFamily="@font/hanken_regular"
+        android:text="More voices can be installed in Android\'s text-to-speech settings."
+        android:textColor="@color/muted_dim"
+        android:textSize="12sp" />
+</LinearLayout>

@@ -46,6 +46,14 @@ private class FakeControlHttpRuntime : ControlRuntime {
     override fun setFilters(f: ImmichFilters) {}
     override fun immichList(kind: String): ControlImmichResult = ControlImmichResult.Ok(emptyList())
     override fun controlPageHtml(): String = "<html></html>"
+    override fun announceText(text: String): ControlAnnounceResult = ControlAnnounceResult.Ok
+    override fun ttsVoices(): ControlTtsVoices = ControlTtsVoices(TtsVoices.SYSTEM_DEFAULT, emptyList())
+    override fun setTtsVoice(selector: VoiceSelector): ControlTtsVoiceResult =
+        ControlTtsVoiceResult.Ok(ttsVoices())
+    override fun downloadTtsVoice(voiceId: String): ControlVoiceDownloadStart =
+        ControlVoiceDownloadStart.UNKNOWN_VOICE
+    override fun deleteTtsVoice(voiceId: String): ControlVoiceDeleteResult =
+        ControlVoiceDeleteResult.NotInstalled
     override fun updateCheck(): ControlUpdateCheck = ControlUpdateCheck(
         current = "2.3.0", status = "up_to_date", latest = null,
         install = InstallSnapshot(InstallPhase.IDLE, null, null),

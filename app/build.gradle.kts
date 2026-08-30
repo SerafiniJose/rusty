@@ -20,6 +20,13 @@ android {
         versionName = "2.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // The Spotify core ships .so files for exactly these two ABIs (jniLibs/), so builds were
+        // implicitly two-ABI already. The sherpa-onnx AAR under libs/ would silently widen the
+        // APK to x86/x86_64 — sherpa present, Spotify core absent, +50 MB — without this filter.
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
     }
 
     // Stable release signing key. Without a persistent key, every CI build would be
@@ -91,6 +98,13 @@ dependencies {
     implementation(libs.androidx.media3.ui)
     implementation(libs.protobuf.javalite)
     implementation(libs.androidx.security.crypto)
+    // Embedded neural TTS (Piper voices) — sherpa-onnx's prebuilt Android AAR, checked in under
+    // libs/ like the Spotify core's .so files (Apache-2.0; x86/x86_64 jni stripped, the app never
+    // ships those ABIs). Pinned; upgrade by replacing the file.
+    implementation(files("libs/sherpa-onnx-1.13.6.aar"))
+    // tar.bz2 extraction for the downloaded voice bundles (pure Java, no transitive deps at this
+    // version — 1.25+ pulls commons-io/commons-codec).
+    implementation("org.apache.commons:commons-compress:1.24.0")
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
     testImplementation(libs.kotlinx.coroutines.test)

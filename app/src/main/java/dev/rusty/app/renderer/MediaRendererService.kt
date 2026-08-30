@@ -365,6 +365,38 @@ class MediaRendererService : Service(), RendererRuntime {
         }.onFailure { Log.w(TAG, "rename not applied; renderer is shutting down", it) }
     }
 
+    // -- Local announcements (control API) --------------------------------------------------
+
+    /**
+     * Plays a locally-stored announcement (a voice message uploaded to the control page, or a
+     * TTS clip synthesized on-device) through the SAME SetUri → Play chain a network control
+     * point sends, so it inherits the whole announcement choreography for free: Spotify
+     * pause/duck arbitration, fade timing, GENA eventing and the DLNA screen's now-playing UI.
+     * Reached via [instance], mirroring the rename path: a stopped renderer must answer "not
+     * running" rather than be started just to make noise.
+     *
+     * Safe from an HTTP pool thread — [RendererStore.dispatch] serializes from any thread, which
+     * is exactly how the SOAP connection threads already drive it. Returns false when the service
+     * is torn down (racing [onDestroy], the same window [applyRename] guards against).
+     */
+    fun playAnnouncement(uri: String, mime: String?, title: String): Boolean {
+        if (!initialised) return false
+        store.dispatch(RendererEvent.SoapSetUri(uri, announcementDidl(title), mime))
+        dispatchViaTranslator(RendererCommand.Play)
+        return true
+    }
+
+    /** Minimal DIDL-Lite for a local announcement, so the DLNA player screen and GENA
+     *  subscribers see a real title instead of a bare file URI. */
+    private fun announcementDidl(title: String): String =
+        "<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" " +
+            "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" " +
+            "xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\">" +
+            "<item id=\"announcement\" parentID=\"0\" restricted=\"1\">" +
+            "<dc:title>${UpnpXml.escape(title)}</dc:title>" +
+            "<upnp:class>object.item.audioItem.musicTrack</upnp:class>" +
+            "</item></DIDL-Lite>"
+
     // -- Effect handling (RendererStore.EffectHandler) --------------------------------------
 
     private fun handleEffect(effect: RendererEffect) {

@@ -54,6 +54,36 @@ interface ControlRuntime {
 
     fun controlPageHtml(): String
 
+    /**
+     * Speaks [text] on the device (on-device TTS) through the DLNA playback pipeline, so the
+     * announcement inherits the same Spotify duck/pause-and-resume choreography a Home Assistant
+     * announcement gets. Blocks on synthesis — pool threads only, like [immichList].
+     */
+    fun announceText(text: String): ControlAnnounceResult
+
+    /**
+     * Lists the voices announcements may speak with, plus the persisted selection. May block on
+     * the lazy TTS engine init (the same engine [announceText] uses) — pool threads only.
+     */
+    fun ttsVoices(): ControlTtsVoices
+
+    /**
+     * Persists [selector] as the announcement voice. Prefs are the source of truth (the
+     * lockscreen-theme precedent), so an Ok already reflects the new selection.
+     */
+    fun setTtsVoice(selector: VoiceSelector): ControlTtsVoiceResult
+
+    /**
+     * Starts downloading a catalog Piper voice ([voiceId] is the bare catalog id, prefix already
+     * stripped by the router). The download proceeds asynchronously; progress is observed through
+     * [ttsVoices]'s embedded snapshot, the update card's pattern.
+     */
+    fun downloadTtsVoice(voiceId: String): ControlVoiceDownloadStart
+
+    /** Deletes an installed Piper voice from disk; selection falls back to the system default
+     *  when it named the deleted voice. */
+    fun deleteTtsVoice(voiceId: String): ControlVoiceDeleteResult
+
     /** May block on a (TTL-cached) GitHub fetch — pool threads only, like [immichList]. */
     fun updateCheck(): ControlUpdateCheck
 
@@ -224,6 +254,21 @@ object ControlProtocol {
                 val kind = path.removePrefix("/api/immich/")
                 if (kind in IMMICH_KINDS) handleImmichList(kind, rt) else errorResponse(404, "Not Found", "not found")
             }
+
+            req.method == "POST" && path == "/api/announce/text" ->
+                writeGuarded(req) { handleAnnounceText(req, rt) }
+
+            req.method == "GET" && path == "/api/tts/voices" ->
+                jsonOk(rt.ttsVoices().toJson())
+
+            req.method == "POST" && path == "/api/tts/voice" ->
+                writeGuarded(req) { handleSetTtsVoice(req, rt) }
+
+            req.method == "POST" && path == "/api/tts/voices/download" ->
+                writeGuarded(req) { handleVoiceDownload(req, rt) }
+
+            req.method == "POST" && path == "/api/tts/voices/delete" ->
+                writeGuarded(req) { handleVoiceDelete(req, rt) }
 
             req.method == "GET" && path == "/api/update" ->
                 jsonOk(rt.updateCheck().toJson())
@@ -405,6 +450,106 @@ object ControlProtocol {
             ControlImmichResult.Unauthorized -> errorResponse(502, "Bad Gateway", "immich unauthorized")
             ControlImmichResult.Unreachable -> errorResponse(502, "Bad Gateway", "immich unreachable")
         }
+
+    // -------------------------------------------------------------------
+    // /api/announce/text
+    // -------------------------------------------------------------------
+
+    private fun handleAnnounceText(req: HttpRequest, rt: ControlRuntime): HttpResponse {
+        val obj = parseJsonObject(req.body) ?: return errorResponse(400, "Bad Request", "malformed JSON")
+
+        val raw = obj.opt("text")
+        if (raw !is String) return errorResponse(400, "Bad Request", "'text' must be a string")
+        val text = raw.trim()
+        if (text.isEmpty()) return errorResponse(400, "Bad Request", "'text' must not be blank")
+        if (text.length > ControlAnnounce.MAX_TEXT_CHARS) {
+            return errorResponse(400, "Bad Request", "'text' must be at most ${ControlAnnounce.MAX_TEXT_CHARS} characters")
+        }
+
+        return announceResponse(rt.announceText(text))
+    }
+
+    /** 202, not 200: playback is handed to the DLNA pipeline and proceeds (or fails, e.g. an
+     *  undecodable clip) asynchronously — exactly the "accepted, confirm by observing state"
+     *  contract the panel and foreground routes already teach the page. */
+    private fun announceResponse(result: ControlAnnounceResult): HttpResponse = when (result) {
+        ControlAnnounceResult.Ok ->
+            HttpResponse(202, "Accepted", listOf("Content-Type" to JSON_CONTENT_TYPE), """{"status":"playing"}""")
+        ControlAnnounceResult.RendererUnavailable ->
+            errorResponse(409, "Conflict", "the DLNA player is not running on the device")
+        ControlAnnounceResult.TtsUnavailable ->
+            errorResponse(503, "Service Unavailable", "text-to-speech is not available on the device")
+    }
+
+    // -------------------------------------------------------------------
+    // /api/tts/voice
+    // -------------------------------------------------------------------
+
+    private fun handleSetTtsVoice(req: HttpRequest, rt: ControlRuntime): HttpResponse {
+        val obj = parseJsonObject(req.body) ?: return errorResponse(400, "Bad Request", "malformed JSON")
+
+        val raw = obj.opt("id")
+        if (raw !is String) return errorResponse(400, "Bad Request", "'id' must be a string")
+        // Shape is validated here (a malformed selector is a client mistake); MEMBERSHIP —
+        // does this device actually have that voice — is the runtime's call.
+        val selector = TtsVoices.parse(raw)
+            ?: return errorResponse(400, "Bad Request", "malformed voice id '$raw'")
+
+        return when (val result = rt.setTtsVoice(selector)) {
+            is ControlTtsVoiceResult.Ok -> jsonOk(result.voices.toJson())
+            ControlTtsVoiceResult.UnknownVoice ->
+                errorResponse(400, "Bad Request", "unknown voice '$raw'")
+            ControlTtsVoiceResult.TtsUnavailable ->
+                errorResponse(503, "Service Unavailable", "text-to-speech is not available on the device")
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // /api/tts/voices/{download,delete}
+    // -------------------------------------------------------------------
+
+    /** Both routes take `{"id":"piper:..."}` — only a Piper selector names something that can be
+     *  downloaded or deleted, so any other well-formed selector is a 400 here, not a 404. */
+    private fun parsePiperId(req: HttpRequest): Pair<String?, HttpResponse?> {
+        val obj = parseJsonObject(req.body)
+            ?: return null to errorResponse(400, "Bad Request", "malformed JSON")
+        val raw = obj.opt("id")
+        if (raw !is String) return null to errorResponse(400, "Bad Request", "'id' must be a string")
+        val selector = TtsVoices.parse(raw)
+            ?: return null to errorResponse(400, "Bad Request", "malformed voice id '$raw'")
+        if (selector !is VoiceSelector.Piper) {
+            return null to errorResponse(400, "Bad Request", "'$raw' is not a downloadable voice")
+        }
+        return selector.voiceId to null
+    }
+
+    private fun handleVoiceDownload(req: HttpRequest, rt: ControlRuntime): HttpResponse {
+        val (voiceId, error) = parsePiperId(req)
+        if (voiceId == null) return error!!
+        return when (rt.downloadTtsVoice(voiceId)) {
+            // 202 like the announce routes: accepted, observe GET /api/tts/voices for progress.
+            ControlVoiceDownloadStart.STARTED ->
+                HttpResponse(202, "Accepted", listOf("Content-Type" to JSON_CONTENT_TYPE), """{"status":"downloading"}""")
+            ControlVoiceDownloadStart.BUSY ->
+                errorResponse(409, "Conflict", "another voice is already downloading")
+            ControlVoiceDownloadStart.UNKNOWN_VOICE ->
+                errorResponse(404, "Not Found", "no such voice in the catalog")
+            ControlVoiceDownloadStart.NO_SPACE ->
+                errorResponse(507, "Insufficient Storage", "not enough free space on the device")
+        }
+    }
+
+    private fun handleVoiceDelete(req: HttpRequest, rt: ControlRuntime): HttpResponse {
+        val (voiceId, error) = parsePiperId(req)
+        if (voiceId == null) return error!!
+        return when (val result = rt.deleteTtsVoice(voiceId)) {
+            is ControlVoiceDeleteResult.Ok -> jsonOk(result.voices.toJson())
+            ControlVoiceDeleteResult.NotInstalled ->
+                errorResponse(404, "Not Found", "that voice is not installed")
+            ControlVoiceDeleteResult.Busy ->
+                errorResponse(409, "Conflict", "that voice is being downloaded right now")
+        }
+    }
 
     // -------------------------------------------------------------------
     // /api/update/install

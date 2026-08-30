@@ -84,6 +84,37 @@ private class FakeControlRuntime : ControlRuntime {
     var html = "<html><body>control page</body></html>"
     override fun controlPageHtml(): String = html
 
+    var announceTextResult: ControlAnnounceResult = ControlAnnounceResult.Ok
+    val announceTextCalls = mutableListOf<String>()
+    override fun announceText(text: String): ControlAnnounceResult {
+        announceTextCalls.add(text)
+        return announceTextResult
+    }
+
+    var ttsVoicesValue = ControlTtsVoices(TtsVoices.SYSTEM_DEFAULT, emptyList())
+    override fun ttsVoices(): ControlTtsVoices = ttsVoicesValue
+
+    var setTtsVoiceResult: ControlTtsVoiceResult? = null
+    val setTtsVoiceCalls = mutableListOf<VoiceSelector>()
+    override fun setTtsVoice(selector: VoiceSelector): ControlTtsVoiceResult {
+        setTtsVoiceCalls.add(selector)
+        return setTtsVoiceResult ?: ControlTtsVoiceResult.Ok(ttsVoicesValue)
+    }
+
+    var downloadVoiceResult = ControlVoiceDownloadStart.STARTED
+    val downloadVoiceCalls = mutableListOf<String>()
+    override fun downloadTtsVoice(voiceId: String): ControlVoiceDownloadStart {
+        downloadVoiceCalls.add(voiceId)
+        return downloadVoiceResult
+    }
+
+    var deleteVoiceResult: ControlVoiceDeleteResult? = null
+    val deleteVoiceCalls = mutableListOf<String>()
+    override fun deleteTtsVoice(voiceId: String): ControlVoiceDeleteResult {
+        deleteVoiceCalls.add(voiceId)
+        return deleteVoiceResult ?: ControlVoiceDeleteResult.Ok(ttsVoicesValue)
+    }
+
     var updateCheckResult = ControlUpdateCheck(
         current = "2.3.0", status = "up_to_date", latest = null,
         install = InstallSnapshot(InstallPhase.IDLE, null, null),

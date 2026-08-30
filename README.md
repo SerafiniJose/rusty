@@ -293,6 +293,11 @@ flowchart TD
   webfont by the [Pictogrammers](https://pictogrammers.com/) group (fonts under the Apache 2.0 license).
 - The **Home Assistant** screen embeds your own [Home Assistant](https://www.home-assistant.io/)
   instance (an open-source home-automation platform; this project is not affiliated with it).
+- Downloadable announcement voices run on **[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)**
+  (Apache 2.0), whose prebuilt Android library is checked in under `app/libs/`. The voices
+  themselves are **[Piper](https://github.com/rhasspy/piper)** models repackaged by the sherpa-onnx
+  project; each voice carries its own dataset license and attribution, shown in the app's voice
+  catalog before download.
 - The **Immich Slideshow** connects to your own self-hosted **[Immich](https://immich.app)** server
   ([source](https://github.com/immich-app/immich)) — an open-source, self-hosted photo and video
   library. Rusty reads your photos through Immich's API with a read-only key and bundles none of its
