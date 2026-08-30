@@ -42,6 +42,8 @@ object AboutSheet {
 
         view.findViewById<TextView>(R.id.tvAboutVersion).text = "Version $version"
         sourceRow.setOnClickListener { openUrl(activity, UpdateRepository.REPO_URL) }
+        view.findViewById<View>(R.id.rowReportIssue)
+            .setOnClickListener { openUrl(activity, UpdateRepository.ISSUES_URL) }
 
         // withContext(IO) cancels UI application when the activity goes away, but a blocking network
         // call may still run to its timeout — guard with the activity's own flags + isShowing before

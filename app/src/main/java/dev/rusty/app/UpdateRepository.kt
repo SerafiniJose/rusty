@@ -19,6 +19,7 @@ object UpdateRepository {
     /** Public repo whose Releases drive in-app update prompts. */
     const val RELEASES_URL = "https://github.com/SerafiniJose/rusty/releases/latest"
     const val REPO_URL = "https://github.com/SerafiniJose/rusty"
+    const val ISSUES_URL = "$REPO_URL/issues"
     private const val API_URL =
         "https://api.github.com/repos/SerafiniJose/rusty/releases/latest"
 

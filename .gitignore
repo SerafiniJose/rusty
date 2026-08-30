@@ -38,3 +38,6 @@ RELEASING.md
 
 # Knowledge-graph output from the graphify skill — local analysis, not app source
 graphify-out/
+
+# showcase videos (not tracked for now)
+/videos/
