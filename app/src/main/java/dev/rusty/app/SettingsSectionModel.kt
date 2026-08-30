@@ -1,5 +1,7 @@
 package dev.rusty.app
 
+import dev.rusty.app.renderer.SpotifyInterruption
+
 /** One collapsed-section header summary: [text] plus whether it renders in the accent color
  *  (something actively configured/filtered) or muted (defaults / not set up). Pure — no Android. */
 data class SectionSummary(val text: String, val active: Boolean)
@@ -44,6 +46,39 @@ object SlideshowSummaries {
         }
         val tail = if (overlays.isEmpty()) "no overlays" else overlays.joinToString(", ")
         return SectionSummary("Every ${SlideshowSettings.intervalLabel(intervalSeconds)} · $tail", false)
+    }
+}
+
+/** Summary-line builders for the Spotify settings sections. */
+object SpotifySummaries {
+
+    /** Accent while the receiver is up; the bitrate only matters (and shows) when it is. */
+    fun receiver(running: Boolean, name: String, bitrateKbps: Int): SectionSummary =
+        if (running) SectionSummary("Running · $name · $bitrateKbps kbps", true)
+        else SectionSummary("Off · $name", false)
+
+    /** Always muted: these are preferences, not connection state. The two takeover switches fuse
+     *  to one word when they agree; a lone switch is named so the summary says WHICH half is on. */
+    fun display(canvas: Boolean, takeoverPage: Boolean, takeoverShow: Boolean): SectionSummary {
+        val canvasPart = if (canvas) "Canvas on" else "Canvas off"
+        val takeoverPart = when {
+            takeoverPage && takeoverShow -> "takeover on"
+            takeoverPage -> "switch page on"
+            takeoverShow -> "wake and show on"
+            else -> "takeover off"
+        }
+        return SectionSummary("$canvasPart · $takeoverPart", false)
+    }
+
+    fun messages(mode: SpotifyInterruption, fadeMs: Long): SectionSummary {
+        val modePart = if (mode == SpotifyInterruption.PAUSE) "Pause" else "Lower volume"
+        val fadePart = when (fadeMs) {
+            0L -> "no fade"
+            250L -> "0.25s fade"
+            1000L -> "1s fade"
+            else -> "0.5s fade"
+        }
+        return SectionSummary("$modePart · $fadePart", false)
     }
 }
 

@@ -246,7 +246,7 @@ object InfoSheet {
         )
 
         val featureTabs = FeatureRegistry.enabledIds(prefs).map { FeatureRegistry.byId(it).settingsTab }
-        val availableTabs = settingsTabsFor(featureTabs, SlideshowSettings.isEnabled(prefs)).toSet()
+        val availableTabs = settingsTabsFor(featureTabs, SlideshowSettings.isEnabled(prefs), ControlSettings.isEnabled(prefs)).toSet()
 
         return InfoOverviewReducer.reduce(spotify, dlna, control, ha, immich, availableTabs)
     }

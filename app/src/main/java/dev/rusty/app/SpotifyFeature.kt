@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewTreeObserver
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.RadioButton
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -17,6 +18,9 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.textfield.TextInputEditText
+import dev.rusty.app.renderer.RendererPrefs
+import dev.rusty.app.renderer.SharedPrefsRendererStore
+import dev.rusty.app.renderer.SpotifyInterruption
 
 /** Spotify Connect: always enabled, always configured. */
 object SpotifyFeature : Feature {
@@ -64,11 +68,42 @@ private class SpotifySettingsPanel(
         bitrateSlider.value = bitrateToIndex(host.currentBitrateKbps)
         bitrateValue.text = bitrateLabel(host.currentBitrateKbps)
 
+        // ---- Collapsible sections ------------------------------------------------
+        // Same idiom as the Slideshow/HA panels. The receiver is always configured, so there is no
+        // Slideshow-style attention rule — every visit starts fully collapsed, the summaries carry
+        // the current values. The message prefs are shared with the announce/DLNA pipeline through
+        // RendererPrefs (same store DlnaPlayerSettingsPanel uses for the player name).
+        val rendererStore = SharedPrefsRendererStore(
+            activity.getSharedPreferences(RENDERER_PREFS_NAME, Context.MODE_PRIVATE),
+        )
+        val receiverSection = CollapsibleSection(
+            panel.findViewById(R.id.headSpReceiver), panel.findViewById(R.id.bodySpReceiver),
+            "Receiver", startExpanded = false)
+        val displaySection = CollapsibleSection(
+            panel.findViewById(R.id.headSpDisplay), panel.findViewById(R.id.bodySpDisplay),
+            "Display", startExpanded = false)
+        val messagesSection = CollapsibleSection(
+            panel.findViewById(R.id.headSpMessages), panel.findViewById(R.id.bodySpMessages),
+            "During messages", startExpanded = false)
+
+        fun renderSummaries() {
+            receiverSection.setSummary(SpotifySummaries.receiver(
+                state().status != "Off", host.currentDeviceName, host.currentBitrateKbps))
+            displaySection.setSummary(SpotifySummaries.display(
+                activity.isCanvasEnabled,
+                activity.isTakeoverPageEnabled,
+                activity.isTakeoverShowEnabled))
+            messagesSection.setSummary(SpotifySummaries.messages(
+                RendererPrefs.mixMode(rendererStore), RendererPrefs.fadeMs(rendererStore)))
+        }
+        renderSummaries()
+
         fun renderServiceToggle() {
             val isOff = state().status == "Off"
             toggleServiceButton.text = if (isOff) "Start" else "Stop"
             serviceStatusValue.text =
                 if (isOff) "Off" else "Running · listening for Spotify"
+            renderSummaries()
         }
         renderServiceToggle()
 
@@ -126,6 +161,7 @@ private class SpotifySettingsPanel(
                     nameValue.text = newName
                     editRow.visibility = View.GONE
                     hideNameKeyboard()
+                    renderSummaries()
                 }
             }
         }
@@ -169,6 +205,7 @@ private class SpotifySettingsPanel(
                 if (selected != host.currentBitrateKbps) {
                     host.applyBitrate(selected)
                     showFeedback(feedback, "✓ Switching to ${bitrateLabel(selected)}…", FEEDBACK_SUCCESS)
+                    renderSummaries()
                 }
             }
         })
@@ -177,6 +214,7 @@ private class SpotifySettingsPanel(
         canvasSwitch.isChecked = activity.isCanvasEnabled
         canvasSwitch.setOnCheckedChangeListener { _, isChecked ->
             activity.setCanvasEnabled(isChecked)
+            renderSummaries()
         }
 
         // ---- Playback takeover -------------------------------------------------
@@ -184,6 +222,7 @@ private class SpotifySettingsPanel(
         takeoverPageSwitch.isChecked = activity.isTakeoverPageEnabled
         takeoverPageSwitch.setOnCheckedChangeListener { _, isChecked ->
             activity.setTakeoverPageEnabled(isChecked)
+            renderSummaries()
         }
 
         val takeoverShowSwitch = panel.findViewById<SwitchMaterial>(R.id.switchTakeoverShow)
@@ -245,11 +284,50 @@ private class SpotifySettingsPanel(
                 runCatching { activity.startActivity(overlayIntent()) }
             }
             refreshOverlayPermissionUi()
+            renderSummaries()
         }
         overlayPermissionRow.setOnClickListener {
             runCatching { activity.startActivity(overlayIntent()) }
         }
         refreshOverlayPermissionUi()
+
+        // ---- During messages ---------------------------------------------------
+        // What Spotify audio does while a message/announcement plays. Moved here from the DLNA
+        // Player panel — the prefs stay in RendererPrefs because the announce pipeline reads them.
+        // The choices reflow inside a ConstraintLayout Flow, so they are not a RadioGroup's direct
+        // children and exclusivity is enforced by bindRadioChoice.
+        bindRadioChoice(
+            options = listOf(
+                panel.findViewById<RadioButton>(R.id.rbMixPause) to SpotifyInterruption.PAUSE,
+                panel.findViewById<RadioButton>(R.id.rbMixDuck) to SpotifyInterruption.DUCK,
+            ),
+            selected = RendererPrefs.mixMode(rendererStore),
+            onSelect = {
+                RendererPrefs.setMixMode(rendererStore, it)
+                renderSummaries()
+            },
+        )
+
+        // 0.5s (DEFAULT_FADE_MS) is the "medium" choice and also the fallback for any stored value
+        // that doesn't match a preset, mirroring the previous RadioGroup mapping exactly.
+        bindRadioChoice(
+            options = listOf(
+                panel.findViewById<RadioButton>(R.id.rbFadeOff) to 0L,
+                panel.findViewById<RadioButton>(R.id.rbFadeShort) to 250L,
+                panel.findViewById<RadioButton>(R.id.rbFadeMedium) to RendererPrefs.DEFAULT_FADE_MS,
+                panel.findViewById<RadioButton>(R.id.rbFadeLong) to 1000L,
+            ),
+            selected = when (RendererPrefs.fadeMs(rendererStore)) {
+                0L -> 0L
+                250L -> 250L
+                1000L -> 1000L
+                else -> RendererPrefs.DEFAULT_FADE_MS
+            },
+            onSelect = {
+                RendererPrefs.setFadeMs(rendererStore, it)
+                renderSummaries()
+            },
+        )
 
         // The dialog has no onResume; window focus returning (e.g. back from the system
         // grant screen) is the re-check signal — same pattern as the General binder.
@@ -260,6 +338,31 @@ private class SpotifySettingsPanel(
 
         return {
             panel.viewTreeObserver.removeOnWindowFocusChangeListener(overlayFocusListener)
+        }
+    }
+
+    /**
+     * Wires a set of standalone [RadioButton]s as one mutually-exclusive choice. They are not in a
+     * RadioGroup (they are positioned by a Flow, so they are not its direct children), so this
+     * checks the option whose value equals [selected] and, on any user check, unchecks the siblings
+     * and reports the new value through [onSelect]. [suppress] stops the programmatic sibling
+     * unchecks from re-entering [onSelect].
+     */
+    private fun <T> bindRadioChoice(
+        options: List<Pair<RadioButton, T>>,
+        selected: T,
+        onSelect: (T) -> Unit,
+    ) {
+        options.forEach { (radio, value) -> radio.isChecked = value == selected }
+        var suppress = false
+        options.forEach { (radio, value) ->
+            radio.setOnCheckedChangeListener { _, isChecked ->
+                if (!isChecked || suppress) return@setOnCheckedChangeListener
+                suppress = true
+                options.forEach { (other, _) -> if (other !== radio) other.isChecked = false }
+                suppress = false
+                onSelect(value)
+            }
         }
     }
 
@@ -290,4 +393,9 @@ private class SpotifySettingsPanel(
 
     private val FEEDBACK_SUCCESS = 0xFF38EF7D.toInt()
     private val FEEDBACK_NEUTRAL = 0xFF8B949E.toInt()
+
+    private companion object {
+        /** Same prefs file the DLNA panel and the announce pipeline use for RendererPrefs. */
+        const val RENDERER_PREFS_NAME = "spotify_receiver_prefs"
+    }
 }

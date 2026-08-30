@@ -8,20 +8,20 @@ class SlideshowTabTest {
     @Test fun tabAppearsAfterScreensaverBeforeFeatureTabsWhenEnabled() {
         val tabs = settingsTabsFor(
             enabledFeatureTabs = listOf(SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT),
-            slideshowEnabled = true,
+            slideshowEnabled = true, remoteControlEnabled = false,
         )
         assertEquals(listOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER,
             SettingsTabKey.SLIDESHOW, SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT), tabs)
     }
 
     @Test fun tabAbsentWhenDisabled() {
-        val tabs = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY), slideshowEnabled = false)
+        val tabs = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY), slideshowEnabled = false, remoteControlEnabled = false)
         assertEquals(listOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER, SettingsTabKey.SPOTIFY), tabs)
     }
 
     @Test fun toggleSyncOpsInsertAndRemoveAtStablePosition() {
-        val off = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY), slideshowEnabled = false)
-        val on = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY), slideshowEnabled = true)
+        val off = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY), slideshowEnabled = false, remoteControlEnabled = false)
+        val on = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY), slideshowEnabled = true, remoteControlEnabled = false)
         val enableOps = settingsTabSyncOps(off, on)
         assertEquals(listOf(SettingsTabKey.SLIDESHOW to 2), enableOps.insertions)
         assertEquals(emptyList<Int>(), enableOps.removals)

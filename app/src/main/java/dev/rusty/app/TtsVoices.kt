@@ -4,6 +4,33 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
+ * How good a voice sounds, and how hard it works to say it — one vocabulary for both engines.
+ *
+ * The values are Piper's own tiers, because they are the ones a user actually chooses between
+ * when downloading a voice; a system engine's five `Voice.QUALITY_*` constants fold onto them in
+ * [TtsVoices.qualityBucket]. The tier is also the wire value of the `quality` member of
+ * `GET /api/tts/voices`, so the page, the settings picker and the catalog asset all say the
+ * same four words.
+ */
+enum class VoiceQuality(val wire: String, val label: String, val hint: String) {
+    X_LOW("x_low", "Extra low", "For the oldest devices: smallest download, roughest voice"),
+    LOW("low", "Low", "Quick to speak on modest hardware"),
+    MEDIUM("medium", "Medium", "Fuller voice, a little more work per announcement"),
+    HIGH("high", "High", "Clearest voice, slowest to speak and biggest to download");
+
+    companion object {
+        /** What a fresh install announces with: a voice every supported device can actually
+         *  keep up with. Better audio is one row away, and costs the user nothing to try. */
+        val DEFAULT = LOW
+
+        /** Null for anything outside the vocabulary — a caller decides whether that is a
+         *  rejected catalog entry ([PiperCatalog.parse]) or a pref falling back to
+         *  [DEFAULT] ([TtsVoices.selectedQuality]). */
+        fun parse(raw: String?): VoiceQuality? = entries.firstOrNull { it.wire == raw }
+    }
+}
+
+/**
  * Which voice announcements speak with, as an opaque persisted selector string.
  *
  * The selector's PREFIX routes synthesis — `system:` voices go through Android's [TextToSpeech]
@@ -33,7 +60,7 @@ data class VoiceInfo(
     val label: String,
     /** BCP-47 tag, e.g. `en-US`. */
     val language: String,
-    /** Coarse bucket: `low` / `normal` / `high` / `very_high`. */
+    /** [VoiceQuality.wire]: `x_low` / `low` / `medium` / `high`. */
     val quality: String,
     /** False for a system voice whose data the engine has not downloaded yet, and for a
      *  catalog Piper voice not yet on disk. */
@@ -104,6 +131,11 @@ object TtsVoices {
     /** SharedPreferences key holding the persisted selector. */
     const val PREF_KEY = "tts_voice"
 
+    /** SharedPreferences key holding the persisted [VoiceQuality.wire]. Separate from
+     *  [PREF_KEY] on purpose: the tier chooses which voices are OFFERED, and survives picking,
+     *  deleting and re-picking a voice. */
+    const val PREF_QUALITY_KEY = "tts_voice_quality"
+
     /** The selector every device starts on, and what a deleted voice falls back to. */
     const val SYSTEM_DEFAULT = "system:default"
 
@@ -138,13 +170,115 @@ object TtsVoices {
     }
 
     /**
-     * Maps Android's `Voice.QUALITY_*` int (100..500 in steps of 100) to the coarse wire bucket.
-     * Kept here, off-device, because the mapping is a wire contract the page relies on.
+     * Maps Android's `Voice.QUALITY_*` int (100..500 in steps of 100) onto a [VoiceQuality].
+     * Five constants, four tiers: HIGH and VERY_HIGH both land on [VoiceQuality.HIGH], which is
+     * already the top of what an embedded voice offers. Kept here, off-device, because the
+     * mapping is a wire contract.
      */
     fun qualityBucket(quality: Int): String = when {
-        quality >= 400 -> "very_high"
-        quality >= 300 -> "high"
-        quality >= 200 -> "normal"
-        else -> "low"
+        quality >= 400 -> VoiceQuality.HIGH.wire      // QUALITY_HIGH, QUALITY_VERY_HIGH
+        quality >= 300 -> VoiceQuality.MEDIUM.wire    // QUALITY_NORMAL
+        quality >= 200 -> VoiceQuality.LOW.wire       // QUALITY_LOW
+        else -> VoiceQuality.X_LOW.wire               // QUALITY_VERY_LOW and below
     }
+
+    /**
+     * The tier a stored pref names. An unreadable value is [VoiceQuality.DEFAULT] rather than
+     * nothing: a tier matching no catalog entry would show the user an empty download list and
+     * no way to tell why.
+     */
+    fun selectedQuality(raw: String?): VoiceQuality = VoiceQuality.parse(raw) ?: VoiceQuality.DEFAULT
+
+    // -- picker composition ----------------------------------------------------------------
+
+    /** The always-present first row: let the engine pick, exactly what a fresh install does. */
+    fun defaultRow(): VoiceInfo = VoiceInfo(
+        id = SYSTEM_DEFAULT,
+        label = "System default",
+        language = "",
+        quality = VoiceQuality.MEDIUM.wire,
+        installed = true,
+        requiresNetwork = false,
+    )
+
+    /**
+     * The selectable rows, composed identically by every surface that offers the picker — the
+     * control page's `GET /api/tts/voices` and the on-device settings panel.
+     *
+     * [system] is EMPTY on a device that has no TTS engine installed at all (LineageOS builds
+     * routinely ship none), and that is a normal list, not a failure: the default row is static
+     * and a downloaded Piper voice synthesizes through [PiperEngine] without ever touching
+     * `TextToSpeech`. Composing here is what keeps a surface from re-inventing the rule and
+     * gating the whole picker on a system engine it does not need.
+     */
+    fun pickerRows(piper: List<VoiceInfo>, system: List<VoiceInfo>): List<VoiceInfo> =
+        listOf(defaultRow()) + piper + system
+
+    // -- downloadable catalog labels -------------------------------------------------------
+
+    /**
+     * The downloadable rows for one tier. Only the CATALOG narrows: an installed voice stays
+     * listed and selectable whatever tier it is, because a dropdown must never hide a voice the
+     * user already spent a download on — least of all the selected one.
+     */
+    fun catalogFor(entries: List<ControlCatalogVoice>, quality: VoiceQuality): List<ControlCatalogVoice> =
+        entries.filter { it.voice.quality == quality.wire }
+
+    /**
+     * What is actually offered for download at one tier: [catalogFor] minus everything already
+     * on disk. An installed voice is a selectable row with its own Remove button, so leaving it
+     * here too would list the same voice twice, in two different moods.
+     */
+    fun downloadableFor(entries: List<ControlCatalogVoice>, quality: VoiceQuality): List<ControlCatalogVoice> =
+        catalogFor(entries, quality).filterNot { it.installed }
+
+    /** Shown in place of an empty download list. Two different emptinesses: everything at this
+     *  tier is already here, or this tier has nothing for the languages we curate. */
+    fun catalogEmptyNote(quality: VoiceQuality, allInstalled: Boolean): String = if (allInstalled) {
+        "Every ${quality.label} voice is already downloaded."
+    } else {
+        "No ${quality.label} voices are available for the languages we curate \u2014 try another quality."
+    }
+
+    /**
+     * What the small icon button on a catalog row means, for TalkBack and for the D-pad
+     * tooltip — the page's `aria-label` exactly. The button itself is an icon: the list stays
+     * scannable, and the words live where a decision is actually made (the confirm card).
+     */
+    fun catalogActionDescription(entry: ControlCatalogVoice): String =
+        if (entry.installed) "Remove ${entry.voice.label}"
+        else "Download ${entry.voice.label} (${megabytes(entry.voice.sizeBytes)})"
+
+    /**
+     * Size, license and attribution in full, shown in the download confirm card — the moment the
+     * user actually decides. Every Piper voice carries its own dataset terms, so this text is
+     * never optional; it is only moved off the scannable list and onto the decision.
+     */
+    fun catalogMeta(voice: PiperVoice): String =
+        megabytes(voice.sizeBytes) + " \u00b7 " + voice.license + " \u00b7 " + voice.attribution
+
+    /** The one-line form under a catalog row: what it costs and under what terms. */
+    fun catalogMetaShort(voice: PiperVoice): String =
+        megabytes(voice.sizeBytes) + " \u00b7 " + voice.license
+
+    /**
+     * The live download line for the picker's footer, or null when nothing is happening. One
+     * status in one place, because the slot is single: a per-row spinner would be five ways of
+     * saying the same thing. [label] is the voice's catalog name, or null if it is not curated.
+     */
+    fun downloadStatus(download: VoiceDownloadSnapshot, label: String?): String? {
+        val name = label ?: download.voiceId ?: "voice"
+        return when (download.phase) {
+            VoiceDownloadPhase.DOWNLOADING ->
+                "Downloading $name\u2026" + (download.progress?.let { " $it%" } ?: "")
+            VoiceDownloadPhase.VERIFYING -> "Verifying $name\u2026"
+            VoiceDownloadPhase.EXTRACTING -> "Unpacking $name\u2026"
+            VoiceDownloadPhase.ERROR ->
+                "Couldn't download $name: " + (download.error ?: "unknown error")
+            VoiceDownloadPhase.IDLE, VoiceDownloadPhase.DONE -> null
+        }
+    }
+
+    /** Whole megabytes, the page's rounding exactly. */
+    fun megabytes(bytes: Long): String = "${Math.round(bytes / (1024.0 * 1024.0))} MB"
 }

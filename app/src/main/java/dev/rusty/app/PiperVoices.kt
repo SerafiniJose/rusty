@@ -10,7 +10,7 @@ import java.util.concurrent.Executor
  * with the app rather than being fetched: the feature stays offline-capable after a voice is
  * downloaded, and a new curation rides an app update like any other asset.
  *
- * [quality] is already the wire bucket ([TtsVoices.qualityBucket]'s vocabulary). [sha256] is
+ * [quality] is a [VoiceQuality.wire] tier, the vocabulary both engines' voices report. [sha256] is
  * required — a bundle is executable-adjacent input (it feeds a native inference runtime), so an
  * unverifiable download is a failed download. [license]/[attribution] are shown at download time:
  * every Piper voice carries its own dataset terms.
@@ -47,7 +47,9 @@ object PiperCatalog {
                 id = o.optString("id").ifEmpty { return null },
                 label = o.optString("label").ifEmpty { return null },
                 language = o.optString("language").ifEmpty { return null },
-                quality = o.optString("quality").ifEmpty { return null },
+                // The tier is what the settings picker filters on: an entry outside the
+                // vocabulary could never be shown, so it sinks the parse like a bad digest.
+                quality = VoiceQuality.parse(o.optString("quality"))?.wire ?: return null,
                 sizeBytes = o.optLong("sizeBytes", -1L).takeIf { it > 0 } ?: return null,
                 url = o.optString("url").ifEmpty { return null },
                 sha256 = o.optString("sha256").takeIf { it.length == 64 } ?: return null,
@@ -108,6 +110,10 @@ data class VoiceDownloadSnapshot(
 /** Router-level outcome of `POST /api/tts/voices/download`; maps 1:1 to an HTTP status,
  *  like [ControlInstallStart]. */
 enum class ControlVoiceDownloadStart { STARTED, BUSY, UNKNOWN_VOICE, NO_SPACE }
+
+/** Whether a voice removal happened, and if not why — shared by the control route (which maps
+ *  it to an HTTP status) and the settings picker (which maps it to a message). */
+enum class VoiceDeleteOutcome { DELETED, BUSY, NOT_INSTALLED }
 
 /** Outcome of `POST /api/tts/voices/delete`. */
 sealed class ControlVoiceDeleteResult {

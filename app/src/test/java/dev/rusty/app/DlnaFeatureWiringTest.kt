@@ -12,15 +12,15 @@ class DlnaFeatureWiringTest {
         // absent — only the app-wide General/Screensaver tabs (+ any other enabled feature) show.
         assertEquals(
             listOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER),
-            settingsTabsFor(emptyList(), slideshowEnabled = false))
+            settingsTabsFor(emptyList(), slideshowEnabled = false, remoteControlEnabled = false))
         assertEquals(
             listOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER, SettingsTabKey.HOME_ASSISTANT),
-            settingsTabsFor(listOf(SettingsTabKey.HOME_ASSISTANT), slideshowEnabled = false))
+            settingsTabsFor(listOf(SettingsTabKey.HOME_ASSISTANT), slideshowEnabled = false, remoteControlEnabled = false))
     }
 
     @Test fun dlnaTabShownOnceWhenFeatureEnabled() {
         // Feature on contributes DLNA_PLAYER; it appears exactly once, after the app-wide tabs.
-        val tabs = settingsTabsFor(listOf(SettingsTabKey.DLNA_PLAYER, SettingsTabKey.HOME_ASSISTANT), slideshowEnabled = false)
+        val tabs = settingsTabsFor(listOf(SettingsTabKey.DLNA_PLAYER, SettingsTabKey.HOME_ASSISTANT), slideshowEnabled = false, remoteControlEnabled = false)
         assertEquals(1, tabs.count { it == SettingsTabKey.DLNA_PLAYER })
         assertEquals(
             listOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER, SettingsTabKey.DLNA_PLAYER,

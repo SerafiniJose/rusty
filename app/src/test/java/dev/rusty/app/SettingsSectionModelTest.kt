@@ -1,5 +1,6 @@
 package dev.rusty.app
 
+import dev.rusty.app.renderer.SpotifyInterruption
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -118,5 +119,51 @@ class SettingsSectionModelTest {
     @Test fun haThemeNamedDarkShowsMode() {
         val s = HaSummaries.theme(signedIn = true, selectedName = "Noctis", mode = HomeAssistantNav.MODE_DARK)
         assertEquals("Noctis · Dark", s.text); assertTrue(s.active)
+    }
+
+    // ---- Spotify · Receiver ----
+    @Test fun spotifyReceiverRunningShowsNameAndBitrate() {
+        val s = SpotifySummaries.receiver(running = true, name = "Rusty Speaker", bitrateKbps = 160)
+        assertEquals("Running · Rusty Speaker · 160 kbps", s.text); assertTrue(s.active)
+    }
+    @Test fun spotifyReceiverOffDropsBitrate() {
+        val s = SpotifySummaries.receiver(running = false, name = "Rusty Speaker", bitrateKbps = 320)
+        assertEquals("Off · Rusty Speaker", s.text); assertFalse(s.active)
+    }
+
+    // ---- Spotify · Display ----
+    @Test fun spotifyDisplayCanvasOnTakeoverOff() {
+        val s = SpotifySummaries.display(canvas = true, takeoverPage = false, takeoverShow = false)
+        assertEquals("Canvas on · takeover off", s.text); assertFalse(s.active)
+    }
+    @Test fun spotifyDisplayBothTakeoversFuseToOn() {
+        val s = SpotifySummaries.display(canvas = true, takeoverPage = true, takeoverShow = true)
+        assertEquals("Canvas on · takeover on", s.text); assertFalse(s.active)
+    }
+    @Test fun spotifyDisplayOnlyPageSwitchNamed() {
+        val s = SpotifySummaries.display(canvas = false, takeoverPage = true, takeoverShow = false)
+        assertEquals("Canvas off · switch page on", s.text); assertFalse(s.active)
+    }
+    @Test fun spotifyDisplayOnlyWakeNamed() {
+        val s = SpotifySummaries.display(canvas = false, takeoverPage = false, takeoverShow = true)
+        assertEquals("Canvas off · wake and show on", s.text); assertFalse(s.active)
+    }
+
+    // ---- Spotify · During messages ----
+    @Test fun spotifyMessagesDuckWithFade() {
+        val s = SpotifySummaries.messages(SpotifyInterruption.DUCK, fadeMs = 500L)
+        assertEquals("Lower volume · 0.5s fade", s.text); assertFalse(s.active)
+    }
+    @Test fun spotifyMessagesPauseNoFade() {
+        val s = SpotifySummaries.messages(SpotifyInterruption.PAUSE, fadeMs = 0L)
+        assertEquals("Pause · no fade", s.text); assertFalse(s.active)
+    }
+    @Test fun spotifyMessagesQuarterSecondFade() {
+        val s = SpotifySummaries.messages(SpotifyInterruption.PAUSE, fadeMs = 250L)
+        assertEquals("Pause · 0.25s fade", s.text); assertFalse(s.active)
+    }
+    @Test fun spotifyMessagesOneSecondFade() {
+        val s = SpotifySummaries.messages(SpotifyInterruption.DUCK, fadeMs = 1000L)
+        assertEquals("Lower volume · 1s fade", s.text); assertFalse(s.active)
     }
 }

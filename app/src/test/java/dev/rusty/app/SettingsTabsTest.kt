@@ -11,7 +11,7 @@ class SettingsTabsTest {
         // (contributed via DlnaPlayerFeature.settingsTab only when the feature is enabled).
         assertEquals(
             listOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER),
-            settingsTabsFor(emptyList(), slideshowEnabled = false)
+            settingsTabsFor(emptyList(), slideshowEnabled = false, remoteControlEnabled = false)
         )
     }
 
@@ -23,13 +23,32 @@ class SettingsTabsTest {
                 SettingsTabKey.SPOTIFY,
                 SettingsTabKey.HOME_ASSISTANT,
             ),
-            settingsTabsFor(listOf(SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT), slideshowEnabled = false)
+            settingsTabsFor(listOf(SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT), slideshowEnabled = false, remoteControlEnabled = false)
+        )
+    }
+
+    @Test fun remoteControlTabFollowsItsToggle() {
+        // Remote Control is a Slideshow-style tab: app-wide, no launcher entry, present exactly
+        // while the control API is enabled — after the app-wide tabs, before the feature ring.
+        assertEquals(
+            listOf(
+                SettingsTabKey.GENERAL,
+                SettingsTabKey.SCREENSAVER,
+                SettingsTabKey.SLIDESHOW,
+                SettingsTabKey.REMOTE_CONTROL,
+                SettingsTabKey.SPOTIFY,
+            ),
+            settingsTabsFor(listOf(SettingsTabKey.SPOTIFY), slideshowEnabled = true, remoteControlEnabled = true)
+        )
+        assertFalse(
+            SettingsTabKey.REMOTE_CONTROL in
+                settingsTabsFor(listOf(SettingsTabKey.SPOTIFY), slideshowEnabled = true, remoteControlEnabled = false)
         )
     }
 
     @Test fun dlnaPlayerTabHiddenWhenItsFeatureIsDisabled() {
         // Feature off -> its tab isn't in the contributed list -> absent (gated like Home Assistant).
-        val tabs = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT), slideshowEnabled = false)
+        val tabs = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT), slideshowEnabled = false, remoteControlEnabled = false)
         assertFalse(SettingsTabKey.DLNA_PLAYER in tabs)
     }
 
@@ -38,7 +57,7 @@ class SettingsTabsTest {
         // app-wide General/Screensaver, exactly once.
         val tabs = settingsTabsFor(
             listOf(SettingsTabKey.DLNA_PLAYER, SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT),
-            slideshowEnabled = false)
+            slideshowEnabled = false, remoteControlEnabled = false)
         assertEquals(
             listOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER, SettingsTabKey.DLNA_PLAYER,
                 SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT),

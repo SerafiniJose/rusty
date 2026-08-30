@@ -7,7 +7,7 @@ package dev.rusty.app
  * enabling/disabling the DLNA Player toggle in General shows/hides the tab, consistent with Home
  * Assistant. The de-dup in [settingsTabsFor] is retained as a safety net.
  */
-enum class SettingsTabKey { GENERAL, SCREENSAVER, SLIDESHOW, DLNA_PLAYER, SPOTIFY, HOME_ASSISTANT }
+enum class SettingsTabKey { GENERAL, SCREENSAVER, SLIDESHOW, REMOTE_CONTROL, DLNA_PLAYER, SPOTIFY, HOME_ASSISTANT }
 
 /**
  * The tab to open when settings is launched from [activeFeature]. App-wide tabs
@@ -23,9 +23,10 @@ fun defaultSettingsTab(activeFeature: FeatureId?): SettingsTabKey = when (active
 
 /**
  * The settings tab order for the current state: the app-wide tabs (General, Screensaver) first,
- * then the Slideshow tab when that screensaver feature is enabled (it is NOT a [FeatureRegistry]
- * feature — it has no launcher entry and contributes no [Feature.settingsTab] — so it is threaded
- * explicitly through [slideshowEnabled]), then one tab per enabled feature (in ring order).
+ * then the Slideshow tab when that screensaver feature is enabled and the Remote Control tab when
+ * the control API is enabled (neither is a [FeatureRegistry] feature — no launcher entry, no
+ * [Feature.settingsTab] — so both are threaded explicitly), then one tab per enabled feature (in
+ * ring order).
  * Disabled features contribute no tab — so DLNA_PLAYER appears only when [DlnaPlayerFeature] is
  * enabled, exactly like Home Assistant. The `.distinct()` is a safety net against any feature
  * contributing a duplicate tab key.
@@ -33,9 +34,11 @@ fun defaultSettingsTab(activeFeature: FeatureId?): SettingsTabKey = when (active
 fun settingsTabsFor(
     enabledFeatureTabs: List<SettingsTabKey>,
     slideshowEnabled: Boolean,
+    remoteControlEnabled: Boolean,
 ): List<SettingsTabKey> =
     (listOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER) +
         (if (slideshowEnabled) listOf(SettingsTabKey.SLIDESHOW) else emptyList()) +
+        (if (remoteControlEnabled) listOf(SettingsTabKey.REMOTE_CONTROL) else emptyList()) +
         enabledFeatureTabs).distinct()
 
 /**

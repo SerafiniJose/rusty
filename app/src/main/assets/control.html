@@ -438,6 +438,37 @@
       scroll-behavior: auto !important;
     }
   }
+
+  /* -----------------------------------------------------------------------
+     Login overlay
+     Shown when any API call answers 401 (the device requires a password).
+     The page itself is served without auth -- this overlay IS the login. */
+  #login-overlay {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(6, 7, 9, 0.88); backdrop-filter: blur(6px);
+    padding: 24px;
+  }
+  #login-overlay[hidden] { display: none; }
+  .login-card {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: var(--radius); padding: 22px; width: 100%; max-width: 340px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+  .login-card h2 { font-size: 16px; margin: 0 0 6px; color: var(--text); }
+  .login-card p.hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  .login-card input {
+    width: 100%; box-sizing: border-box; background: var(--slab);
+    border: 1px solid var(--card-border); border-radius: 10px;
+    color: var(--text); font: inherit; font-size: 15px; padding: 10px 12px;
+  }
+  .login-card input:focus { outline: none; border-color: var(--accent); }
+  .login-card button {
+    width: 100%; margin-top: 12px; border: 0; border-radius: 10px;
+    background: var(--accent); color: var(--accent-ink);
+    font: inherit; font-size: 15px; font-weight: 600; padding: 10px 12px; cursor: pointer;
+  }
+  #login-error { color: var(--error); font-size: 13px; margin: 10px 0 0; }
 </style>
 </head>
 <body>
@@ -597,6 +628,18 @@
 </main>
 
 <div id="toast" role="status" aria-live="polite"><span class="tdot"></span><span id="toast-text"></span></div>
+
+<!-- Password gate: hidden until a request answers 401. Submitting stores the password locally
+     and reloads, so every card re-initialises with the credential attached. -->
+<div id="login-overlay" hidden>
+  <form class="login-card" id="login-form">
+    <h2>This device asks for a password</h2>
+    <p class="hint">Set in the device’s Remote Control settings.</p>
+    <input id="login-password" type="password" autocomplete="current-password" placeholder="Password" />
+    <p id="login-error" hidden></p>
+    <button type="submit">Unlock</button>
+  </form>
+</div>
 
 <script>
 (function () {
@@ -767,9 +810,63 @@
     });
   }
 
+  // ---- password gate ----
+
+  /** localStorage may throw (private browsing); a page that can't remember the password still
+   *  works -- the overlay just asks again next visit. */
+  var PASSWORD_KEY = "rusty-control-password";
+
+  function storedPassword() {
+    try { return window.localStorage.getItem(PASSWORD_KEY) || null; } catch (e) { return null; }
+  }
+
+  function storePassword(value) {
+    try { window.localStorage.setItem(PASSWORD_KEY, value); } catch (e) { /* forgetful is fine */ }
+  }
+
+  /** Raised once per page life; subsequent 401s (every poll tick) keep the same overlay. */
+  var loginShown = false;
+
+  function showLogin() {
+    var overlay = document.getElementById("login-overlay");
+    var error = document.getElementById("login-error");
+    if (loginShown) return;
+    loginShown = true;
+    // A stored password that still 401s was changed on the device; say so instead of
+    // presenting a silent empty field over a page that used to work.
+    if (storedPassword() !== null) {
+      error.textContent = "The password was refused — it may have been changed on the device.";
+      error.hidden = false;
+    }
+    overlay.hidden = false;
+    document.getElementById("login-password").focus();
+  }
+
+  function setupLogin() {
+    document.getElementById("login-form").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var value = document.getElementById("login-password").value.trim();
+      if (!value) return;
+      storePassword(value);
+      // Reload rather than patch state: every card re-runs its initial load with the
+      // credential attached, and any sticky error banners start over clean.
+      window.location.reload();
+    });
+  }
+
   /** GET/POST/PUT helper. Rejects with an Error carrying `.status` on non-2xx. Never appends a
-   *  query string -- the device's router matches the raw request target exactly. */
+   *  query string -- the device's router matches the raw request target exactly. Attaches the
+   *  stored password (Authorization: Bearer) to every call; a 401 raises the login overlay. */
   function apiFetch(path, options) {
+    var password = storedPassword();
+    if (password !== null) {
+      options = options || {};
+      var headers = {};
+      var key;
+      for (key in (options.headers || {})) headers[key] = options.headers[key];
+      headers["Authorization"] = "Bearer " + password;
+      options.headers = headers;
+    }
     return fetch(path, options).then(function (res) {
       return res
         .json()
@@ -781,6 +878,7 @@
             var message = (data && data.error) || ("HTTP " + res.status);
             var err = new Error(message);
             err.status = res.status;
+            if (res.status === 401) showLogin();
             throw err;
           }
           return data;
@@ -1055,7 +1153,8 @@
         hideUnreachable();
       })
       .catch(function (err) {
-        showUnreachable("Unable to reach the device: " + err.message);
+        // 401 is the login overlay's moment, not an unreachable device.
+        if (err.status !== 401) showUnreachable("Unable to reach the device: " + err.message);
       });
   }
 
@@ -1539,6 +1638,7 @@
 
   function init() {
     cacheElements();
+    setupLogin();
 
     el["foreground-switch"].addEventListener("click", onToggleForeground);
     el["screen-pwr"].addEventListener("click", onToggleScreen);

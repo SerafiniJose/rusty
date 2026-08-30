@@ -10,16 +10,6 @@ import android.speech.tts.TextToSpeech
  */
 object SystemTtsVoices {
 
-    /** The always-present first row: let the engine pick, exactly what a fresh install does. */
-    fun defaultRow(): VoiceInfo = VoiceInfo(
-        id = TtsVoices.SYSTEM_DEFAULT,
-        label = "System default",
-        language = "",
-        quality = "normal",
-        installed = true,
-        requiresNetwork = false,
-    )
-
     /** Enumerates the live engine's voices. Defensive throughout: `getVoices` is documented to
      *  return null on some engines, and third-party engines have been seen throwing from it. */
     fun list(engine: TextToSpeech): List<VoiceInfo> {

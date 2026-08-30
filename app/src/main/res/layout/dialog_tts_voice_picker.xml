@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Single-choice picker for the announcement voice. Height is set in code from the window
-     bounds (~80%) so the row list scrolls inside the card, like the Immich filter picker. -->
+<!-- Single-choice picker for the announcement voice, plus the downloadable Piper catalog the
+     control page shows. Height is set in code from the window bounds (~80%) so both sections
+     scroll inside the card, like the Immich filter picker. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -44,18 +45,58 @@
         android:scrollbars="vertical">
 
         <LinearLayout
-            android:id="@+id/llVoiceRows"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/llVoiceRows"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/tvVoiceCatalogHeader"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:fontFamily="@font/hanken_semibold"
+                android:letterSpacing="0.08"
+                android:text="DOWNLOADABLE VOICES"
+                android:textAllCaps="true"
+                android:textColor="@color/muted_dim"
+                android:textSize="11sp" />
+
+            <!-- Each entry is an action button plus ALWAYS-visible size/license/attribution:
+                 every Piper voice carries its own dataset terms, and this is where the user
+                 reads them before deciding to download. -->
+            <LinearLayout
+                android:id="@+id/llVoiceCatalog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="vertical" />
+        </LinearLayout>
     </ScrollView>
 
+    <!-- Pinned below the scroller so progress stays visible while the list scrolls. -->
+    <ProgressBar
+        android:id="@+id/pbVoiceDownload"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_marginTop="10dp"
+        android:indeterminateTint="@color/accent_fallback"
+        android:max="100"
+        android:progressTint="@color/accent_fallback"
+        android:visibility="gone" />
+
     <TextView
+        android:id="@+id/tvVoiceNote"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
         android:fontFamily="@font/hanken_regular"
-        android:text="More voices can be installed in Android\'s text-to-speech settings."
         android:textColor="@color/muted_dim"
         android:textSize="12sp" />
 </LinearLayout>

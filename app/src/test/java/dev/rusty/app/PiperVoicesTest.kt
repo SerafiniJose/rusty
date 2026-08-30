@@ -14,7 +14,7 @@ import java.util.concurrent.Executor
 class PiperVoicesTest {
 
     private fun voice(id: String = "en_US-amy-medium", size: Long = 1000) = PiperVoice(
-        id = id, label = "Amy", language = "en-US", quality = "normal",
+        id = id, label = "Amy", language = "en-US", quality = "medium",
         sizeBytes = size, url = "https://example.com/$id.tar.bz2",
         sha256 = "a".repeat(64), license = "CC0", attribution = "test",
     )
@@ -26,7 +26,7 @@ class PiperVoicesTest {
     @Test fun parse_roundTripsAllFields() {
         val json = """
             {"voices":[{"id":"it_IT-riccardo-x_low","label":"Riccardo","language":"it-IT",
-              "quality":"low","sizeBytes":26496614,"url":"https://example.com/v.tar.bz2",
+              "quality":"x_low","sizeBytes":26496614,"url":"https://example.com/v.tar.bz2",
               "sha256":"${"b".repeat(64)}","license":"MIT","attribution":"who"}]}
         """.trimIndent()
         val voices = PiperCatalog.parse(json)!!
@@ -35,7 +35,19 @@ class PiperVoicesTest {
         assertEquals("it_IT-riccardo-x_low", v.id)
         assertEquals("piper:it_IT-riccardo-x_low", v.selector)
         assertEquals(26496614L, v.sizeBytes)
-        assertEquals("low", v.quality)
+        assertEquals("x_low", v.quality)
+    }
+
+    @Test fun parse_rejectsAQualityOutsideTheTierVocabulary() {
+        // The tier is what the settings picker filters on, so an entry the picker could never
+        // show is a build mistake to surface loudly — the same posture as a missing sha256.
+        assertNull(
+            PiperCatalog.parse(
+                """{"voices":[{"id":"x","label":"X","language":"en","quality":"normal",
+                    "sizeBytes":5,"url":"https://e/x","sha256":"${"c".repeat(64)}",
+                    "license":"l","attribution":"a"}]}""",
+            ),
+        )
     }
 
     @Test fun parse_isTotal_malformedEntryFailsTheWholeCatalog() {
@@ -58,9 +70,22 @@ class PiperVoicesTest {
         voices!!.forEach { v ->
             assertTrue(v.url.startsWith("https://"))
             assertTrue("selector must round-trip", TtsVoices.parse(v.selector) == VoiceSelector.Piper(v.id))
-            assertTrue("quality must be a wire bucket", v.quality in setOf("low", "normal", "high", "very_high"))
+            assertTrue("quality must be a tier", VoiceQuality.parse(v.quality) != null)
+            assertTrue("sha256 must be a full digest", v.sha256.matches(Regex("[0-9a-f]{64}")))
         }
         assertEquals("ids must be unique", voices.size, voices.map { it.id }.toSet().size)
+    }
+
+    @Test fun shippedCatalogAsset_offersVoicesAtEveryTier() {
+        // The settings card lets the user pick a tier before a voice; a tier the catalog cannot
+        // fill would be a dead choice on every device.
+        val voices = PiperCatalog.parse(File("src/main/assets/piper-voices.json").readText())!!
+        VoiceQuality.entries.forEach { tier ->
+            assertTrue(
+                "no catalog voice at tier ${tier.wire}",
+                voices.any { it.quality == tier.wire },
+            )
+        }
     }
 
     @Test fun requiredBytes_leavesExtractionHeadroom() {

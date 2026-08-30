@@ -615,6 +615,11 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
      * so caching it costs nothing else.
      */
     private val deviceId = ControlSettings.deviceId(prefs)
+
+    /** Per request, so the settings switch takes effect immediately; [SecretStore.of] caches its
+     *  encrypted-prefs instance process-wide, so this is two map reads, not key derivation. */
+    override fun requiredPassword(): String? =
+        ControlSettings.requiredPassword(prefs, SecretStore.of(context))
     private val mainHandler = Handler(Looper.getMainLooper())
     private val repository = ImmichRepository()
 
@@ -845,25 +850,15 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
      *  checked in and tested) degrades to "no downloadable voices", never a crash. */
     private val piperCatalog: List<PiperVoice> by lazy { PiperVoiceStore.loadCatalog(context) }
 
-    /** Single download slot on its own thread — a 67 MB fetch must not occupy an HTTP pool
-     *  thread (the pool is what answers the page's progress polls). */
-    private val voiceDownloadExecutor = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "voice-download").apply { isDaemon = true }
-    }
-    private val voiceDownloads by lazy {
-        VoiceDownloadManager(
-            executor = voiceDownloadExecutor,
-            download = piperStore::download,
-            verify = piperStore::verify,
-            extract = { voice, archive ->
-                piperStore.extract(voice, archive)
-                // A repair re-download just replaced the voice's files on disk; the engine may
-                // still hold the OLD model mapped under the same id, so drop it — the next
-                // Piper announcement reloads from the fresh files. Runs on the download thread,
-                // after the atomic publish, serialized with any announcement in flight.
-                synchronized(announceLock) { piperEngine.release() }
-            },
-        )
+    /** The download slot is process-wide ([PiperDownloads]) — the settings picker installs
+     *  voices too, and the same voice directory must never be published twice at once. This
+     *  hook is how a download or delete THERE drops a model mapped HERE: the next Piper
+     *  announcement reloads from the fresh files. Runs on the caller's thread, serialized with
+     *  any announcement in flight. */
+    private val engineInvalidator: () -> Unit = { synchronized(announceLock) { piperEngine.release() } }
+
+    init {
+        PiperDownloads.addEngineInvalidator(engineInvalidator)
     }
 
     override fun announceText(text: String): ControlAnnounceResult = synchronized(announceLock) {
@@ -929,9 +924,9 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
         val systemRows = ttsEngine()?.let { SystemTtsVoices.list(it) } ?: emptyList()
         return ControlTtsVoices(
             selected = selected,
-            voices = listOf(SystemTtsVoices.defaultRow()) + piperRows + systemRows,
+            voices = TtsVoices.pickerRows(piperRows, systemRows),
             catalog = piperCatalog.map { ControlCatalogVoice(it, it.id in installed) },
-            download = voiceDownloads.snapshot(),
+            download = PiperDownloads.snapshot(),
         )
     }
 
@@ -956,29 +951,19 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
     override fun downloadTtsVoice(voiceId: String): ControlVoiceDownloadStart {
         val voice = piperCatalog.firstOrNull { it.id == voiceId }
             ?: return ControlVoiceDownloadStart.UNKNOWN_VOICE
-        if (piperStore.freeBytes() < PiperCatalog.requiredBytes(voice.sizeBytes)) {
-            return ControlVoiceDownloadStart.NO_SPACE
-        }
-        // A re-download of an installed voice is allowed on purpose: extract() publishes
-        // atomically over the old directory, so it doubles as a repair path.
-        return if (voiceDownloads.start(voice)) ControlVoiceDownloadStart.STARTED
-        else ControlVoiceDownloadStart.BUSY
+        // Space gate and the "a re-download is a repair" allowance live with the shared slot.
+        return PiperDownloads.start(context, voice)
     }
 
     override fun deleteTtsVoice(voiceId: String): ControlVoiceDeleteResult = synchronized(announceLock) {
-        // Refuse to delete the voice the single download slot is mid-flight on: the extractor's
-        // atomic publish would race the recursive delete. Any OTHER voice deletes fine.
-        val download = voiceDownloads.snapshot()
-        if (download.busy && download.voiceId == voiceId) return ControlVoiceDeleteResult.Busy
-        if (!piperStore.isInstalled(voiceId)) return ControlVoiceDeleteResult.NotInstalled
-        // The engine may hold this voice's model mapped; drop it before the files go. The next
-        // Piper announcement reloads whatever is selected then.
-        piperEngine.release()
-        piperStore.delete(voiceId)
-        if (TtsVoices.parse(selectedVoicePref()) == VoiceSelector.Piper(voiceId)) {
-            prefs.edit().putString(TtsVoices.PREF_KEY, TtsVoices.SYSTEM_DEFAULT).apply()
+        // Shared with the settings picker, including the busy refusal (the extractor's atomic
+        // publish would race the recursive delete), dropping the mapped model before the files
+        // go, and falling the selection back when it named this voice.
+        when (PiperDownloads.deleteVoice(context, prefs, voiceId)) {
+            VoiceDeleteOutcome.BUSY -> ControlVoiceDeleteResult.Busy
+            VoiceDeleteOutcome.NOT_INSTALLED -> ControlVoiceDeleteResult.NotInstalled
+            VoiceDeleteOutcome.DELETED -> ControlVoiceDeleteResult.Ok(ttsVoices())
         }
-        ControlVoiceDeleteResult.Ok(ttsVoices())
     }
 
     private fun selectedVoicePref(): String {
@@ -1086,9 +1071,9 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
         // Under the announce lock: a Piper synthesis that beat the server shutdown may still be
         // inside the engine; unmapping the model out from under it is native code.
         synchronized(announceLock) { piperEngine.release() }
-        // A download in flight is abandoned mid-pipeline; its .tmp/.part debris is overwritten
-        // by the next attempt. Daemon thread, so it cannot pin the process either way.
-        voiceDownloadExecutor.shutdownNow()
+        // The download slot outlives this service (the settings picker shares it), so a fetch in
+        // flight is left running — only this service's claim on the engine is dropped.
+        PiperDownloads.removeEngineInvalidator(engineInvalidator)
     }
 
     // -- update check / install ----------------------------------------------------------

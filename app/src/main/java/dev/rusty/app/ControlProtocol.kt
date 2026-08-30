@@ -12,6 +12,14 @@ import org.json.JSONObject
  * how [dev.rusty.app.renderer.RendererRuntime] is the seam for the MediaRenderer endpoint.
  */
 interface ControlRuntime {
+    /**
+     * The password every /api/... request must present (`Authorization: Bearer` — see
+     * [ControlAuth]), or null when no password is required. Read PER REQUEST, so flipping the
+     * settings switch takes effect on the very next call with no server restart. Defaulted so the
+     * many test fakes that don't care about auth stay unchanged.
+     */
+    fun requiredPassword(): String? = null
+
     fun snapshot(): ControlSnapshot
 
     /** Applies atomically; returns the RESULTING snapshot (never echoes the request). */
@@ -197,6 +205,16 @@ object ControlProtocol {
         if (!hostAllowed(req, localHosts)) return errorResponse(403, "Forbidden", "host not allowed")
 
         return try {
+            // Password gate (when the user enabled one): the WHOLE /api/... surface, checked before
+            // routing — an unauthenticated probe can't tell a real endpoint from a 404, and never
+            // reaches the write guards, let alone a handler. The page itself ("/") stays open: it
+            // holds no secrets and is where the login overlay lives. Inside the try because
+            // requiredPassword() may touch the runtime's secret store.
+            if (req.path.startsWith("/api/") &&
+                !ControlAuth.authorized(rt.requiredPassword(), req.headers["AUTHORIZATION"])
+            ) {
+                return errorResponse(401, "Unauthorized", "password required")
+            }
             dispatch(req, rt)
         } catch (t: Throwable) {
             // Best-effort: a caller-supplied sink that itself throws (OOM in a logger, a Log

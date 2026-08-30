@@ -40,6 +40,28 @@ class ControlSettingsTest {
         assertTrue(ControlSettings.isEnabled(p))
     }
 
+    @Test fun requiredPassword_isNullUntilTheSwitchAndTheSecretAgree() {
+        val p = FakePrefs()
+        val secrets = InMemorySecretStore()
+
+        // Off by default: no password required even when one is stored.
+        secrets.put(ControlSettings.SECRET_PASSWORD, "hunter2")
+        assertNull(ControlSettings.requiredPassword(p, secrets))
+
+        ControlSettings.setAuthRequired(p, true)
+        assertEquals("hunter2", ControlSettings.requiredPassword(p, secrets))
+    }
+
+    @Test fun requiredPassword_flagWithoutASecretEnforcesNothing() {
+        // The UI can't create this state; if prefs drift into it the API must stay reachable
+        // (an unset password can never lock the owner out) rather than 401 everything forever.
+        val p = FakePrefs()
+        ControlSettings.setAuthRequired(p, true)
+        assertNull(ControlSettings.requiredPassword(p, InMemorySecretStore()))
+        val blank = InMemorySecretStore().apply { put(ControlSettings.SECRET_PASSWORD, "   ") }
+        assertNull(ControlSettings.requiredPassword(p, blank))
+    }
+
     @Test fun deviceIdIsCreatedOnceAndStable() {
         val p = FakePrefs()
         val first = ControlSettings.deviceId(p)

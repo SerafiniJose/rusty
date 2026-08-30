@@ -48,6 +48,7 @@ object SettingsSheet {
         SettingsTabKey.GENERAL -> Tab(key, "General", R.drawable.ic_mdi_cog, R.layout.settings_panel_general)
         SettingsTabKey.SCREENSAVER -> Tab(key, "Screensaver", R.drawable.ic_mdi_weather_night, R.layout.settings_panel_screensaver)
         SettingsTabKey.SLIDESHOW -> Tab(key, "Slideshow", R.drawable.ic_mdi_image, R.layout.settings_panel_slideshow)
+        SettingsTabKey.REMOTE_CONTROL -> Tab(key, "Remote Control", R.drawable.ic_mdi_remote, R.layout.settings_panel_remote_control)
         SettingsTabKey.DLNA_PLAYER -> Tab(key, "DLNA Player", R.drawable.ic_mdi_dlna, R.layout.settings_panel_dlna_player)
         SettingsTabKey.SPOTIFY -> Tab(key, "Spotify", R.drawable.ic_music_note, R.layout.settings_panel_spotify)
         SettingsTabKey.HOME_ASSISTANT -> Tab(key, "Home Assistant", R.drawable.ic_mdi_home_assistant, R.layout.settings_panel_home_assistant)
@@ -69,7 +70,7 @@ object SettingsSheet {
         val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         fun currentSpecs(): List<Tab> {
             val featureTabs = FeatureRegistry.enabledIds(prefs).map { FeatureRegistry.byId(it).settingsTab }
-            return settingsTabsFor(featureTabs, SlideshowSettings.isEnabled(prefs))
+            return settingsTabsFor(featureTabs, SlideshowSettings.isEnabled(prefs), ControlSettings.isEnabled(prefs))
                 .map { shellTabSpecFor(it) }
         }
         var specs = currentSpecs()
@@ -108,6 +109,7 @@ object SettingsSheet {
                 SettingsTabKey.SPOTIFY -> SpotifyFeature.settingsPanel(panelCtx)
                 SettingsTabKey.HOME_ASSISTANT -> HomeAssistantFeature.settingsPanel(panelCtx)
                 SettingsTabKey.DLNA_PLAYER -> DlnaPlayerSettingsPanel(panelCtx)
+                SettingsTabKey.REMOTE_CONTROL -> RemoteControlSettingsPanel(panelCtx)
                 SettingsTabKey.SLIDESHOW -> SlideshowSettingsPanel(panelCtx)
                 SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER -> null
             }
@@ -287,6 +289,8 @@ object SettingsSheet {
             ControlSettings.setEnabled(prefs, isChecked)
             ControlService.syncFromPrefs(activity)
             refreshBrightnessPermissionUi()
+            // The Remote Control settings tab exists exactly while the API does.
+            onFeatureTabsChanged()
         }
         val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
             if (hasFocus) refreshBrightnessPermissionUi()
