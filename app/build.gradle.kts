@@ -47,6 +47,22 @@ android {
         }
     }
 
+    // The vendored sherpa-onnx AAR ships four native libs per ABI, but Rusty reaches
+    // sherpa only through its Kotlin/JNI surface: libsherpa-onnx-jni.so DT_NEEDEDs
+    // libonnxruntime.so and nothing else. libsherpa-onnx-c-api.so and
+    // libsherpa-onnx-cxx-api.so exist for native C/C++ consumers and are dead weight
+    // here — 8.4 MB across both ABIs. Excluded at packaging time rather than by
+    // repacking the .aar, so the vendored file stays pristine and upgrading it
+    // remains "replace the file".
+    packaging {
+        jniLibs {
+            excludes += listOf(
+                "**/libsherpa-onnx-c-api.so",
+                "**/libsherpa-onnx-cxx-api.so",
+            )
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
