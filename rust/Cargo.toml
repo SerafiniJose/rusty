@@ -66,3 +66,24 @@ librespot-discovery = { path = "vendor/librespot-discovery" }
 # release newer than 0.8.0 carries the fix.
 librespot-core = { path = "vendor/librespot-core" }
 
+
+# Release profile. Cargo's stock release settings left ~10.5 MB of dead weight in
+# the shipped APK: the cdylib kept its full static symbol table (.symtab/.strtab
+# was 6.3 MB of the 18.1 MB arm64 core), and 16 codegen units meant no
+# cross-unit inlining across the librespot/tokio/rodio stack.
+#
+# `strip = "symbols"` drops .symtab/.strtab only — the dynamic symbol table
+# (.dynsym) survives, so JNI method resolution and the libc++_shared NEEDED entry
+# are unaffected.
+#
+# `panic` is deliberately left at the default `unwind`. tokio turns a panicking
+# task into a `JoinError` rather than taking down the process, and both the
+# vendored librespot-discovery handler and the hyper connection tasks rely on a
+# panic staying contained to one connection (see the [patch.crates-io] notes
+# above). `panic = "abort"` would trade a dropped Spotify connection for an app
+# crash — a bad deal for a few hundred KB.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
