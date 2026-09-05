@@ -1,16 +1,12 @@
 package dev.rusty.app
 
-import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import android.view.KeyEvent
 import android.view.View
 import android.view.Window
-import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.RadioButton
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -221,11 +217,11 @@ object CameraBehaviorPrefs {
 }
 
 /**
- * Binder for the Camera settings tab: a CRUD list of configured cameras, an ONVIF discovery
- * scanner that pre-fills the add dialog, and the grid-refresh / frame-grab behavior prefs.
+ * Binder for the Camera settings tab: a CRUD list of configured cameras (with a reorder mode,
+ * [CameraReorderMode]), the "Add a camera" chooser ([CameraAddCard], where ONVIF discovery now
+ * lives), and the grid-refresh / frame-grab behavior prefs.
  *
- * Follows [SlideshowSettingsPanel]'s three-collapsible-section shape (here: Cameras / Discovery /
- * Behavior) and [RemoteControlSettingsPanel]'s dialog-card idiom for the edit form.
+ * Follows [SlideshowSettingsPanel]'s collapsible-section shape (here: Cameras / Behavior) and [RemoteControlSettingsPanel]'s dialog-card idiom for the edit form.
  *
  * The Cameras list is rendered by hand into a plain [LinearLayout] (like every other list in this
  * app's settings — see the Immich filter rows) rather than a RecyclerView: camera counts are small
@@ -242,6 +238,8 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
     override val layoutRes: Int = R.layout.settings_panel_camera
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /** Null until bind() wires it; renderCameraList runs once before that. */
+    private var reorder: CameraReorderMode? = null
 
     override fun bind(panel: View): () -> Unit {
         val activity = ctx.activity
@@ -252,10 +250,6 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             panel.findViewById(R.id.headCamCameras), panel.findViewById(R.id.bodyCamCameras),
             "Cameras", startExpanded = true,
         )
-        val discoverySection = CollapsibleSection(
-            panel.findViewById(R.id.headCamDiscovery), panel.findViewById(R.id.bodyCamDiscovery),
-            "Discovery", startExpanded = false,
-        )
         val behaviorSection = CollapsibleSection(
             panel.findViewById(R.id.headCamBehavior), panel.findViewById(R.id.bodyCamBehavior),
             "Behavior", startExpanded = false,
@@ -263,7 +257,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
 
         val cameraListContainer = panel.findViewById<LinearLayout>(R.id.camCameraList)
         val cameraListEmpty = panel.findViewById<TextView>(R.id.tvCamCameraListEmpty)
-        val addCameraRow = panel.findViewById<View>(R.id.rowCamAddCamera)
+        val addCameraRow = panel.findViewById<View>(R.id.btnCamAdd)
 
         var cameras: List<CameraRecord> = CameraStore.load(prefs)
 
@@ -310,6 +304,11 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         }
 
         fun renderSummary() {
+            // The ticker repaints this every second; while reordering the mode wins over the count.
+            if (reorder?.active == true) {
+                camerasSection.setSummary(SectionSummary("Reordering", active = true))
+                return
+            }
             val sorted = cameras.sortedBy { it.position }
             val statuses = CameraStatusRelay.current()
             val offline = sorted.count { statuses[it.id]?.state == TileState.UNREACHABLE }
@@ -328,6 +327,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         }
 
         fun renderCameraList() {
+            reorder?.let { if (it.active) { it.render(); renderSummary(); return } }
             cameraListContainer.removeAllViews()
             rowViews.clear()
             val sorted = cameras.sortedBy { it.position }
@@ -374,10 +374,15 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         }
         rowTicker.postDelayed(rowTick, 1_000L)
 
-        addCameraRow.setOnClickListener {
+        val actionBar = panel.findViewById<View>(R.id.camActionBar)
+        val reorderRow = panel.findViewById<View>(R.id.btnCamReorder)
+        val reorderStrip = panel.findViewById<View>(R.id.camReorderStrip)
+        val reorderDoneRow = panel.findViewById<View>(R.id.btnCamReorderDone)
+
+        fun openAddForm(prefill: DiscoveryPrefill?) {
             openEditDialog(
                 existingCamera = null,
-                prefill = null,
+                prefill = prefill,
                 cameras = { cameras },
                 secretsFor = ::secretsFor,
                 onSaved = { result ->
@@ -389,210 +394,40 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
                 onDeleted = {},
             )
         }
-
-        // ---- Discovery ------------------------------------------------------------------------
-
-        val scanButton = panel.findViewById<MaterialButton>(R.id.btnCamScan)
-        val scanSpinner = panel.findViewById<ProgressBar>(R.id.camScanSpinner)
-        val discoveryResults = panel.findViewById<LinearLayout>(R.id.camDiscoveryResults)
-        val discoveryEmpty = panel.findViewById<TextView>(R.id.tvCamDiscoveryEmpty)
-
-        // The empty line has to say two different things: "you haven't scanned" before the first
-        // scan, and "the scan came back with nothing" after one. Without the distinction a finished
-        // scan that found no cameras looks exactly like a scan that never ran.
-        var hasScanned = false
-
-        fun renderDiscoveryResults(results: List<DiscoveredCamera>, localAddress: Pair<String, Int>) {
-            discoveryResults.removeAllViews()
-            discoveryEmpty.isVisible = results.isEmpty()
-            discoveryEmpty.text = if (hasScanned) {
-                "No ONVIF cameras responded on this network."
-            } else {
-                "No cameras found yet. Tap Scan."
-            }
-            for (found in results) {
-                val xaddr = OnvifDiscoveryProtocol.pickXAddr(found.xaddrs, localAddress.first, localAddress.second)
-                val row = activity.layoutInflater.inflate(R.layout.view_camera_discovery_row, discoveryResults, false)
-                row.findViewById<TextView>(R.id.tvCamDiscRowName).text = found.name ?: found.hardware ?: found.endpointUuid
-                row.findViewById<TextView>(R.id.tvCamDiscRowSubtitle).text = xaddr ?: found.xaddrs.firstOrNull().orEmpty()
-                val alreadyAdded = xaddr != null && cameras.any { hostOf(it.rtspUrl) == hostOf(xaddr) }
-                val actionable = !alreadyAdded && xaddr != null
-                val addedLabel = row.findViewById<TextView>(R.id.tvCamDiscRowAdded)
-                addedLabel.isVisible = alreadyAdded
-                row.isEnabled = actionable
-                // A disabled View is not automatically pulled out of D-pad focus order — set both
-                // explicitly so an already-added / unresolvable row is never a dead focus stop.
-                row.isFocusable = actionable
-                row.isClickable = actionable
-                row.alpha = if (actionable) 1f else 0.5f
-                if (actionable) {
-                    row.setOnClickListener {
-                        openDiscoveryCredentialsDialog(found.name) { user, pass ->
-                            scope.launch {
-                                val result = withContext(Dispatchers.IO) {
-                                    OnvifClient(AndroidSoapTransport(), nonceSource = ::randomNonce, canDecode = DeviceDecoders::canDecode)
-                                        .resolve(xaddr, user, pass)
-                                }
-                                when (result) {
-                                    is OnvifResult.Resolved -> openEditDialog(
-                                        existingCamera = null,
-                                        prefill = DiscoveryPrefill(
-                                            name = found.name ?: found.hardware ?: "Camera",
-                                            rtspUrl = result.streamUri,
-                                            mainRtspUrl = result.mainStreamUri,
-                                            mainSkippedNote = result.skippedMain?.let {
-                                                "Main stream skipped: this device can't decode " +
-                                                    "${it.width}×${it.height} " +
-                                                    CodecNames.label(CodecNames.mimeForOnvif(it.codec) ?: it.codec)
-                                            },
-                                            snapshotUrl = result.snapshotUri,
-                                            username = user,
-                                            password = pass,
-                                        ),
-                                        cameras = { cameras },
-                                        secretsFor = ::secretsFor,
-                                        onSaved = { r ->
-                                            cameras = r.cameras
-                                            persistCredentials(r, isEdit = false)
-                                            CameraStore.save(prefs, cameras)
-                                            renderCameraList()
-                                        },
-                                        onDeleted = {},
-                                    )
-                                    is OnvifResult.Failed -> showFeedback(
-                                        panel.findViewById(R.id.tvCamDiscoveryFeedback),
-                                        "Couldn't resolve the stream (${result.step}): ${result.detail}",
-                                        HaFeedbackKind.ERROR,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    row.setOnClickListener(null)
-                }
-                discoveryResults.addView(row)
-            }
+        addCameraRow.setOnClickListener {
+            CameraAddCard(
+                activity = activity,
+                scope = scope,
+                cameras = { cameras },
+                askCredentials = ::openDiscoveryCredentialsDialog,
+                onManual = { openAddForm(null) },
+                onResolved = { openAddForm(it) },
+            ).show()
         }
 
-        scanButton.setOnClickListener {
-            scanButton.isEnabled = false
-            scanSpinner.isVisible = true
-            discoveryResults.removeAllViews()
-            discoveryEmpty.isVisible = false
-            scope.launch {
-                // Fresh io/discovery per scan — AndroidDiscoveryIo's socket dies on close().
-                val (found, localAddress) = withContext(Dispatchers.IO) {
-                    val io = AndroidDiscoveryIo(activity)
-                    val results = runCatching { OnvifDiscovery(io).scan() }.getOrElse { emptyList() }
-                    results to io.localAddress()
-                }
-                scanButton.isEnabled = true
-                scanSpinner.isVisible = false
-                hasScanned = true
-                renderDiscoveryResults(found, localAddress)
-            }
-        }
-
-        val addressField = panel.findViewById<EditText>(R.id.etCamAddress)
-        val lookupButton = panel.findViewById<MaterialButton>(R.id.btnCamLookup)
-        val lookupSpinner = panel.findViewById<ProgressBar>(R.id.camLookupSpinner)
-        val addressError = panel.findViewById<TextView>(R.id.tvCamAddressError)
-
-        fun lookUpAddress() {
-            // The button is disabled for the whole probe; a second OK (remote or soft keyboard)
-            // while one is in flight must not start another.
-            if (!lookupButton.isEnabled) return
-            val input = addressField.text?.toString().orEmpty()
-            val candidates = OnvifAddress.candidates(input)
-            addressError.isVisible = false
-            if (candidates.isEmpty()) {
-                addressError.text = "Enter a host name or IP address"
-                addressError.isVisible = true
-                return
-            }
-            lookupButton.isEnabled = false
-            lookupSpinner.isVisible = true
-            scope.launch {
-                var answered: String? = null
-                var sawNotOnvif = false
-                withContext(Dispatchers.IO) {
-                    for (xaddr in candidates) {
-                        when (OnvifClient(AndroidSoapTransport(), nonceSource = ::randomNonce).probeDevice(xaddr)) {
-                            OnvifProbe.Answered -> { answered = xaddr; break }
-                            OnvifProbe.NotOnvif -> sawNotOnvif = true
-                            OnvifProbe.NoAnswer -> Unit
-                        }
-                    }
-                }
-                lookupButton.isEnabled = true
-                lookupSpinner.isVisible = false
-                val xaddr = answered
-                if (xaddr == null) {
-                    val ports = candidates.map { it.substringAfter("://").substringBefore('/').substringAfterLast(':') }
-                    addressError.text = if (sawNotOnvif) "Not an ONVIF endpoint" else "Nothing answered on ${ports.joinToString(" or ")}"
-                    addressError.isVisible = true
-                    return@launch
-                }
-                val host = xaddr.substringAfter("://").substringBefore('/').substringBefore(':').trim('[', ']')
-                openDiscoveryCredentialsDialog(host) { user, pass ->
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            OnvifClient(AndroidSoapTransport(), nonceSource = ::randomNonce, canDecode = DeviceDecoders::canDecode)
-                                .resolve(xaddr, user, pass)
-                        }
-                        when (result) {
-                            is OnvifResult.Resolved -> openEditDialog(
-                                existingCamera = null,
-                                prefill = DiscoveryPrefill(
-                                    name = host,
-                                    rtspUrl = result.streamUri,
-                                    mainRtspUrl = result.mainStreamUri,
-                                    mainSkippedNote = result.skippedMain?.let {
-                                        "Main stream skipped: this device can't decode ${it.width}×${it.height} ${CodecNames.label(CodecNames.mimeForOnvif(it.codec) ?: it.codec)}"
-                                    },
-                                    snapshotUrl = result.snapshotUri,
-                                    username = user,
-                                    password = pass,
-                                ),
-                                cameras = { cameras },
-                                secretsFor = ::secretsFor,
-                                onSaved = { r ->
-                                    cameras = r.cameras
-                                    persistCredentials(r, isEdit = false)
-                                    CameraStore.save(prefs, cameras)
-                                    renderCameraList()
-                                },
-                                onDeleted = {},
-                            )
-                            is OnvifResult.Failed -> if (result.step == "auth") {
-                                addressError.text = "Wrong username or password"
-                                addressError.isVisible = true
-                            } else {
-                                showFeedback(
-                                    panel.findViewById(R.id.tvCamDiscoveryFeedback),
-                                    "Couldn't resolve the stream (${result.step}): ${result.detail}",
-                                    HaFeedbackKind.ERROR,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        lookupButton.setOnClickListener { lookUpAddress() }
-        // imeOptions on etCamAddress is actionGo; a hardware/Bluetooth Enter arrives as a
-        // KEYCODE_ENTER event with an unspecified action id instead. Gate on ACTION_DOWN so a
-        // remote's OK fires exactly one probe per press.
-        addressField.setOnEditorActionListener { _, actionId, event ->
-            val enterKeyDown = event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
-            if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE || enterKeyDown) {
-                lookUpAddress()
-                true
-            } else {
-                false
-            }
-        }
+        // ---- Reorder mode -----------------------------------------------------------------------
+        // The list re-renders as reorder rows (view_camera_reorder_row.xml); every move is saved at
+        // once so the wall follows along. rowViews is left EMPTY in this mode: the status ticker
+        // repaints through it, and a reorder row has no status dot to paint.
+        reorderRow.setOnClickListener { reorder?.enter() }
+        reorderDoneRow.setOnClickListener { reorder?.exit() }
+        reorder = CameraReorderMode(
+            activity = activity,
+            container = cameraListContainer,
+            doneButton = reorderDoneRow,
+            cameras = { cameras },
+            pageSize = { CameraBehaviorPrefs.gridLayoutFrom(prefs.getString(CameraBehaviorPrefs.KEY_GRID_LAYOUT, null)).pageSize },
+            onMoved = { moved ->
+                cameras = moved
+                CameraStore.save(prefs, cameras)
+                renderSummary()
+            },
+            onModeChanged = { active ->
+                actionBar.isVisible = !active
+                reorderStrip.isVisible = active
+                if (active) { rowViews.clear(); renderSummary() } else renderCameraList()
+            },
+        )
 
         // ---- Behavior ---------------------------------------------------------------------------
 
@@ -683,9 +518,6 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             prefs.edit().putBoolean(CameraBehaviorPrefs.KEY_FRAME_GRAB_ENABLED, isChecked).apply()
         }
 
-        // Referenced only to keep the section non-empty lint-clean; it remains collapsible.
-        discoverySection.setSummary(SectionSummary("ONVIF scan", active = false))
-
         return {
             CameraStatusRelay.removeListener(statusListener)
             rowTicker.removeCallbacks(rowTick)
@@ -694,16 +526,6 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
     }
 
     // ---- Edit dialog ----------------------------------------------------------------------------
-
-    private data class DiscoveryPrefill(
-        val name: String,
-        val rtspUrl: String,
-        val mainRtspUrl: String?,
-        val mainSkippedNote: String?,
-        val snapshotUrl: String?,
-        val username: String?,
-        val password: String?,
-    )
 
     private fun openEditDialog(
         existingCamera: CameraRecord?,
@@ -732,8 +554,6 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         val passField = root.findViewById<EditText>(R.id.etCamEditPass)
         val audioSwitch = root.findViewById<SwitchMaterial>(R.id.switchCamEditAudio)
         val forceTcpSwitch = root.findViewById<SwitchMaterial>(R.id.switchCamEditForceTcp)
-        val moveUpButton = root.findViewById<MaterialButton>(R.id.btnCamEditMoveUp)
-        val moveDownButton = root.findViewById<MaterialButton>(R.id.btnCamEditMoveDown)
         val testButton = root.findViewById<MaterialButton>(R.id.btnCamEditTest)
         val testResult = root.findViewById<TextView>(R.id.tvCamEditTestResult)
         val deleteButton = root.findViewById<MaterialButton>(R.id.btnCamEditDelete)
@@ -743,9 +563,6 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
 
         title.text = if (existingCamera == null) "Add camera" else "Edit camera"
         deleteButton.isVisible = existingCamera != null
-        val movable = existingCamera != null
-        moveUpButton.isVisible = movable
-        moveDownButton.isVisible = movable
 
         nameField.setText(existingCamera?.name ?: prefill?.name.orEmpty())
         rtspField.setText(existingCamera?.rtspUrl ?: prefill?.rtspUrl.orEmpty())
@@ -781,18 +598,6 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             audioEnabled = audioSwitch.isChecked,
             forceTcp = forceTcpSwitch.isChecked,
         )
-
-        // Position ▲/▼ is staged, not committed: reordering only ever touches this local snapshot
-        // of the list, and only reaches CameraStore.save via Save's applyEdit call below — a
-        // ▲ then Cancel must leave the persisted order untouched, exactly like every other field
-        // in this dialog.
-        var stagedCameras = cameras()
-        moveUpButton.setOnClickListener {
-            existingCamera?.let { stagedCameras = CameraSettingsModel.move(stagedCameras, it.id, true) }
-        }
-        moveDownButton.setOnClickListener {
-            existingCamera?.let { stagedCameras = CameraSettingsModel.move(stagedCameras, it.id, false) }
-        }
 
         testButton.setOnClickListener {
             val edit = currentEdit()
@@ -872,9 +677,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
                 return@setOnClickListener
             }
             error.isVisible = false
-            // Apply on top of stagedCameras (not cameras()) so any ▲/▼ clicked in this session is
-            // committed together with the field edits, in one save.
-            val result = CameraSettingsModel.applyEdit(stagedCameras, edit)
+            val result = CameraSettingsModel.applyEdit(cameras(), edit)
             onSaved(result)
             card.dismiss()
         }
@@ -921,21 +724,6 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         }
         card.show()
         userField.requestFocus()
-    }
-
-    private fun randomNonce(): ByteArray {
-        val bytes = ByteArray(16)
-        SecureRandom().nextBytes(bytes)
-        return bytes
-    }
-
-    /** Bare host (no port, no userinfo) out of an rtsp/http(s) URL, for the discovery
-     *  already-added match. Best-effort string parsing, same idiom as [OnvifDiscoveryProtocol]. */
-    private fun hostOf(url: String): String? {
-        val withoutScheme = url.substringAfter("://", missingDelimiterValue = "")
-        if (withoutScheme.isEmpty()) return null
-        val authority = withoutScheme.substringBefore('/').substringAfterLast('@')
-        return authority.substringBefore(':').lowercase()
     }
 
     private companion object {

@@ -38,6 +38,4 @@
     <string name="camera_fatal_generic">Camera unavailable.</string>
 
     <!-- Camera settings panel (Task 12) -->
-    <string name="camera_move_up_description">Move up</string>
-    <string name="camera_move_down_description">Move down</string>
 </resources>

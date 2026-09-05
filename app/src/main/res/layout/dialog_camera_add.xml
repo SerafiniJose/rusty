@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Add a camera" chooser card. Opens on three ways in (scan / by address / by hand); Scan and
+     By address turn the same card into a results pane (camAddResultsPane) whose rows prefill the
+     Add form after a credentials prompt. Card idiom of dialog_camera_edit.xml; row idiom of
+     view_camera_row.xml. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_popup_card"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/tvCamAddTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_semibold"
+            android:text="Add a camera"
+            android:textColor="@color/ink"
+            android:textSize="16sp" />
+
+        <!-- Choices -->
+        <LinearLayout
+            android:id="@+id/camAddChoices"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/rowCamAddScan"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="@drawable/bg_tv_focus"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingVertical="10dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/hanken_medium"
+                        android:text="Scan this Wi-Fi network"
+                        android:textColor="@color/ink"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/hanken_regular"
+                        android:text="Finds ONVIF cameras and fills in their stream for you"
+                        android:textColor="@color/muted_dim"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <ProgressBar
+                    android:id="@+id/camAddScanSpinner"
+                    style="?android:attr/progressBarStyleSmall"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="8dp"
+                    android:indeterminateTint="@color/accent_fallback"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/tvCamAddScanChevron"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:fontFamily="@font/hanken_regular"
+                    android:importantForAccessibility="no"
+                    android:text="›"
+                    android:textColor="@color/muted_dim"
+                    android:textSize="18sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/rowCamAddAddress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="@drawable/bg_tv_focus"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingVertical="10dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/hanken_medium"
+                        android:text="By address"
+                        android:textColor="@color/ink"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/hanken_regular"
+                        android:text="For a camera on another network, by IP address or host name"
+                        android:textColor="@color/muted_dim"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:fontFamily="@font/hanken_regular"
+                    android:importantForAccessibility="no"
+                    android:text="›"
+                    android:textColor="@color/muted_dim"
+                    android:textSize="18sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/rowCamAddManual"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="@drawable/bg_tv_focus"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingVertical="10dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/hanken_medium"
+                        android:text="Enter stream by hand"
+                        android:textColor="@color/ink"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/hanken_regular"
+                        android:text="You know the rtsp:// URL already"
+                        android:textColor="@color/muted_dim"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:fontFamily="@font/hanken_regular"
+                    android:importantForAccessibility="no"
+                    android:text="›"
+                    android:textColor="@color/muted_dim"
+                    android:textSize="18sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Results pane: scan results and/or the address lookup -->
+        <LinearLayout
+            android:id="@+id/camAddResultsPane"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/camAddResults"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/tvCamAddEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:fontFamily="@font/hanken_regular"
+                android:text="No ONVIF cameras responded on this network."
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
+            <View
+                android:id="@+id/camAddDivider"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="10dp"
+                android:layout_marginBottom="4dp"
+                android:background="@color/surface_border" />
+
+            <!-- Address lookup: cameras on another subnet, which multicast discovery can never
+                 reach. Tries ONVIF on 8000 then 80 unless a port is typed. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="Address"
+                    android:textColorHint="@color/muted_dim"
+                    app:boxStrokeColor="@color/accent_fallback"
+                    app:hintTextColor="@color/muted_dim"
+                    app:placeholderText="IP address, with :port if not 8000 or 80"
+                    app:placeholderTextColor="@color/muted_dim">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etCamAddAddress"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/hanken_regular"
+                        android:imeOptions="actionGo"
+                        android:inputType="textUri"
+                        android:maxLines="1"
+                        android:textColor="@color/ink" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCamAddLookup"
+                    style="@style/Widget.Rusty.Button.Secondary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:foreground="@drawable/bg_tv_focus"
+                    android:text="Look up" />
+
+                <ProgressBar
+                    android:id="@+id/camAddLookupSpinner"
+                    style="?android:attr/progressBarStyleSmall"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="10dp"
+                    android:indeterminateTint="@color/accent_fallback"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvCamAddError"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:fontFamily="@font/hanken_regular"
+                android:textColor="@color/dot_red"
+                android:textSize="13sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="end|center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCamAddManual"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:foreground="@drawable/bg_tv_focus"
+                android:text="Enter stream by hand"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCamAddRescan"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:foreground="@drawable/bg_tv_focus"
+                android:text="Rescan"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCamAddCancel"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:foreground="@drawable/bg_tv_focus"
+                android:text="Cancel" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

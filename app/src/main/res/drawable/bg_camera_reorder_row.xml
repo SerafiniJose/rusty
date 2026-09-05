@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reorder row: flat at rest; the "lifted" state (View.setActivated) raises it on surface_raised
+     with an accent edge so the camera being moved reads as picked up, D-pad and touch alike. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_activated="true">
+        <shape>
+            <solid android:color="@color/surface_raised" />
+            <corners android:radius="10dp" />
+            <stroke android:width="1dp" android:color="@color/accent_fallback" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+</selector>

@@ -227,48 +227,6 @@
                 app:trackTint="@color/switch_track_tint" />
         </LinearLayout>
 
-        <!-- Position: two small buttons, hidden when adding (a new camera has nothing to swap
-             with yet — this is opened only while a save has already given it a position). -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:fontFamily="@font/hanken_medium"
-                android:text="Position"
-                android:textColor="@color/ink"
-                android:textSize="15sp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCamEditMoveUp"
-                style="@style/Widget.Rusty.Button.Secondary"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:contentDescription="@string/camera_move_up_description"
-                android:foreground="@drawable/bg_tv_focus"
-                android:minWidth="0dp"
-                android:paddingHorizontal="14dp"
-                android:text="▲" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCamEditMoveDown"
-                style="@style/Widget.Rusty.Button.Secondary"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:contentDescription="@string/camera_move_down_description"
-                android:foreground="@drawable/bg_tv_focus"
-                android:minWidth="0dp"
-                android:paddingHorizontal="14dp"
-                android:text="▼" />
-        </LinearLayout>
-
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reorder-mode strip above the camera list: the active-chip tint with a soft accent edge. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/accent_chip_fill" />
+    <corners android:radius="10dp" />
+    <stroke android:width="1dp" android:color="#591DB954" />
+</shape>

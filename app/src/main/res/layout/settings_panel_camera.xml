@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Camera settings tab: three collapsible sections (Cameras / Discovery / Behavior), same shape
+<!-- Camera settings tab: two collapsible sections (Cameras / Behavior; ONVIF discovery lives in the Add camera card), same shape
      as SlideshowSettingsPanel's Server/Filters/Display. Root is a plain LinearLayout — the panel
      container already scrolls (bottom_sheet_settings.xml). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -24,6 +24,40 @@
         android:paddingBottom="14dp">
 
         <LinearLayout
+            android:id="@+id/camReorderStrip"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/bg_mode_strip"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingEnd="6dp"
+            android:paddingVertical="4dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="@font/hanken_regular"
+                android:text="Drag a handle, or select a camera and move it with ▲ ▼. The wall follows as you go."
+                android:textColor="@color/ink"
+                android:textSize="13sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCamReorderDone"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:foreground="@drawable/bg_tv_focus"
+                android:minWidth="0dp"
+                android:paddingHorizontal="16dp"
+                android:text="Done" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/camCameraList"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -40,186 +74,35 @@
             android:textColor="@color/muted_dim"
             android:textSize="13sp" />
 
-        <!-- Whole-row tap, same idiom as the section header itself. -->
+        <!-- Action buttons BELOW the list (Add opens dialog_camera_add.xml; Reorder flips the list
+             into CameraReorderMode). Same square Secondary buttons as every dialog footer. While
+             reordering the bar hides and the mode strip above the list takes over, so the hint and
+             Done stay on screen however many cameras there are. -->
         <LinearLayout
-            android:id="@+id/rowCamAddCamera"
+            android:id="@+id/camActionBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:clickable="true"
-            android:focusable="true"
-            android:foreground="@drawable/bg_tv_focus"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingVertical="10dp">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:fontFamily="@font/hanken_medium"
-                android:text="Add camera"
-                android:textColor="@color/accent_fallback"
-                android:textSize="16sp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="@font/hanken_regular"
-                android:importantForAccessibility="no"
-                android:text="+"
-                android:textColor="@color/accent_fallback"
-                android:textSize="20sp" />
-        </LinearLayout>
-    </LinearLayout>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/surface_border" />
-
-    <!-- DISCOVERY -->
-
-    <include
-        android:id="@+id/headCamDiscovery"
-        layout="@layout/view_settings_section_header"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
-
-    <LinearLayout
-        android:id="@+id/bodyCamDiscovery"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingBottom="14dp">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:fontFamily="@font/hanken_regular"
-            android:text="Finds ONVIF cameras on this Wi-Fi network. Tap a result to enter its credentials and add it."
-            android:textColor="@color/muted_dim"
-            android:textSize="13sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="8dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCamScan"
+                android:id="@+id/btnCamAdd"
                 style="@style/Widget.Rusty.Button.Secondary"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:foreground="@drawable/bg_tv_focus"
-                android:text="Scan" />
-
-            <ProgressBar
-                android:id="@+id/camScanSpinner"
-                style="?android:attr/progressBarStyleSmall"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:layout_marginStart="12dp"
-                android:indeterminateTint="@color/accent_fallback"
-                android:visibility="gone" />
-        </LinearLayout>
-
-        <!-- Add by address: for cameras on another subnet, which multicast discovery can never
-             reach. Tries ONVIF on 8000 then 80 unless a port is typed. -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:fontFamily="@font/hanken_medium"
-            android:text="Add by address"
-            android:textColor="@color/ink"
-            android:textSize="16sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textColorHint="@color/muted_dim"
-                app:boxStrokeColor="@color/accent_fallback"
-                app:hintTextColor="@color/muted_dim">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etCamAddress"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="@font/hanken_regular"
-                    android:hint="192.168.4.90 or 192.168.4.90:8000"
-                    android:imeOptions="actionGo"
-                    android:inputType="textUri"
-                    android:maxLines="1"
-                    android:textColor="@color/ink" />
-            </com.google.android.material.textfield.TextInputLayout>
+                android:text="Add camera" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCamLookup"
+                android:id="@+id/btnCamReorder"
                 style="@style/Widget.Rusty.Button.Secondary"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="10dp"
                 android:foreground="@drawable/bg_tv_focus"
-                android:text="Look up" />
-
-            <ProgressBar
-                android:id="@+id/camLookupSpinner"
-                style="?android:attr/progressBarStyleSmall"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:layout_marginStart="10dp"
-                android:indeterminateTint="@color/accent_fallback"
-                android:visibility="gone" />
+                android:text="Reorder" />
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/tvCamAddressError"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:fontFamily="@font/hanken_regular"
-            android:textColor="@color/dot_red"
-            android:textSize="13sp"
-            android:visibility="gone" />
-
-        <LinearLayout
-            android:id="@+id/camDiscoveryResults"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:orientation="vertical" />
-
-        <TextView
-            android:id="@+id/tvCamDiscoveryEmpty"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:fontFamily="@font/hanken_regular"
-            android:text="No cameras found yet. Tap Scan."
-            android:textColor="@color/muted_dim"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/tvCamDiscoveryFeedback"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:fontFamily="@font/hanken_regular"
-            android:textSize="13sp"
-            android:visibility="gone" />
     </LinearLayout>
 
     <View
