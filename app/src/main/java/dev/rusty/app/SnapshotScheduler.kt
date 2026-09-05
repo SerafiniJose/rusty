@@ -1,10 +1,9 @@
 package dev.rusty.app
 
-/** How a snapshot for a tile is obtained. */
+/** How a snapshot for a tile is obtained. A camera with a `snapshotUrl` gets [HTTP_THEN_FRAME],
+ *  one without gets [FRAME_GRAB]; there is no "still only" mode, because a camera that can't be
+ *  grabbed and has no still would simply never get a tile. */
 enum class JobKind {
-    /** Pull the camera's still-image (`snapshotUrl`) over HTTP. */
-    HTTP,
-
     /**
      * Pull the still-image over HTTP and, if that fails, fall back to a frame grab within whatever
      * is left of the job's deadline. A snapshot URL can be broken in ways the camera itself is not
@@ -31,8 +30,7 @@ data class SnapshotJob(val cameraId: String, val kind: JobKind, val deadlineAt: 
  * - [STALE] — an attempt has been made but the newest frame (if any) is older than three refresh
  *   intervals.
  * - [UNREACHABLE] — the last two attempts in a row failed.
- * - [NONE] — nothing has ever been fetched and none is pending, or the camera has no snapshot
- *   mechanism at all (no `snapshotUrl` and frame grabbing disallowed), or the id is unknown.
+ * - [NONE] — nothing has ever been fetched and none is pending, or the id is unknown.
  */
 enum class TileState { OK, STALE, UNREACHABLE, NONE }
 
@@ -81,8 +79,6 @@ class SnapshotScheduler(
     /** Id the next scan starts at; null (or an unknown id) starts at the head of [order]. */
     private var cursorId: String? = null
 
-    private var frameGrabAllowed: Boolean = false
-
     private var inFlight: SnapshotJob? = null
 
     private var liveViewOpen: Boolean = false
@@ -98,8 +94,7 @@ class SnapshotScheduler(
      * for ids that survive and dropped for ids that disappear; a newly added camera is due at once.
      * If the in-flight job's camera was removed its slot is freed.
      */
-    fun setCameras(cameras: List<CameraRecord>, frameGrabAllowed: Boolean) {
-        this.frameGrabAllowed = frameGrabAllowed
+    fun setCameras(cameras: List<CameraRecord>) {
         val keep = cameras.map { it.id }.toSet()
         states.keys.retainAll(keep)
         for (cam in cameras) {
@@ -143,7 +138,7 @@ class SnapshotScheduler(
             val id = order[index]
             if (id in testRunning) continue
             val state = states[id] ?: continue
-            val kind = kindFor(state.record) ?: continue
+            val kind = kindFor(state.record)
             if (now < state.dueAt) continue
 
             val job = SnapshotJob(cameraId = id, kind = kind, deadlineAt = now + jobDeadlineMs)
@@ -219,12 +214,8 @@ class SnapshotScheduler(
     /** The job currently out, or null. */
     fun inFlightJob(): SnapshotJob? = inFlight
 
-    private fun kindFor(record: CameraRecord): JobKind? = when {
-        !record.snapshotUrl.isNullOrBlank() ->
-            if (frameGrabAllowed) JobKind.HTTP_THEN_FRAME else JobKind.HTTP
-        frameGrabAllowed -> JobKind.FRAME_GRAB
-        else -> null
-    }
+    private fun kindFor(record: CameraRecord): JobKind =
+        if (record.snapshotUrl.isNullOrBlank()) JobKind.FRAME_GRAB else JobKind.HTTP_THEN_FRAME
 
     private companion object {
         /** A [CameraState.dueAt] that is in the past for any plausible `now`. */

@@ -304,7 +304,6 @@ class CameraSnapshots(
         val remaining = (job.deadlineAt - clock()).coerceAtLeast(0L)
         if (remaining <= 0L) return null
         return when (job.kind) {
-            JobKind.HTTP -> httpFrame(cam, user, pass, remaining)
             JobKind.HTTP_THEN_FRAME -> {
                 // A failing snapshot URL says nothing about the RTSP stream, so a camera whose
                 // still-image endpoint redirects, oversizes or errors still gets a tile. The

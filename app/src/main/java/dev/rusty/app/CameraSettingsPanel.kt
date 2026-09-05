@@ -173,7 +173,7 @@ object CameraSettingsModel {
 // Panel — camera CRUD UI, ONVIF discovery, behavior prefs.
 // =====================================================================================
 
-/** Behavior prefs this panel writes; [CameraFragment] consumes them (its `prefsListener`, plus
+/** Grid prefs this panel writes; [CameraFragment] consumes them (its `prefsListener`, plus
  *  `refreshCameraList`/`rebuildSnapshotPipeline`) — see that class's doc comments for how a
  *  0-second ("Off") refresh interval is handled without ever being passed to
  *  [SnapshotScheduler]'s constructor. */
@@ -187,14 +187,19 @@ enum class GridLayoutChoice(val prefValue: String, val pageSize: Int?) {
 
 object CameraBehaviorPrefs {
     const val KEY_GRID_REFRESH_S = "camera_grid_refresh_s"
-    const val KEY_FRAME_GRAB_ENABLED = "camera_frame_grab_enabled"
     const val KEY_GRID_LAYOUT = "camera_grid_layout"
     const val KEY_PAGE_ROTATION_S = "camera_page_rotation_s"
-    const val DEFAULT_GRID_REFRESH_S = 10
-    const val DEFAULT_FRAME_GRAB_ENABLED = true
+    const val DEFAULT_GRID_REFRESH_S = 30
 
-    /** Slider stops for the refresh interval; index = slider value. 0 means "off". */
-    val REFRESH_STEPS_S = listOf(0, 5, 10, 15, 30, 60)
+    /**
+     * Slider stops for the refresh interval; index = slider value. 0 means "off".
+     *
+     * The floor is 30 s on purpose. The scheduler runs one job at a time and a frame grab costs
+     * 2.5–8 s of RTSP work (handshake, then a wait for the camera's next keyframe) before the
+     * device's own decode; four grab-only cameras need 16–30 s per round, so anything below 30 s
+     * keeps the decoder busy around the clock and only *looks* faster on the slider.
+     */
+    val REFRESH_STEPS_S = listOf(0, 30, 60, 120, 300, 600)
 
     /** Slider stops for page rotation; index = slider value. 0 means "off". */
     val ROTATION_STEPS_S = listOf(0, 10, 30, 60)
@@ -204,7 +209,25 @@ object CameraBehaviorPrefs {
 
     fun refreshSecondsAt(index: Int): Int = REFRESH_STEPS_S[index.coerceIn(0, REFRESH_STEPS_S.lastIndex)]
 
-    fun label(seconds: Int): String = if (seconds <= 0) "Off" else "$seconds s"
+    /** Snaps a stored value onto the current stops: "off" stays off, anything else rounds UP to the
+     *  next stop (a 10 s value written by an earlier build becomes 30 s), past the top clamps. */
+    fun snapRefresh(seconds: Int): Int = when {
+        seconds <= 0 -> 0
+        else -> REFRESH_STEPS_S.firstOrNull { it >= seconds } ?: REFRESH_STEPS_S.last()
+    }
+
+    /** The effective refresh interval: the stored pref, snapped (see [snapRefresh]). */
+    fun refreshSeconds(prefs: android.content.SharedPreferences): Int =
+        snapRefresh(prefs.getInt(KEY_GRID_REFRESH_S, DEFAULT_GRID_REFRESH_S))
+
+    fun label(seconds: Int): String = when {
+        seconds <= 0 -> "Off"
+        seconds % 60 == 0 -> "${seconds / 60} min"
+        else -> "$seconds s"
+    }
+
+    /** [label] as a cadence: "Every 30 s", "Every 2 min", or "Off". */
+    fun everyLabel(seconds: Int): String = if (seconds <= 0) "Off" else "Every ${label(seconds)}"
 
     fun rotationIndex(seconds: Int): Int = ROTATION_STEPS_S.indexOf(seconds).takeIf { it >= 0 } ?: 0
 
@@ -219,7 +242,7 @@ object CameraBehaviorPrefs {
 /**
  * Binder for the Camera settings tab: a CRUD list of configured cameras (with a reorder mode,
  * [CameraReorderMode]), the "Add a camera" chooser ([CameraAddCard], where ONVIF discovery now
- * lives), and the grid-refresh / frame-grab behavior prefs.
+ * lives), and the Grid section (layout, page rotation, refresh).
  *
  * Follows [SlideshowSettingsPanel]'s collapsible-section shape (here: Cameras / Behavior) and [RemoteControlSettingsPanel]'s dialog-card idiom for the edit form.
  *
@@ -252,7 +275,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         )
         val behaviorSection = CollapsibleSection(
             panel.findViewById(R.id.headCamBehavior), panel.findViewById(R.id.bodyCamBehavior),
-            "Behavior", startExpanded = false,
+            "Grid", startExpanded = false,
         )
 
         val cameraListContainer = panel.findViewById<LinearLayout>(R.id.camCameraList)
@@ -429,16 +452,15 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             },
         )
 
-        // ---- Behavior ---------------------------------------------------------------------------
+        // ---- Grid -------------------------------------------------------------------------------
 
         val refreshSlider = panel.findViewById<Slider>(R.id.sliderCamRefresh)
         val refreshValue = panel.findViewById<TextView>(R.id.tvCamRefreshValue)
-        val frameGrabSwitch = panel.findViewById<SwitchMaterial>(R.id.switchCamFrameGrab)
         val rotationRow = panel.findViewById<View>(R.id.rowCamPageRotation)
         val rotationSlider = panel.findViewById<Slider>(R.id.sliderCamPageRotation)
         val rotationValue = panel.findViewById<TextView>(R.id.tvCamPageRotationValue)
 
-        var refreshSeconds = prefs.getInt(CameraBehaviorPrefs.KEY_GRID_REFRESH_S, CameraBehaviorPrefs.DEFAULT_GRID_REFRESH_S)
+        var refreshSeconds = CameraBehaviorPrefs.refreshSeconds(prefs)
         var layout = CameraBehaviorPrefs.gridLayoutFrom(prefs.getString(CameraBehaviorPrefs.KEY_GRID_LAYOUT, null))
         var rotationSeconds = prefs.getInt(CameraBehaviorPrefs.KEY_PAGE_ROTATION_S, 0)
 
@@ -447,13 +469,17 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             else -> "Pages of ${choice.pageSize}"
         }
         fun renderBehaviorSummary() {
-            behaviorSection.setSummary(
-                SectionSummary("${CameraBehaviorPrefs.label(refreshSeconds)} · ${layoutLabel(layout)}", active = refreshSeconds > 0),
-            )
+            // Same order as the rows: layout, (rotation while paging), refresh.
+            val parts = buildList {
+                add(layoutLabel(layout))
+                if (layout != GridLayoutChoice.ALL && rotationSeconds > 0) add("turn every ${CameraBehaviorPrefs.label(rotationSeconds)}")
+                add(CameraBehaviorPrefs.everyLabel(refreshSeconds).replaceFirstChar { it.lowercase() })
+            }
+            behaviorSection.setSummary(SectionSummary(parts.joinToString(" · "), active = refreshSeconds > 0))
         }
 
         refreshSlider.value = CameraBehaviorPrefs.refreshIndex(refreshSeconds).toFloat()
-        refreshValue.text = CameraBehaviorPrefs.label(refreshSeconds)
+        refreshValue.text = CameraBehaviorPrefs.everyLabel(refreshSeconds)
         fun commitRefresh(index: Int) {
             val seconds = CameraBehaviorPrefs.refreshSecondsAt(index)
             if (seconds == refreshSeconds) return
@@ -462,7 +488,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             renderBehaviorSummary()
         }
         refreshSlider.addOnChangeListener { slider, value, fromUser ->
-            refreshValue.text = CameraBehaviorPrefs.label(CameraBehaviorPrefs.refreshSecondsAt(value.toInt()))
+            refreshValue.text = CameraBehaviorPrefs.everyLabel(CameraBehaviorPrefs.refreshSecondsAt(value.toInt()))
             // A D-pad step never produces a touch-up, so commit here unless a touch drag is in
             // progress (that commits on release below) — same rule as the Spotify startup volume.
             if (fromUser && !slider.isPressed) commitRefresh(value.toInt())
@@ -493,15 +519,16 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         renderRotationRow()
 
         rotationSlider.value = CameraBehaviorPrefs.rotationIndex(rotationSeconds).toFloat()
-        rotationValue.text = CameraBehaviorPrefs.rotationLabel(rotationSeconds)
+        rotationValue.text = CameraBehaviorPrefs.everyLabel(rotationSeconds)
         fun commitRotation(index: Int) {
             val seconds = CameraBehaviorPrefs.rotationSecondsAt(index)
             if (seconds == rotationSeconds) return
             rotationSeconds = seconds
             prefs.edit().putInt(CameraBehaviorPrefs.KEY_PAGE_ROTATION_S, seconds).apply()
+            renderBehaviorSummary()
         }
         rotationSlider.addOnChangeListener { slider, value, fromUser ->
-            rotationValue.text = CameraBehaviorPrefs.rotationLabel(CameraBehaviorPrefs.rotationSecondsAt(value.toInt()))
+            rotationValue.text = CameraBehaviorPrefs.everyLabel(CameraBehaviorPrefs.rotationSecondsAt(value.toInt()))
             if (fromUser && !slider.isPressed) commitRotation(value.toInt())
         }
         rotationSlider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
@@ -509,14 +536,6 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             override fun onStopTrackingTouch(slider: Slider) = commitRotation(slider.value.toInt())
         })
         renderBehaviorSummary()
-
-        frameGrabSwitch.isChecked = prefs.getBoolean(
-            CameraBehaviorPrefs.KEY_FRAME_GRAB_ENABLED,
-            CameraBehaviorPrefs.DEFAULT_FRAME_GRAB_ENABLED,
-        )
-        frameGrabSwitch.setOnCheckedChangeListener { _, isChecked ->
-            prefs.edit().putBoolean(CameraBehaviorPrefs.KEY_FRAME_GRAB_ENABLED, isChecked).apply()
-        }
 
         return {
             CameraStatusRelay.removeListener(statusListener)

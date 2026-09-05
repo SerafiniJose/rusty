@@ -156,7 +156,7 @@ class CameraSnapshotsTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val cams = mutableListOf(camera("A"))
         val scheduler = SnapshotScheduler(refreshIntervalMs = 1_000, jobDeadlineMs = 2_000)
-        scheduler.setCameras(cams, frameGrabAllowed = false)
+        scheduler.setCameras(cams)
         var now = 0L
         val io = FakeIo()
         val snapshots = CameraSnapshots(
@@ -209,7 +209,7 @@ class CameraSnapshotsTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val cams = mutableListOf(camera("A"))
         val scheduler = SnapshotScheduler(refreshIntervalMs = 1_000, jobDeadlineMs = 2_000)
-        scheduler.setCameras(cams, frameGrabAllowed = false)
+        scheduler.setCameras(cams)
         var now = 0L
         val io = FakeIo()
         val snapshots = CameraSnapshots(
@@ -249,7 +249,7 @@ class CameraSnapshotsTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val cams = mutableListOf(camera("A"))
         val scheduler = SnapshotScheduler(refreshIntervalMs = 1_000, jobDeadlineMs = 2_000)
-        scheduler.setCameras(cams, frameGrabAllowed = false)
+        scheduler.setCameras(cams)
         var now = 0L
         val io = FakeIo()
         val snapshots = CameraSnapshots(
@@ -275,7 +275,7 @@ class CameraSnapshotsTest {
         assertNull(scheduler.inFlightJob())
 
         cams.clear()
-        scheduler.setCameras(emptyList(), frameGrabAllowed = false)
+        scheduler.setCameras(emptyList())
         now = 2_000L
         testScheduler.advanceTimeBy(600)
         runCurrent()
@@ -336,7 +336,7 @@ class CameraSnapshotsTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val cams = listOf(camera("A"))
         val scheduler = SnapshotScheduler(refreshIntervalMs = 1_000, jobDeadlineMs = 2_000)
-        scheduler.setCameras(cams, frameGrabAllowed = true)
+        scheduler.setCameras(cams)
         var now = 0L
         // The fetch fails after burning half the job's budget.
         val io = ScriptedIo {
@@ -365,7 +365,7 @@ class CameraSnapshotsTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val cams = listOf(camera("A"))
         val scheduler = SnapshotScheduler(refreshIntervalMs = 1_000, jobDeadlineMs = 2_000)
-        scheduler.setCameras(cams, frameGrabAllowed = true)
+        scheduler.setCameras(cams)
         val now = 0L
         val bytes = byteArrayOf(1, 2, 3)
         val io = ScriptedIo { bytes }
@@ -387,7 +387,7 @@ class CameraSnapshotsTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val cams = listOf(camera("A"))
         val scheduler = SnapshotScheduler(refreshIntervalMs = 1_000, jobDeadlineMs = 2_000)
-        scheduler.setCameras(cams, frameGrabAllowed = true)
+        scheduler.setCameras(cams)
         val now = 0L
         val io = ScriptedIo { throw IllegalStateException("boom") }
         val snapshots = snapshotsWith(io, scheduler, cams, dispatcher) { now }
@@ -402,23 +402,4 @@ class CameraSnapshotsTest {
         snapshots.stop()
     }
 
-    @Test
-    fun `with frame grabs off a failed HTTP snapshot stays failed`() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val cams = listOf(camera("A"))
-        val scheduler = SnapshotScheduler(refreshIntervalMs = 1_000, jobDeadlineMs = 2_000)
-        scheduler.setCameras(cams, frameGrabAllowed = false)
-        val now = 0L
-        val io = ScriptedIo { null }
-        val snapshots = snapshotsWith(io, scheduler, cams, dispatcher) { now }
-
-        snapshots.start()
-        runCurrent()
-
-        assertEquals(1, io.fetchCalls)
-        assertEquals(0, io.grabCalls)
-        assertEquals(1, scheduler.consecutiveFailures("A"))
-
-        snapshots.stop()
-    }
 }

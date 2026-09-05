@@ -31,7 +31,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `second tick while a job is in flight returns null`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0), cam("b", 1)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0), cam("b", 1)))
 
         val first = s.onTick(0L)
         assertEquals("a", first?.cameraId)
@@ -47,7 +47,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `each camera gets a turn before the first repeats even when it is fastest`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0), cam("b", 1), cam("c", 2)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0), cam("b", 1), cam("c", 2)))
 
         // "a" finishes instantly every time; it must not starve b and c.
         assertEquals("a", s.onTick(0L)?.cameraId)
@@ -71,43 +71,25 @@ class SnapshotSchedulerTest {
     // --- job kind ----------------------------------------------------------
 
     @Test
-    fun `camera with a snapshot url falls back to a frame grab when one is allowed`() {
+    fun `camera with a snapshot url gets an HTTP-then-frame job`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0)))
         assertEquals(JobKind.HTTP_THEN_FRAME, s.onTick(0L)?.kind)
     }
 
     @Test
-    fun `camera with a snapshot url produces a plain HTTP job when frame grabs are off`() {
+    fun `camera without a snapshot url gets a frame grab`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = false)
-        assertEquals(JobKind.HTTP, s.onTick(0L)?.kind)
-    }
-
-    @Test
-    fun `camera without a snapshot url produces a frame grab when allowed`() {
-        val s = scheduler()
-        s.setCameras(listOf(cam("a", 0, snapshotUrl = null)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0, snapshotUrl = null)))
         val job = s.onTick(0L)
         assertEquals("a", job?.cameraId)
         assertEquals(JobKind.FRAME_GRAB, job?.kind)
     }
 
     @Test
-    fun `camera with neither mechanism is never scheduled and reports NONE`() {
-        val s = scheduler()
-        s.setCameras(listOf(cam("a", 0, snapshotUrl = null), cam("b", 1)), frameGrabAllowed = false)
-
-        assertEquals("b", s.onTick(0L)?.cameraId)
-        s.onJobFinished("b", 1L, ok = true)
-        assertNull(s.onTick(2L))
-        assertEquals(TileState.NONE, s.tileState("a", 100_000L))
-    }
-
-    @Test
     fun `unknown camera id reports NONE`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0)))
         assertEquals(TileState.NONE, s.tileState("nope", 0L))
     }
 
@@ -116,7 +98,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `job deadline carries now plus the deadline budget`() {
         val s = scheduler(interval = 10_000L, deadline = 15_000L)
-        s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0)))
         assertEquals(15_000L, s.onTick(0L)?.deadlineAt)
         s.onJobFinished("a", 1L, ok = true)
         assertEquals(25_001L, s.onTick(10_001L)?.deadlineAt)
@@ -125,7 +107,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `expired frame grab frees the slot and goes stale then unreachable`() {
         val s = scheduler(interval = 10_000L, deadline = 15_000L)
-        s.setCameras(listOf(cam("a", 0, snapshotUrl = null)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0, snapshotUrl = null)))
 
         assertEquals(JobKind.FRAME_GRAB, s.onTick(0L)?.kind)
         assertNull(s.onJobDeadline(14_999L))
@@ -143,7 +125,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `two consecutive failed results mark the camera unreachable`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0)))
 
         s.onTick(0L)
         s.onJobFinished("a", 1L, ok = false)
@@ -164,7 +146,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `several missed intervals collapse into a single job`() {
         val s = scheduler(interval = 10_000L)
-        s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0)))
 
         s.onTick(0L)
         s.onJobFinished("a", 0L, ok = true)
@@ -184,7 +166,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `live view suspends scheduling and resume picks up where it left`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0), cam("b", 1)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0), cam("b", 1)))
 
         s.onTick(0L)
         s.onJobFinished("a", 1L, ok = true)
@@ -200,7 +182,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `dlna video suspends scheduling`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0)))
         s.setSuspended(liveViewOpen = false, dlnaVideo = true, testRunning = emptySet())
         assertNull(s.onTick(0L))
         s.setSuspended(liveViewOpen = false, dlnaVideo = false, testRunning = emptySet())
@@ -210,7 +192,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `suspension causes no deadline churn`() {
         val s = scheduler(interval = 10_000L, deadline = 15_000L)
-        s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0)))
         s.onTick(0L)
 
         s.setSuspended(liveViewOpen = true, dlnaVideo = false, testRunning = emptySet())
@@ -225,7 +207,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `a camera under test is skipped while the others keep their turns`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0), cam("b", 1)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0), cam("b", 1)))
         s.setSuspended(liveViewOpen = false, dlnaVideo = false, testRunning = setOf("a"))
 
         assertEquals("b", s.onTick(0L)?.cameraId)
@@ -241,7 +223,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `state is OK up to three intervals after the last success and STALE past it`() {
         val s = scheduler(interval = 10_000L)
-        s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0)))
 
         s.onTick(0L)
         s.onJobFinished("a", 0L, ok = true)
@@ -254,7 +236,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `a schedulable camera with no attempt yet reports NONE`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0)))
         assertEquals(TileState.NONE, s.tileState("a", 0L))
     }
 
@@ -263,13 +245,13 @@ class SnapshotSchedulerTest {
     @Test
     fun `setCameras keeps bookkeeping for surviving ids and drops removed ones`() {
         val s = scheduler(interval = 10_000L)
-        s.setCameras(listOf(cam("a", 0), cam("b", 1)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0), cam("b", 1)))
 
         s.onTick(0L)
         s.onJobFinished("a", 0L, ok = true)
 
         // "b" is dropped, "c" is new.
-        s.setCameras(listOf(cam("a", 0), cam("c", 1)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0), cam("c", 1)))
 
         assertEquals(TileState.OK, s.tileState("a", 100L))
         assertEquals(TileState.NONE, s.tileState("b", 100L))
@@ -281,17 +263,17 @@ class SnapshotSchedulerTest {
     @Test
     fun `removing the in-flight camera frees the slot`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0), cam("b", 1)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0), cam("b", 1)))
         assertEquals("a", s.onTick(0L)?.cameraId)
 
-        s.setCameras(listOf(cam("b", 1)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("b", 1)))
         assertEquals("b", s.onTick(1L)?.cameraId)
     }
 
     @Test
     fun `a stale finish for a camera that is no longer in flight is ignored`() {
         val s = scheduler()
-        s.setCameras(listOf(cam("a", 0), cam("b", 1)), frameGrabAllowed = true)
+        s.setCameras(listOf(cam("a", 0), cam("b", 1)))
 
         assertEquals("a", s.onTick(0L)?.cameraId)
         s.onJobFinished("b", 1L, ok = true)
@@ -306,7 +288,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `offlineSince is null before any failure and is lastOk once a run of failures starts`() {
         val s = SnapshotScheduler(refreshIntervalMs = 10_000)
-        s.setCameras(listOf(cam("a", position = 0, snapshotUrl = "http://x/a.jpg")), frameGrabAllowed = false)
+        s.setCameras(listOf(cam("a", position = 0, snapshotUrl = "http://x/a.jpg")))
         assertNull(s.offlineSince("a"))
         s.onTick(0); s.onJobFinished("a", 1_000, ok = true)
         assertNull(s.offlineSince("a"))
@@ -321,7 +303,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `offlineSince falls back to the first failure time when there was never a success`() {
         val s = SnapshotScheduler(refreshIntervalMs = 10_000)
-        s.setCameras(listOf(cam("a", position = 0, snapshotUrl = "http://x/a.jpg")), frameGrabAllowed = false)
+        s.setCameras(listOf(cam("a", position = 0, snapshotUrl = "http://x/a.jpg")))
         s.onTick(0); s.onJobFinished("a", 500, ok = false)
         assertEquals(500L, s.offlineSince("a"))
     }
@@ -329,7 +311,7 @@ class SnapshotSchedulerTest {
     @Test
     fun `a deadline write-off starts the offline run too`() {
         val s = SnapshotScheduler(refreshIntervalMs = 10_000, jobDeadlineMs = 15_000)
-        s.setCameras(listOf(cam("a", position = 0, snapshotUrl = "http://x/a.jpg")), frameGrabAllowed = false)
+        s.setCameras(listOf(cam("a", position = 0, snapshotUrl = "http://x/a.jpg")))
         s.onTick(0)
         assertEquals("a", s.onJobDeadline(15_000))
         assertEquals(15_000L, s.offlineSince("a"))

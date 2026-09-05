@@ -133,9 +133,6 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
                 if (mode == Mode.LIVE && cameraList.none { it.id == currentCameraId }) showGrid()
             }
             CameraFeature.KEY_ENABLED -> if (!CameraFeature.isEnabled(prefs)) showGrid()
-            // frame-grab is a plain SnapshotScheduler.setCameras() argument (not baked into its
-            // constructor), so re-running refreshCameraList() is enough to pick it up live.
-            CameraBehaviorPrefs.KEY_FRAME_GRAB_ENABLED -> refreshCameraList()
             // refreshIntervalMs IS a SnapshotScheduler constructor val — the scheduler (and the
             // CameraSnapshots that captured it) must be rebuilt, not just re-argued.
             CameraBehaviorPrefs.KEY_GRID_REFRESH_S -> rebuildSnapshotPipeline()
@@ -1087,7 +1084,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
     private fun refreshCameraList() {
         cameraList = CameraStore.load(prefs)
         tilePaint.prune(cameraList.mapTo(HashSet()) { it.id })
-        scheduler.setCameras(cameraList, frameGrabAllowed = frameGrabAllowedPref())
+        scheduler.setCameras(cameraList)
         // Before the notify: a shorter or longer list can change both the fitted column count and
         // the number of pages, and the adapter must be told about the new item count against them.
         relayoutGrid()
@@ -1104,11 +1101,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
 
     // ---- Behavior prefs (Task 12's CameraBehaviorPrefs) -------------------------------------------
 
-    private fun refreshSecondsPref(): Int =
-        prefs.getInt(CameraBehaviorPrefs.KEY_GRID_REFRESH_S, CameraBehaviorPrefs.DEFAULT_GRID_REFRESH_S)
-
-    private fun frameGrabAllowedPref(): Boolean =
-        prefs.getBoolean(CameraBehaviorPrefs.KEY_FRAME_GRAB_ENABLED, CameraBehaviorPrefs.DEFAULT_FRAME_GRAB_ENABLED)
+    private fun refreshSecondsPref(): Int = CameraBehaviorPrefs.refreshSeconds(prefs)
 
     /** [SnapshotScheduler]'s constructor `refreshIntervalMs` — only meaningful while the loop is
      *  actually running (`refreshSecondsPref() > 0`); an "off" pref never starts it (see
@@ -1162,7 +1155,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         // A fresh scheduler has no fetch history, so every tile's state changes back to NONE —
         // forget the old paint so the tick (and the range-change below) actually repaints them.
         tilePaint.prune(emptySet())
-        scheduler.setCameras(cameraList, frameGrabAllowed = frameGrabAllowedPref())
+        scheduler.setCameras(cameraList)
         // A fresh SnapshotScheduler starts un-suspended (liveViewOpen/dlnaVideo default false),
         // which would silently drop whatever suspension the previous instance was holding — see
         // onStart, which does the same re-apply after its own start(). Must run before start()

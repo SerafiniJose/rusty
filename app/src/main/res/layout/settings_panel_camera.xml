@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Camera settings tab: two collapsible sections (Cameras / Behavior; ONVIF discovery lives in the Add camera card), same shape
+<!-- Camera settings tab: two collapsible sections (Cameras / Grid; ONVIF discovery lives in the Add camera card), same shape
      as SlideshowSettingsPanel's Server/Filters/Display. Root is a plain LinearLayout — the panel
      container already scrolls (bottom_sheet_settings.xml). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -110,7 +110,7 @@
         android:layout_height="1dp"
         android:background="@color/surface_border" />
 
-    <!-- BEHAVIOR -->
+    <!-- GRID: layout, page rotation (paging only), refresh. Ordered by how much each changes the wall. -->
 
     <include
         android:id="@+id/headCamBehavior"
@@ -125,71 +125,13 @@
         android:orientation="vertical"
         android:paddingBottom="14dp">
 
-        <!-- Grid refresh: label + current value, compact slider on the right (Spotify Bitrate idiom).
-             Discrete: slider value = index into CameraBehaviorPrefs.REFRESH_STEPS_S. -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="@font/hanken_medium"
-                    android:text="Grid refresh"
-                    android:textColor="@color/ink"
-                    android:textSize="16sp" />
-
-                <TextView
-                    android:id="@+id/tvCamRefreshValue"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="@font/hanken_regular"
-                    android:text="10 s"
-                    android:textColor="@color/muted_dim"
-                    android:textSize="13sp" />
-            </LinearLayout>
-
-            <com.google.android.material.slider.Slider
-                android:id="@+id/sliderCamRefresh"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="16dp"
-                android:value="2"
-                android:valueFrom="0"
-                android:valueTo="5"
-                android:stepSize="1"
-                app:labelBehavior="gone"
-                app:haloColor="@color/accent_fallback"
-                app:thumbColor="@color/accent_fallback"
-                app:tickColorActive="@color/white"
-                app:tickColorInactive="@color/muted_dim"
-                app:trackColorActive="@color/accent_fallback"
-                app:trackColorInactive="@color/surface_border" />
-        </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="14dp"
-            android:layout_marginBottom="14dp"
-            android:background="@color/surface_border" />
-
-        <!-- Grid layout: every camera on one screen, or fixed pages. Not a RadioGroup (Flow-positioned
+        <!-- Layout: every camera on one screen, or fixed pages. Not a RadioGroup (Flow-positioned
              radios are not its direct children); exclusivity lives in the binder. -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:fontFamily="@font/hanken_medium"
-            android:text="Grid layout"
+            android:text="Layout"
             android:textColor="@color/ink"
             android:textSize="16sp" />
 
@@ -260,7 +202,8 @@
                 android:textColor="@color/ink" />
         </androidx.constraintlayout.widget.ConstraintLayout>
 
-        <!-- Page rotation: only while a Pages option is selected (binder toggles visibility). -->
+        <!-- Page rotation: only while a Pages option is selected (binder toggles visibility). Indented
+             under Layout because it is a property of paging. -->
         <LinearLayout
             android:id="@+id/rowCamPageRotation"
             android:layout_width="match_parent"
@@ -268,6 +211,7 @@
             android:layout_marginTop="14dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
+            android:paddingStart="24dp"
             android:visibility="gone">
 
             <LinearLayout
@@ -288,7 +232,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:fontFamily="@font/hanken_regular"
-                    android:text="Off"
+                    android:text="Every 10 s"
                     android:textColor="@color/muted_dim"
                     android:textSize="13sp" />
             </LinearLayout>
@@ -312,6 +256,15 @@
                 app:trackColorInactive="@color/surface_border" />
         </LinearLayout>
 
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="14dp"
+            android:layout_marginBottom="14dp"
+            android:background="@color/surface_border" />
+
+        <!-- Refresh: label + cadence ("Every 30 s"), compact slider on the right (Spotify Bitrate idiom).
+             Discrete: slider value = index into CameraBehaviorPrefs.REFRESH_STEPS_S (floor 30 s, see there). -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -319,39 +272,45 @@
             android:orientation="horizontal">
 
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:orientation="vertical">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:fontFamily="@font/hanken_medium"
-                    android:text="Frame-grab fallback"
+                    android:text="Refresh"
                     android:textColor="@color/ink"
                     android:textSize="16sp" />
 
                 <TextView
+                    android:id="@+id/tvCamRefreshValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:fontFamily="@font/hanken_regular"
-                    android:text="Grab a video frame when a camera has no snapshot URL or its snapshot fails"
+                    android:text="Every 30 s"
                     android:textColor="@color/muted_dim"
                     android:textSize="13sp" />
             </LinearLayout>
 
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchCamFrameGrab"
-                android:layout_width="wrap_content"
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderCamRefresh"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:background="@null"
-                android:foreground="@drawable/bg_tv_focus_switch"
-                android:minHeight="0dp"
-                android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
-                app:switchMinWidth="0dp"
-                app:thumbTint="@color/switch_thumb_tint"
-                app:trackTint="@color/switch_track_tint" />
+                android:layout_weight="1"
+                android:layout_marginStart="16dp"
+                android:value="1"
+                android:valueFrom="0"
+                android:valueTo="5"
+                android:stepSize="1"
+                app:labelBehavior="gone"
+                app:haloColor="@color/accent_fallback"
+                app:thumbColor="@color/accent_fallback"
+                app:tickColorActive="@color/white"
+                app:tickColorInactive="@color/muted_dim"
+                app:trackColorActive="@color/accent_fallback"
+                app:trackColorInactive="@color/surface_border" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>
