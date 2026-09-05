@@ -95,6 +95,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.rtsp)
     implementation(libs.androidx.media3.ui)
     implementation(libs.protobuf.javalite)
     implementation(libs.androidx.security.crypto)
@@ -105,6 +106,10 @@ dependencies {
     // tar.bz2 extraction for the downloaded voice bundles (pure Java, no transitive deps at this
     // version — 1.25+ pulls commons-io/commons-codec).
     implementation("org.apache.commons:commons-compress:1.24.0")
+    // Standalone XmlPullParser impl (not the android.util.Xml/Expat one, whose factory is a
+    // "not mocked" stub in plain JVM unit tests) — used for WS-Discovery XML so parsing is
+    // testable without Robolectric and identical on-device.
+    implementation("net.sf.kxml:kxml2:2.3.0")
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
     testImplementation(libs.kotlinx.coroutines.test)
