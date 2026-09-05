@@ -27,15 +27,33 @@ class GridFitTest {
     }
 
     @Test
-    fun `portrait - one or two cameras are a single column, three to eight two, nine plus three`() {
+    fun `portrait - up to three cameras stack in one column, four to twelve two, thirteen plus three`() {
         assertEquals(1, portrait(1))
         assertEquals(1, portrait(2))
-        for (n in 3..8) assertEquals("n=$n", 2, portrait(n))
-        // Corrected per hand-verified arithmetic: with content box 780x1260 and gap 12, 2 columns
-        // give tile width 378, tile height 212, row pitch 224. n=9 and n=10 are 5 rows (1120 <=
-        // 1260), so 2 columns still fit; 3 columns is only needed from n=11 (6 rows = 1344 > 1260).
-        for (n in 9..10) assertEquals("n=$n", 2, portrait(n))
-        for (n in 11..15) assertEquals("n=$n", 3, portrait(n))
+        // Three stack: the tiles shrink to 94 % of the width rather than go 2 + 1.
+        assertEquals(1, portrait(3))
+        for (n in 4..8) assertEquals("n=$n", 2, portrait(n))
+        // Content box 780x1260, gap 12: two full-width columns give 378 px tiles, 224 px row pitch,
+        // so five rows (n = 9, 10) fit outright. Six rows (n = 11, 12) fit by shrinking the tiles
+        // to 352 px, 93 % of full, still inside the tolerance; seven rows (n = 13) would need 79 %,
+        // so three columns take over there.
+        for (n in 9..12) assertEquals("n=$n", 2, portrait(n))
+        for (n in 13..15) assertEquals("n=$n", 3, portrait(n))
+    }
+
+    @Test
+    fun `a page of four on a 16 by 10 screen keeps two columns and shrinks the tiles to the height`() {
+        // Echo Show: 1260 px wide box, but only 640 px tall once the clock strip and the page row
+        // are taken. Two full-width 16:9 tiles per row need 718 px; instead of 3 + 1 columns the
+        // tiles shrink to 547 px (89 % of 618, within tolerance) and the grid centres at 1118 px.
+        assertEquals(2, GridFit.columns(4, 1260, 640, gap, minCols = 2))
+        assertEquals(618, GridFit.fullTileWidthPx(2, 1260, gap))
+        assertEquals(547, GridFit.tileWidthPx(4, 2, 1260, 640, gap))
+        assertEquals(1118, GridFit.fittedWidthPx(4, 2, 1260, 640, gap))
+        // Nothing to shrink when the rows fit: the content is as wide as the box.
+        assertEquals(1260, GridFit.fittedWidthPx(4, 2, 1260, 780, gap))
+        // Too tight to shrink (five tiles in two columns would be 72 % wide): the next count wins.
+        assertEquals(3, GridFit.columns(5, 1260, 780, gap, minCols = 2))
     }
 
     @Test

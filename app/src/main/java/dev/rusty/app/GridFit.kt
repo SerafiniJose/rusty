@@ -1,23 +1,55 @@
 package dev.rusty.app
 
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Pure column fitting for the camera grid: the smallest column count (from [minCols] up to
  * [MAX_COLS]) whose rows of 16:9 tiles fit the content box; [MAX_COLS] when none does, in which
  * case the grid simply scrolls. See GridFitTest for the geometry model (tiles carry a 6 dp margin
  * each side, so [gapPx] is 12 dp).
+ *
+ * Tiles are normally as wide as the columns allow. When the rows would overrun the box by only a
+ * little — a 2×2 page of 16:9 tiles on a 16:10 screen once the page row has taken its strip — the
+ * tiles shrink to the height instead of the grid jumping to a 3 + 1 layout: a column count is
+ * accepted while the height-limited tile keeps at least [SHRINK_TOLERANCE] of the full width, and
+ * [fittedWidthPx] says how wide the grid's content then is (the fragment centres it).
  */
 object GridFit {
     const val MAX_COLS = 4
+
+    /** Smallest fraction of the full column width a height-limited tile may shrink to before the
+     *  next column count is tried instead. */
+    const val SHRINK_TOLERANCE = 0.85
 
     fun columns(count: Int, widthPx: Int, heightPx: Int, gapPx: Int, minCols: Int): Int {
         val floor = minCols.coerceIn(1, MAX_COLS)
         if (count <= 0 || widthPx <= 0 || heightPx <= 0) return floor
         for (cols in floor..MAX_COLS) {
-            if (contentHeightPx(count, cols, widthPx, gapPx) <= heightPx) return cols
+            val full = fullTileWidthPx(cols, widthPx, gapPx)
+            if (tileWidthPx(count, cols, widthPx, heightPx, gapPx) >= full * SHRINK_TOLERANCE) return cols
         }
         return MAX_COLS
+    }
+
+    /** Tile width when the columns alone decide it. */
+    fun fullTileWidthPx(cols: Int, widthPx: Int, gapPx: Int): Int =
+        if (cols <= 0) 0 else max(0, (widthPx - cols * gapPx) / cols)
+
+    /** Tile width at [cols]: the full column width, or less when the rows would not fit [heightPx]. */
+    fun tileWidthPx(count: Int, cols: Int, widthPx: Int, heightPx: Int, gapPx: Int): Int {
+        if (count <= 0 || cols <= 0) return 0
+        val rows = (count + cols - 1) / cols
+        val tileHByHeight = heightPx / rows - gapPx
+        val byHeight = max(0, tileHByHeight * 16 / 9)
+        return min(fullTileWidthPx(cols, widthPx, gapPx), byHeight)
+    }
+
+    /** Width the content occupies at [cols] — [widthPx] unless the tiles had to shrink to the height. */
+    fun fittedWidthPx(count: Int, cols: Int, widthPx: Int, heightPx: Int, gapPx: Int): Int {
+        if (count <= 0 || cols <= 0) return widthPx
+        val tileW = tileWidthPx(count, cols, widthPx, heightPx, gapPx)
+        return min(widthPx, cols * (tileW + gapPx))
     }
 
     fun contentHeightPx(count: Int, cols: Int, widthPx: Int, gapPx: Int): Int {

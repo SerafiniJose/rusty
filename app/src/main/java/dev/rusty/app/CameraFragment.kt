@@ -12,6 +12,7 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
+import androidx.core.view.isVisible
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -289,6 +290,15 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         retryButton = view.findViewById(R.id.cameraRetryButton)
         pageNumbers = view.findViewById(R.id.cameraPageNumbers)
         snapshotButton = view.findViewById(R.id.cameraSnapshotButton)
+        // The page row is a sibling below the grid, so showing or hiding it resizes the grid AFTER
+        // the fit was computed against the old height; a rotation does the same to both axes
+        // (onConfigurationChanged's posted fit can still see the OLD size). Re-fit on any size
+        // change, never on a mere position change so the padding relayoutGrid itself applies
+        // cannot loop it — and posted, because this callback runs inside the layout pass, where
+        // a span-count or padding change on the RecyclerView is not honoured until the next one.
+        grid?.addOnLayoutChangeListener { v, l, t, r, b, ol, ot, orr, ob ->
+            if (r - l != orr - ol || b - t != ob - ot) v.post { relayoutGrid() }
+        }
 
         retryButton?.setOnClickListener { playback?.manualRetry() }
         liveContainer?.setOnClickListener { restoreChrome() }
@@ -1262,19 +1272,37 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         // the same top strip the Home Assistant page does (shell_clock_clearance) instead of the
         // plain 10dp pad — otherwise the clock sits on the top-right tile's picture.
         val topPad = resources.getDimensionPixelSize(R.dimen.shell_clock_clearance)
-        val w = g.width - (lastInsets.left + pad) - (lastInsets.right + pad)
-        val h = g.height - (lastInsets.top + topPad) - (lastInsets.bottom + pad)
-        val count = pageSize() ?: cameraList.size
-        currentCols = GridFit.columns(count, w, h, gap, minCols = if (landscape) 2 else 1)
-        // Pages centre by a FULL page so a short last page keeps its tiles where the others were.
-        val extraTop = GridFit.topPaddingPx(count, currentCols, w, h, gap)
-        (g.layoutManager as? GridLayoutManager)?.let { if (it.spanCount != currentCols) it.spanCount = currentCols }
-        g.setPadding(lastInsets.left + pad, lastInsets.top + topPad + extraTop, lastInsets.right + pad, lastInsets.bottom + pad)
         // The page row is a sibling BELOW the grid, so it no longer sits inside the grid's
         // inset-aware padding the way the old overlaid dots did — it has to carry the bottom
         // window inset itself or a system nav bar covers the numbers.
         pageNumbers?.setPadding(0, 0, 0, lastInsets.bottom + dp(6))
+        // Decide the row's visibility BEFORE fitting: a row that is about to appear has not taken
+        // its height off the grid yet, so measure it and fit against what will be left. Once it
+        // is laid out the grid's own height already excludes it (the size-change listener
+        // re-runs this fit for that pass too).
         renderPageNumbers()
+        val pendingRowPx = pageNumbers?.takeIf { it.isVisible && it.height == 0 }?.let { row ->
+            row.measure(
+                View.MeasureSpec.makeMeasureSpec(g.width, View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            )
+            row.measuredHeight
+        } ?: 0
+        val w = g.width - (lastInsets.left + pad) - (lastInsets.right + pad)
+        val h = g.height - pendingRowPx - (lastInsets.top + topPad) - (lastInsets.bottom + pad)
+        val count = pageSize() ?: cameraList.size
+        currentCols = GridFit.columns(count, w, h, gap, minCols = if (landscape) 2 else 1)
+        // Tiles that had to shrink to the height (see GridFit) leave the grid narrower than the
+        // box; the slack goes into the side padding so the page stays centred.
+        val wFit = GridFit.fittedWidthPx(count, currentCols, w, h, gap)
+        val sidePad = (w - wFit) / 2
+        // Pages centre by a FULL page so a short last page keeps its tiles where the others were.
+        val extraTop = GridFit.topPaddingPx(count, currentCols, wFit, h, gap)
+        (g.layoutManager as? GridLayoutManager)?.let { if (it.spanCount != currentCols) it.spanCount = currentCols }
+        g.setPadding(
+            lastInsets.left + pad + sidePad, lastInsets.top + topPad + extraTop,
+            lastInsets.right + pad + sidePad, lastInsets.bottom + pad,
+        )
     }
 
     /**
