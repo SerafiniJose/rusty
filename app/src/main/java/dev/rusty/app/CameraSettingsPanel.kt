@@ -715,7 +715,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
     ) {
         val activity = ctx.activity
         val root = activity.layoutInflater.inflate(R.layout.dialog_camera_edit, null)
-        val card = Dialog(activity)
+        val card = CardDialog(activity)
         card.requestWindowFeature(Window.FEATURE_NO_TITLE)
         card.setContentView(root)
         card.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
@@ -901,7 +901,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
     ) {
         val activity = ctx.activity
         val root = activity.layoutInflater.inflate(R.layout.dialog_camera_credentials, null)
-        val card = Dialog(activity)
+        val card = CardDialog(activity)
         card.requestWindowFeature(Window.FEATURE_NO_TITLE)
         card.setContentView(root)
         card.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
