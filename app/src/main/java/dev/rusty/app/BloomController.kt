@@ -22,7 +22,8 @@ class BloomController(
     // The clock lives in the shell's full-window, inset-padded chrome layer; derive the corner box
     // from it directly so the morph works wherever the clock is parented (no `root` handle needed).
     private val parent get() = clock.parent as View
-    private val marginPx get() = 24f * clock.resources.displayMetrics.density
+    private val marginPx get() = dpToPx(BloomGeometry.CORNER_SIDE_MARGIN_DP)
+    private val topMarginPx get() = dpToPx(BloomGeometry.CORNER_TOP_MARGIN_DP)
 
     fun apply(state: VisualState, animate: Boolean) {
         if (state == current) return
@@ -125,6 +126,7 @@ class BloomController(
             clockHeight = clock.height,
             cornerScale = cornerScale,
             marginPx = marginPx,
+            topMarginPx = topMarginPx,
         )
 
     private fun dpToPx(dp: Float): Float = dp * clock.resources.displayMetrics.density

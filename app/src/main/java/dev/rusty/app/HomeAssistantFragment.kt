@@ -573,7 +573,7 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
         // Reserve a top strip for the shell's floating corner clock and a bottom strip for the shell's
         // chrome bar (chips + cluster), so neither overlays the HA dashboard content.
-        val clockClearance = resources.getDimensionPixelSize(R.dimen.ha_clock_clearance)
+        val clockClearance = resources.getDimensionPixelSize(R.dimen.shell_clock_clearance)
         val chromeClearance = resources.getDimensionPixelSize(R.dimen.ha_chrome_clearance)
         root.setPadding(bars.left, bars.top + clockClearance, bars.right, bars.bottom + chromeClearance)
         // Push haBanner below the status bar + clock strip so it is never hidden under the system UI.

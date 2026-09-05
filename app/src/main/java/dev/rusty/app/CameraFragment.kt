@@ -278,6 +278,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         audioButton = view.findViewById(R.id.cameraAudioButton)
         liveHint = view.findViewById(R.id.cameraLiveHint)
         liveBottomBar = view.findViewById(R.id.cameraLiveBottomBar)
+        relayoutLiveBars()
         streamToggle = view.findViewById(R.id.cameraStreamToggle)
         streamSub = view.findViewById(R.id.cameraStreamSub)
         streamMain = view.findViewById(R.id.cameraStreamMain)
@@ -1264,14 +1265,18 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         val landscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val pad = dp(10)
         val gap = dp(12)
+        // The shell parks its clock in the top-right corner over this feature, so the grid reserves
+        // the same top strip the Home Assistant page does (shell_clock_clearance) instead of the
+        // plain 10dp pad — otherwise the clock sits on the top-right tile's picture.
+        val topPad = resources.getDimensionPixelSize(R.dimen.shell_clock_clearance)
         val w = g.width - (lastInsets.left + pad) - (lastInsets.right + pad)
-        val h = g.height - (lastInsets.top + pad) - (lastInsets.bottom + pad)
+        val h = g.height - (lastInsets.top + topPad) - (lastInsets.bottom + pad)
         val count = pageSize() ?: cameraList.size
         currentCols = GridFit.columns(count, w, h, gap, minCols = if (landscape) 2 else 1)
         // Pages centre by a FULL page so a short last page keeps its tiles where the others were.
         val extraTop = GridFit.topPaddingPx(count, currentCols, w, h, gap)
         (g.layoutManager as? GridLayoutManager)?.let { if (it.spanCount != currentCols) it.spanCount = currentCols }
-        g.setPadding(lastInsets.left + pad, lastInsets.top + pad + extraTop, lastInsets.right + pad, lastInsets.bottom + pad)
+        g.setPadding(lastInsets.left + pad, lastInsets.top + topPad + extraTop, lastInsets.right + pad, lastInsets.bottom + pad)
         // The page row is a sibling BELOW the grid, so it no longer sits inside the grid's
         // inset-aware padding the way the old overlaid dots did — it has to carry the bottom
         // window inset itself or a system nav bar covers the numbers.
@@ -1405,6 +1410,21 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
     override fun onInsets(insets: WindowInsetsCompat) {
         lastInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
         relayoutGrid()
+        relayoutLiveBars()
+    }
+
+    /**
+     * Pads the live view's bottom bar to the window insets + the shell cluster's inset, so the
+     * snapshot button and the hint share a row with the floating settings / info / menu pills
+     * (which the shell places at base pad + chrome_bar_margin from the inset edges). The bar is not
+     * inset-padded by the shell (the live view is deliberately full-bleed), so it has to carry the
+     * bars itself or a system nav bar covers it.
+     */
+    private fun relayoutLiveBars() {
+        val inset = resources.getDimensionPixelSize(R.dimen.camera_live_bar_inset)
+        liveBottomBar?.setPadding(
+            lastInsets.left + inset, dp(8), lastInsets.right + inset, lastInsets.bottom + inset,
+        )
     }
 
     override fun restoreFocus() {

@@ -225,50 +225,44 @@
             android:tint="@color/ink"
             android:visibility="gone" />
 
-        <!-- Bottom bar: snapshot button then the hint. One row, so the two can never overlap at any
-             width — the hint simply centres in whatever the button leaves. The snapshot lives HERE
-             rather than in the top row because the shell parks its clock in the top-right corner
-             (BloomGeometry), and the bottom-RIGHT is taken by the shell's own chrome cluster, which
-             floats over this feature. -->
-        <LinearLayout
+        <!-- Bottom bar: snapshot button at the start, hint centred on the screen, both on the same
+             row as the shell's floating cluster (settings / info / menu, bottom-right). The bar's
+             padding is set at runtime (CameraFragment.relayoutLiveBars) to the window insets +
+             camera_live_bar_inset, which is the cluster's own inset, so the 44dp snapshot pill
+             lines up with the cluster's 44dp pills and the hint sits on their centre line. The
+             snapshot lives HERE rather than in the top row because the shell parks its clock in the
+             top-right corner (BloomGeometry). A FrameLayout, not a row: the hint centres on the whole
+             width regardless of the button, and the cluster floats over the far end. -->
+        <FrameLayout
             android:id="@+id/cameraLiveBottomBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
-            android:background="@drawable/bg_tile_bottom_gradient"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="8dp">
+            android:background="@drawable/bg_tile_bottom_gradient">
 
             <ImageButton
                 android:id="@+id/cameraSnapshotButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_gravity="start|bottom"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/camera_snapshot_description"
                 android:focusable="false"
-                android:padding="8dp"
+                android:padding="10dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_mdi_camera_iris"
                 android:tint="@color/ink" />
 
             <TextView
                 android:id="@+id/cameraLiveHint"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:layout_gravity="center_horizontal|bottom"
                 android:gravity="center"
                 android:text="@string/camera_hint_row"
                 android:textColor="@color/muted"
                 android:textSize="12sp" />
-
-            <!-- Balances the snapshot button so the hint stays centred on the screen, not merely on
-                 the space the button leaves. -->
-            <Space
-                android:layout_width="40dp"
-                android:layout_height="1dp" />
-        </LinearLayout>
+        </FrameLayout>
 
         <!-- Connecting / reconnecting overlay -->
         <LinearLayout

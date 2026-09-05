@@ -5,22 +5,36 @@
          so the full-size idle/exit clock never clips the narrow portrait width. -->
     <dimen name="shell_clock_text_size">120sp</dimen>
 
-    <!-- Top strip reserved on a non-Spotify feature (Home Assistant) so the floating corner clock
-         (parked at ~base 22dp + 24dp margin + its ~0.22-scaled height) doesn't overlay the feature's
-         own top row. On-device tunable. -->
-    <dimen name="ha_clock_clearance">84dp</dimen>
+    <!-- Top strip reserved on a non-Spotify feature (Home Assistant page, camera grid) so the
+         floating corner clock doesn't overlay the feature's own top row. The parked clock's DIGIT
+         INK ends ~43dp below the inset edge (box top = base 22dp + BloomGeometry.CORNER_TOP_MARGIN_DP
+         -5dp, plus ~26dp of ink inside the 0.22-scaled box); 48dp clears it by 5dp. Kept this tight
+         on purpose: a 2x2 grid of 16:9 camera tiles on a 16:10 Echo Show needs all but ~10px of
+         the height below it, and a roomier strip (56dp) tipped GridFit into 3 columns + 1.
+         On-device tunable. -->
+    <dimen name="shell_clock_clearance">48dp</dimen>
 
-    <!-- The shell chrome cluster's margin from its (base+bars-padded) parent. -->
-    <dimen name="chrome_bar_margin">22dp</dimen>
+    <!-- The shell chrome cluster's margin from its (base+bars-padded) parent. Together with
+         CHROME_BASE_PAD_DP (22dp) this puts the cluster's pills 34dp from the inset edges; the three
+         dimens below that mirror the cluster (screensaver_chrome_margin, ha_chrome_clearance,
+         camera_live_bar_inset) have to move with it. -->
+    <dimen name="chrome_bar_margin">12dp</dimen>
 
     <!-- The screensaver themes draw their cluster on an unpadded overlay, so they need the shell's
-         base pad folded in (CHROME_BASE_PAD_DP 22dp + chrome_bar_margin 22dp) to align with the shell
+         base pad folded in (CHROME_BASE_PAD_DP 22dp + chrome_bar_margin 12dp) to align with the shell
          cluster in immersive. On-device tunable. -->
-    <dimen name="screensaver_chrome_margin">44dp</dimen>
+    <dimen name="screensaver_chrome_margin">34dp</dimen>
 
     <!-- Bottom strip reserved on the HA feature so the dashboard content / HA's own bottom controls
-         aren't hidden behind the chip bar + cluster. Mirrors ha_clock_clearance. On-device tunable. -->
-    <dimen name="ha_chrome_clearance">84dp</dimen>
+         aren't hidden behind the chip bar + cluster: the cluster's 44dp pills top out 78dp above the
+         inset edge (22dp base + 12dp chrome_bar_margin + 44dp). On-device tunable. -->
+    <dimen name="ha_chrome_clearance">74dp</dimen>
+
+    <!-- Inset of the camera live view's bottom bar (snapshot + hint) from the window's inset edges:
+         the shell's base pad (CHROME_BASE_PAD_DP 22dp) + chrome_bar_margin 12dp, i.e. exactly where
+         the floating cluster's 44dp pills sit, so the snapshot button shares the cluster's row and
+         left/right margin. On-device tunable. -->
+    <dimen name="camera_live_bar_inset">34dp</dimen>
 
     <!-- Corner radius for inner settings cards (account row + dashboard cards) — rounder than the
          old 12dp so they sit closer to the app's other surfaces. -->

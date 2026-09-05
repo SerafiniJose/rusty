@@ -256,14 +256,16 @@ class ShellChromeController(
         tvClock.animate().cancel()
         tvClock.post {
             val parent = tvClock.parent as View
-            val margin = 24f * tvClock.resources.displayMetrics.density
+            val density = tvClock.resources.displayMetrics.density
             val (tx, ty) = BloomGeometry.cornerTranslation(
                 parentWidth = parent.width,
                 parentPaddingRight = parent.paddingRight,
                 parentPaddingTop = parent.paddingTop,
                 clockX = tvClock.left.toFloat(), clockY = tvClock.top.toFloat(),
                 clockWidth = tvClock.width, clockHeight = tvClock.height,
-                cornerScale = BloomGeometry.CORNER_SCALE, marginPx = margin,
+                cornerScale = BloomGeometry.CORNER_SCALE,
+                marginPx = BloomGeometry.CORNER_SIDE_MARGIN_DP * density,
+                topMarginPx = BloomGeometry.CORNER_TOP_MARGIN_DP * density,
             )
             if (animate) {
                 tvClock.animate()

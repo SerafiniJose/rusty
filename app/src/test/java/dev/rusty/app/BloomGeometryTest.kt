@@ -29,4 +29,22 @@ class BloomGeometryTest {
         // topEdge=30+24=54; targetCy=54+10=64; dy=64-500=-436
         assertEquals(-436f, dy, 0.001f)
     }
+
+    @Test fun topMarginIsIndependentOfSideMargin() {
+        val (dx, dy) = BloomGeometry.cornerTranslation(
+            parentWidth = 1000, parentPaddingRight = 0, parentPaddingTop = 30,
+            clockX = 400f, clockY = 450f, clockWidth = 200, clockHeight = 100,
+            cornerScale = 0.2f, marginPx = 24f, topMarginPx = -5f,
+        )
+        // Side gap unchanged: rightEdge=976; targetCx=956; dx=456
+        assertEquals(456f, dx, 0.001f)
+        // topEdge=30-5=25; targetCy=25+10=35; dy=35-500=-465
+        assertEquals(-465f, dy, 0.001f)
+    }
+
+    @Test fun topMarginDefaultsToSideMargin() {
+        val a = BloomGeometry.cornerTranslation(1000, 0, 0, 400f, 450f, 200, 100, 0.2f, 24f)
+        val b = BloomGeometry.cornerTranslation(1000, 0, 0, 400f, 450f, 200, 100, 0.2f, 24f, topMarginPx = 24f)
+        assertEquals(a, b)
+    }
 }
