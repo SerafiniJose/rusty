@@ -32,14 +32,20 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 | --- | --- | --- |
 | ![OLED screensaver face](screenshots/screensaver-oled.png) | ![Home Assistant dashboard](screenshots/home-assistant.png) | ![On-screen launcher](screenshots/launcher.png) |
 
-| Settings | Services & status |
+| Settings | Services & status | Cameras |
+| --- | --- | --- |
+| ![Settings](screenshots/settings.png) | ![Services and status](screenshots/services-status.png) | ![Camera wall](screenshots/cameras.png) |
+
+| Control page | Control page on a phone |
 | --- | --- |
-| ![Settings](screenshots/settings.png) | ![Services and status](screenshots/services-status.png) |
+| ![Control page](screenshots/control-page.png) | ![Control page on a phone](screenshots/control-page-phone.png) |
 
 > Captured on an Amazon Echo Show 8 (1280×800), except Services & status, which is from a Lenovo
 > Tab M10 because that page is taller than an 800 px screen. Cover art is a generated gradient and
 > the track, artist, listener and lyrics are placeholders — no copyrighted content. The Home
-> Assistant shot uses the public Home Assistant demo.
+> Assistant shot uses the public Home Assistant demo. The Cameras shot shows four illustrated test
+> scenes served from a laptop, not real cameras, and the control page shots were taken in a browser
+> against a tablet running Rusty with those same test cameras.
 
 ---
 
@@ -58,6 +64,7 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 - **Immich Slideshow** — turn the idle screen into your own photo frame: point Rusty at a self-hosted [Immich](https://immich.app) server and it shows your library, or just the albums, people or tags you pick, with slow Ken Burns motion, a blurred fill, an optional clock and photo info, and pause / next / previous from the screen or a remote. The key it needs is read-only — see [Immich API key permissions](#immich-api-key-permissions).
 - **Home Assistant dashboard** — an optional second screen: sign in from Rusty's settings (or through the dashboard's own login) and Rusty shows your Home Assistant dashboards full-screen in a kiosk-style view, with switcher chips to jump between them. It auto-discovers your dashboards and sidebar apps, and can tint its own chrome to match your dashboard theme.
 - **Home Assistant media renderer** — optionally expose Rusty as a DLNA media player that Home Assistant auto-discovers as a `media_player` entity (nothing to install on the HA side). Speak TTS announcements ("the wash is done", a doorbell chime, a morning briefing) or stream internet radio to it from automations, scripts, or a dashboard card — Rusty pauses or fades Spotify while the message plays and resumes it afterwards.
+- **Cameras** — a wall of your RTSP cameras: snapshot tiles that refresh on a timer, and a tap or OK away a full-screen live view with sound, a sub/main stream switch and a snapshot button that saves to Pictures/Rusty. Add cameras by scanning the network (ONVIF), by address, or by hand; drag to reorder; show them all at once or in pages of 4, 6 or 8 that can turn on their own. Off by default. See [Cameras](#cameras).
 - **Spotify Canvas in now-playing** — optionally fill the now-playing screen with the track's looping Canvas video instead of static album art.
 - **Remote control** — an optional, off-by-default web page and HTTP API the device serves itself: switch what Rusty is showing (Spotify, Home Assistant, DLNA or the lock screen), bring its window forward or send it away, pick the lock screen's theme, turn the screen on/off, set brightness and media volume, and edit the Slideshow's album/person/tag filters from your phone or laptop. While it's on, the device announces itself on the network so a Home Assistant integration can discover it. See [Remote control](#remote-control).
 - **Playback takeover** — optionally have Rusty react when a phone or laptop starts playing on this receiver: switch the app to the Spotify page, and wake the screen and bring Rusty to the front. Two toggles in **Settings → Spotify**, both off by default. See [Playback takeover](#playback-takeover).
@@ -98,6 +105,26 @@ tag.read
 user.read
 ```
 
+## Cameras
+
+Turn the feature on in **Settings → General → Cameras**, then open **Settings → Cameras** to add
+them. **Scan this Wi-Fi network** finds ONVIF cameras and fills in their stream for you; a camera
+on another subnet can be added **by address** (ONVIF on port 8000 or 80); anything else takes an
+`rtsp://` URL **by hand**. **Test** probes each stream and names the codec, so you know the device
+can decode it before you save. Usernames and passwords are kept in Rusty's encrypted store, never
+in the stream URL.
+
+The wall shows a still per camera, taken from the camera's snapshot URL when it has one and
+otherwise grabbed from the stream. Pick **All in one view**, where tiles shrink to fit, or
+**Pages of 4, 6 or 8** with bigger tiles, flipped with ◀ ▶ or on a timer. The refresh runs one
+camera at a time and starts at 30 s: grabbing a frame from a stream costs a few seconds of
+decoding, so a faster setting would keep the device busy without showing you more. Tap a tile or
+press OK for the live view: sound if the camera has it, a **SUB | MAIN** switch when a
+high-resolution stream is set, and a snapshot button that saves to Pictures/Rusty.
+
+A live view with sound pauses Spotify while it is up and resumes it afterwards. Streams use RTSP
+over TCP by default; turn **Force TCP** off per camera only if yours needs UDP.
+
 ## Remote control
 
 Rusty can serve a small control page — and the HTTP API behind it — from the device itself, so
@@ -112,6 +139,10 @@ browser on the same network and you get a single page with:
   device confirms the switch, so a command that didn't land never looks like it did; a feature
   you've switched off in Settings stays in place, struck through, rather than disappearing.
   Switching needs Rusty to be on screen — if it isn't, the row says so instead of pretending.
+- **Cameras** — when the Cameras feature is on, the Source row gains a Camera lamp and, while it
+  is lit, a strip of your cameras: tap one to show it full screen on the device, or **Grid** to
+  go back to the wall. With the password on, the API also serves each camera's latest still at
+  `/api/camera/<id>/snapshot`.
 - **On screen** — a switch that brings Rusty's window to the front, or sends it out of the way to
   whatever's behind it. Bringing it forward wakes the display first, so it works on a sleeping
   panel. Both directions need Rusty to hold Android's **"Display over other apps"** permission —
@@ -156,13 +187,18 @@ for it beyond the toggle.
 
 ### Security — please read before enabling
 
-There is **no password, PIN or token** on this API. That is a deliberate choice for a device that
-lives on a home network, and it means:
+The API and control page are **open by default**: no password, PIN or token. That is a deliberate
+choice for a device that lives on a home network, and you can change it. **Settings → Remote
+Control → Require password** sets a password that every request must carry (the control page asks
+for it once and remembers it in that browser; scripts send it as
+`Authorization: Bearer <password>`). Camera stills over the API are only served
+at all while the password is on. With the password off, this is what "open" means:
 
 - **Any client on your local network can control this device**: switch the screen on or off,
   change brightness and media volume, and change the Slideshow filters. It can also **read the
   names of your Immich albums, people and tags** (names only — no photos are served through this
-  API, and your Immich API key never leaves the device). It can also start an app update —
+  API, and your Immich API key never leaves the device). Camera names are visible too, though
+  stills are refused without the password. It can also start an app update —
   the worst that does is pop the system's install prompt on the device screen, because the APK
   always comes from Rusty's own GitHub Releases (the URL is pinned in the app, not taken from
   the request) and nothing installs without the on-device confirmation.
@@ -175,8 +211,9 @@ lives on a home network, and it means:
   `Content-Type: application/json` on writes, and serves nothing but the one embedded page and
   the fixed API routes.
 
-So: leave it off unless you want it, and don't enable it on a network you don't trust — a guest
-Wi-Fi, a shared flat, a café. If you need it reachable from outside your home, put it behind your
+So: leave it off unless you want it, set the password if anyone you don't fully trust shares the
+network, and don't enable it at all on a network you don't trust — a guest Wi-Fi, a shared flat,
+a café. If you need it reachable from outside your home, put it behind your
 own VPN rather than forwarding port 8765.
 
 ### Playback takeover
