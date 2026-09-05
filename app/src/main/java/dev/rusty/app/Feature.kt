@@ -127,8 +127,11 @@ interface ShellHost {
     fun stopReceiver()
     fun applyReceiverName(newName: String)
     fun applyBitrate(newKbps: Int)
+    /** Sets the volume (10..100) a NEW Connect session starts at; never touches a live session. */
+    fun applyStartupVolume(percent: Int)
     val currentDeviceName: String
     val currentBitrateKbps: Int
+    val currentStartupVolumePercent: Int
 
     /**
      * Re-arms the shell's input-idle screensaver timer, exactly like a real key/touch would.

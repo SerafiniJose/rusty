@@ -17,7 +17,12 @@ object NativeBridge {
     //map functions in rust core lib
     external fun initAndroidContext(context: Context, cacheDir: String)
     external fun initLogger()
-    external fun startDevice(deviceName: String, deviceId: String, bitrateKbps: Int)
+    external fun startDevice(
+        deviceName: String,
+        deviceId: String,
+        bitrateKbps: Int,
+        startupVolumePercent: Int,
+    )
     external fun stopDevice()
 
     // Transport controls — dispatched to the active session's Spirc handle. These
@@ -44,6 +49,14 @@ object NativeBridge {
     // Renames the running receiver in place (re-advertises mDNS under the new name)
     // without restarting the foreground service or runtime.
     external fun renameDevice(deviceName: String)
+
+    /**
+     * Sets the volume (0..=100) a NEW Spotify Connect session starts at. Takes effect on the
+     * next controller that connects; a session already playing keeps its current volume, so
+     * moving the settings slider never jolts the room. Safe no-op before the receiver starts —
+     * the native side keeps the value in a process-wide slot, not in the session.
+     */
+    external fun setStartupVolume(percent: Int)
 
     // Asynchronously mints a Spotify access token (delivered via SpotifyService.onNativeAccessToken).
     external fun requestAccessToken()

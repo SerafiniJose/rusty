@@ -86,6 +86,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
 
     private var deviceName = DEFAULT_DEVICE_NAME
     private var bitrateKbps = DEFAULT_BITRATE_KBPS
+    private var startupVolumePercent = StartupVolumeSettings.DEFAULT_PERCENT
     private var fullscreenEnabled = false
     private var keepScreenOnEnabled = false
 
@@ -142,6 +143,10 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         bitrateKbps = prefs.getInt(KEY_BITRATE_KBPS, DEFAULT_BITRATE_KBPS)
             .takeIf { it in SUPPORTED_BITRATES_KBPS }
             ?: DEFAULT_BITRATE_KBPS
+        startupVolumePercent = StartupVolumeSettings.percent(prefs)
+        // The native side keeps this in a process-wide slot, so seed it on every Activity start:
+        // the receiver may already be running (start-on-boot, or the Activity being recreated).
+        NativeBridge.setStartupVolume(startupVolumePercent)
         fullscreenEnabled = prefs.getBoolean(KEY_FULLSCREEN, false)
         keepScreenOnEnabled = KeepScreenOnSettings.isEnabled(prefs)
 
@@ -490,6 +495,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
 
     override val currentDeviceName: String get() = deviceName
     override val currentBitrateKbps: Int get() = bitrateKbps
+    override val currentStartupVolumePercent: Int get() = startupVolumePercent
 
     override fun openSettings(tab: SettingsTabKey?) {
         val active = currentFeatureId()
@@ -602,6 +608,21 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         bitrateKbps = newKbps
         prefs.edit().putInt(KEY_BITRATE_KBPS, newKbps).apply()
         receiverController.applyBitrate(deviceName)
+    }
+
+    /**
+     * Sets the volume a NEW Connect session starts at (issue #10 — a receiver feeding a car or an
+     * amplifier wants full signal, not librespot's 50%).
+     *
+     * Unlike the bitrate, this does NOT cycle the native session: the discovery loop re-reads the
+     * value for each controller that connects, so the change lands on the next connection and a
+     * session playing right now is left alone.
+     */
+    override fun applyStartupVolume(percent: Int) {
+        val clamped = StartupVolumeSettings.clamp(percent)
+        startupVolumePercent = clamped
+        StartupVolumeSettings.setPercent(prefs, clamped)
+        NativeBridge.setStartupVolume(clamped)
     }
 
     /** Re-renders the active fragment from the shared snapshot after the shell changed state. */

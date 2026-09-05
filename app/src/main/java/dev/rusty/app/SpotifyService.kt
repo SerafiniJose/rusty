@@ -68,6 +68,11 @@ class SpotifyService : Service() {
         val bitrateKbps = requestedBitrateKbps
             .takeIf { it in SUPPORTED_BITRATES_KBPS }
             ?: DEFAULT_BITRATE_KBPS
+        // Read from prefs rather than a start extra: unlike the name and the bitrate this is not
+        // part of the native receiver's identity (see NativeReceiverConfig), it only seeds the
+        // volume of the NEXT Connect session — so every start path, including BootReceiver's,
+        // gets the user's value without carrying an extra it doesn't know about.
+        val startupVolumePercent = StartupVolumeSettings.percent(prefs)
         currentDeviceName = deviceName
         currentBitrateKbps = bitrateKbps
         postNotification()   // a start intent may carry a different name than the seed
@@ -107,7 +112,7 @@ class SpotifyService : Service() {
                     ReceiverDashboardStatusEvent.Lifecycle.NATIVE_STARTING,
                     service = ReceiverServiceState.RUNNING,
                 )
-                NativeBridge.startDevice(deviceName, deviceId, bitrateKbps)
+                NativeBridge.startDevice(deviceName, deviceId, bitrateKbps, startupVolumePercent)
             } catch (throwable: Throwable) {
                 Log.e("SpotifyService", "Native receiver failed", throwable)
                 nativeStartedConfig = null
@@ -440,6 +445,11 @@ class SpotifyService : Service() {
         }
     }
 
+    /**
+     * The identity of the running native receiver, for the duplicate-start guard. Deliberately
+     * excludes the startup volume: that is applied live via [NativeBridge.setStartupVolume] and
+     * must never be a reason to cycle the native session.
+     */
     private data class NativeReceiverConfig(
         val deviceName: String,
         val bitrateKbps: Int

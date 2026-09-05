@@ -211,6 +211,64 @@
                 app:trackColorInactive="@color/surface_border" />
         </LinearLayout>
 
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="14dp"
+            android:background="@color/surface_border" />
+
+        <!-- Startup volume: same label + compact slider idiom as Bitrate above. The value a NEW
+             Connect session starts at; a session already playing is never touched. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_medium"
+                    android:text="Startup volume"
+                    android:textColor="@color/ink"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tvStartupVolumeValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_regular"
+                    android:text="100% · full"
+                    android:textColor="@color/muted_dim"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderStartupVolume"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="16dp"
+                android:value="100"
+                android:valueFrom="10"
+                android:valueTo="100"
+                android:stepSize="5"
+                app:labelBehavior="gone"
+                app:tickVisible="false"
+                app:haloColor="@color/accent_fallback"
+                app:thumbColor="@color/accent_fallback"
+                app:tickColorActive="@color/white"
+                app:tickColorInactive="@color/muted_dim"
+                app:trackColorActive="@color/accent_fallback"
+                app:trackColorInactive="@color/surface_border" />
+        </LinearLayout>
+
         <TextView
             android:id="@+id/tvSettingsFeedback"
             android:layout_width="match_parent"

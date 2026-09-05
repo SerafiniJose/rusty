@@ -59,6 +59,8 @@ private class SpotifySettingsPanel(
         val saveButton = panel.findViewById<MaterialButton>(R.id.btnSaveName)
         val bitrateSlider = panel.findViewById<Slider>(R.id.sliderBitrate)
         val bitrateValue = panel.findViewById<TextView>(R.id.tvBitrateValue)
+        val startupVolumeSlider = panel.findViewById<Slider>(R.id.sliderStartupVolume)
+        val startupVolumeValue = panel.findViewById<TextView>(R.id.tvStartupVolumeValue)
         val feedback = panel.findViewById<TextView>(R.id.tvSettingsFeedback)
         val serviceStatusValue = panel.findViewById<TextView>(R.id.tvReceiverStatusValue)
         val toggleServiceButton = panel.findViewById<MaterialButton>(R.id.btnToggleService)
@@ -67,6 +69,8 @@ private class SpotifySettingsPanel(
         nameInput.setText(host.currentDeviceName)
         bitrateSlider.value = bitrateToIndex(host.currentBitrateKbps)
         bitrateValue.text = bitrateLabel(host.currentBitrateKbps)
+        startupVolumeSlider.value = host.currentStartupVolumePercent.toFloat()
+        startupVolumeValue.text = StartupVolumeSettings.label(host.currentStartupVolumePercent)
 
         // ---- Collapsible sections ------------------------------------------------
         // Same idiom as the Slideshow/HA panels. The receiver is always configured, so there is no
@@ -207,6 +211,34 @@ private class SpotifySettingsPanel(
                     showFeedback(feedback, "✓ Switching to ${bitrateLabel(selected)}…", FEEDBACK_SUCCESS)
                     renderSummaries()
                 }
+            }
+        })
+
+        // Startup volume: the label tracks the drag, the value commits on release. Committing is
+        // cheap and interrupts nothing — the native side only reads it when the next controller
+        // connects — so unlike the bitrate slider there is no reason to gate it behind a restart.
+        fun commitStartupVolume(percent: Int) {
+            val selected = StartupVolumeSettings.clamp(percent)
+            if (selected == host.currentStartupVolumePercent) return
+            host.applyStartupVolume(selected)
+            showFeedback(
+                feedback,
+                "✓ New sessions will start at ${StartupVolumeSettings.label(selected)}",
+                FEEDBACK_SUCCESS,
+            )
+        }
+        startupVolumeSlider.addOnChangeListener { slider, value, fromUser ->
+            startupVolumeValue.text = StartupVolumeSettings.label(value.toInt())
+            // A D-pad step never produces a touch event, so onStopTrackingTouch below would never
+            // fire on a TV and the change would be silently dropped. `isPressed` skips most of a
+            // touch drag (which commits on release); a step that slips through mid-drag is
+            // harmless — committing is a pref write plus an atomic store, and interrupts nothing.
+            if (fromUser && !slider.isPressed) commitStartupVolume(value.toInt())
+        }
+        startupVolumeSlider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: Slider) {}
+            override fun onStopTrackingTouch(slider: Slider) {
+                commitStartupVolume(slider.value.toInt())
             }
         })
 

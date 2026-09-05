@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::{env, thread};
 use std::os::raw::c_void;
 use std::sync::{Arc, Mutex, Once, OnceLock};
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 use std::backtrace::Backtrace;
 use std::future::{self, Future};
@@ -147,6 +148,21 @@ static DUCK_MIXER: OnceLock<Mutex<Option<Arc<DuckingMixer>>>> = OnceLock::new();
 /// Process-wide Tokio runtime handle, set on each `startDevice`. Lets a JNI call made from
 /// outside the runtime (e.g. requestAccessToken) spawn an async task onto it.
 static RUNTIME_HANDLE: OnceLock<Mutex<Option<tokio::runtime::Handle>>> = OnceLock::new();
+
+/// Volume a NEW Connect session starts at, as librespot's raw `initial_volume` position
+/// (0..=u16::MAX). Read by the discovery loop just before each `build_active_session`, so a
+/// change made from settings applies to the next controller that connects — no receiver
+/// restart, and a session already playing is never interrupted. Seeded by `startDevice` and
+/// updated by `setStartupVolume`.
+static STARTUP_VOLUME: AtomicU16 = AtomicU16::new(u16::MAX);
+
+/// Maps a 0..=100 percentage onto librespot's raw volume position. Out-of-range input is
+/// clamped rather than rejected: this crosses a JNI boundary and a silent receiver would be
+/// a far worse failure than a clamped one.
+fn startup_volume_from_percent(percent: i32) -> u16 {
+    let percent = percent.clamp(0, 100) as u32;
+    ((percent * u16::MAX as u32) / 100) as u16
+}
 
 /// Returns the process-wide receiver slot, initialising it on first use.
 fn receiver_slot() -> &'static Mutex<Option<ReceiverState>> {
@@ -329,6 +345,7 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_startDevice(
     device_name_java: JString,
     device_id_java: JString,
     bitrate_kbps: i32,
+    startup_volume_percent: i32,
 ) {
     let device_name: String = env
         .get_string(&device_name_java)
@@ -345,6 +362,10 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_startDevice(
     let mut guard = slot.lock().unwrap_or_else(|poison| poison.into_inner());
 
     let bitrate = bitrate_from_kbps(bitrate_kbps);
+    // Seeded before the idempotent-start check below: a duplicate start with a different
+    // startup volume must still update the volume the NEXT session gets, and it needs no
+    // receiver restart to do so.
+    STARTUP_VOLUME.store(startup_volume_from_percent(startup_volume_percent), Ordering::Relaxed);
 
     // Idempotent start: if a receiver with the same name/bitrate is already
     // running, do nothing. This absorbs repeated onStartCommand()/START_STICKY
@@ -425,12 +446,15 @@ async fn start_discovery_loop(
 ) {
     // 0.8: ConnectConfig moved to librespot::connect and changed shape.
     // autoplay moved to SessionConfig; has_volume_ctrl -> disable_volume (inverted);
-    // initial_volume Option<u16> -> plain u16 (0..=u16::MAX). 32768 ~= 50%.
+    // initial_volume Option<u16> -> plain u16 (0..=u16::MAX); Rusty drives it from the
+    // "Startup volume" setting (u16::MAX = 100%) instead of librespot's old 50% default.
     let mut connect_config = ConnectConfig {
         name: device_name,
         device_type: DeviceType::Speaker,
         is_group: false,
-        initial_volume: 32768,
+        // Overwritten from STARTUP_VOLUME on every connection (see the discovery loop);
+        // this seed only covers the window before the first controller connects.
+        initial_volume: STARTUP_VOLUME.load(Ordering::Relaxed),
         disable_volume: false,
         volume_steps: 64,
     };
@@ -514,6 +538,9 @@ async fn start_discovery_loop(
                             teardown_active_session(&mut old);
                             tokio::spawn(old.spirc_task);
                         }
+                        // Re-read per connection so a startup-volume change from settings
+                        // lands on the next controller without cycling the receiver.
+                        connect_config.initial_volume = STARTUP_VOLUME.load(Ordering::Relaxed);
                         match build_active_session(
                             connect_config.clone(),
                             device_id.clone(),
@@ -1200,6 +1227,20 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_renameDevice(
 /// Asynchronously mints a Spotify access token over the active session's Mercury connection and
 /// delivers it to Android via `SpotifyService.onNativeAccessToken`. Non-blocking: returns
 /// immediately and spawns the request on the runtime. A no-op (logged) when no session is active.
+/// Updates the volume a NEW Connect session will start at (0..=100). Takes effect on the
+/// next controller that connects: an already-playing session keeps whatever volume it has,
+/// so changing the setting mid-playback never jolts the room.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rusty_app_NativeBridge_setStartupVolume(
+    _env: JNIEnv,
+    _class: JClass,
+    percent: jint,
+) {
+    let raw = startup_volume_from_percent(percent);
+    STARTUP_VOLUME.store(raw, Ordering::Relaxed);
+    info!("Startup volume set to {}% (raw {})", percent.clamp(0, 100), raw);
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_rusty_app_NativeBridge_requestAccessToken(
     _env: JNIEnv,
@@ -1259,4 +1300,23 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_requestAccessToken(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod startup_volume_tests {
+    use super::startup_volume_from_percent;
+
+    #[test]
+    fn maps_the_endpoints_and_the_middle() {
+        assert_eq!(startup_volume_from_percent(0), 0);
+        assert_eq!(startup_volume_from_percent(100), u16::MAX);
+        // 50% lands on librespot's old hard-coded default, +/- integer rounding.
+        assert!((startup_volume_from_percent(50) as i32 - 32768).abs() <= 1);
+    }
+
+    #[test]
+    fn clamps_out_of_range_input() {
+        assert_eq!(startup_volume_from_percent(-40), 0);
+        assert_eq!(startup_volume_from_percent(1000), u16::MAX);
+    }
 }
