@@ -177,10 +177,16 @@
   .segmented button[aria-pressed="true"] { color: var(--text); }
   .segmented button[aria-pressed="true"] .ico { color: var(--accent); }
 
-  /* Settings that belong to the selected source, inset under the switch that selects it —
-     currently the lock screen's theme. Always present: the lock screen is what the device
-     falls back to, so it stays settable while Spotify or Home is on, and the card never
-     changes height when the source changes. */
+  /* Settings that belong to the selected source, inset under the switch that selects it.
+     The two strips gate differently, on purpose:
+
+     - Lock screen theme is ALWAYS present. Selecting Lock as a source actually shows the
+       screensaver on the device, so gating the theme behind it would mean you could no longer
+       set the theme for later while Spotify plays — the lock screen is what the device falls
+       back to, and it stays settable from anywhere.
+     - Camera on screen appears only while Camera is the selected source. It is not a setting
+       for later, it is what the device is showing RIGHT NOW, so it is meaningless anywhere
+       else — and off the camera panel the device reports every camera as "none" anyway. */
   .context-strip {
     background: var(--slab);
     border: 1px solid var(--card-border);
@@ -379,6 +385,35 @@
   .btn:active:not(:disabled) { transform: scale(0.97); }
 
   /* ================================================================
+     Cameras: a chip strip under the source switch, exactly like the lock
+     screen's themes. The page selects WHICH camera the device shows; it
+     never renders camera imagery itself.
+     ================================================================ */
+  /* Live camera: the accent dot + glow the dock uses, because it is the one thing in this strip
+     that is happening right now. Drawn on the chip's ::before so a chip with no dot keeps the
+     same text metrics as one with. */
+  #camera-chips .chip { display: inline-flex; align-items: center; gap: 7px; }
+  #camera-chips .chip.live::before {
+    content: "";
+    width: 7px; height: 7px; border-radius: 50%; flex: none;
+    background: var(--accent);
+    box-shadow: 0 0 8px 1px var(--accent-glow);
+    animation: livepulse 1.1s ease-in-out infinite;
+  }
+  @keyframes livepulse {
+    0%, 100% { box-shadow: 0 0 8px 1px var(--accent-glow); }
+    50% { box-shadow: 0 0 14px 4px var(--accent-glow); }
+  }
+  /* The Grid chip is a destination like the others, but it is not a camera — a hairline rule
+     after it keeps "no camera" visually apart from the list of cameras. */
+  #camera-chips .chip.grid-chip { margin-right: 9px; position: relative; }
+  #camera-chips .chip.grid-chip::after {
+    content: "";
+    position: absolute; right: -9px; top: 20%; bottom: 20%;
+    border-right: 1px solid var(--card-border);
+  }
+
+  /* ================================================================
      Service accordion + chips + toast
      ================================================================ */
   details.service { border-top: 1px solid var(--card-border); }
@@ -524,6 +559,12 @@
       <p class="lab" id="lockscreen-heading">Lock screen theme</p>
       <div id="theme-chips" class="chips" role="group" aria-labelledby="lockscreen-heading"></div>
       <p id="lockscreen-error" class="error-text" hidden></p>
+    </div>
+
+    <div id="camera-strip" class="context-strip" data-endpoint="/api/cameras" hidden>
+      <p class="lab" id="camera-heading">Camera on screen</p>
+      <div id="camera-chips" class="chips" role="group" aria-labelledby="camera-heading"></div>
+      <p id="camera-error" class="error-text" hidden></p>
     </div>
 
     <div class="switch-row">
@@ -689,18 +730,23 @@
     spotify: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17V4l11-2v13"/><circle cx="6" cy="17" r="3"/><circle cx="17" cy="15" r="3"/></svg>',
     home_assistant: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5.5 9.8V20h13V9.8"/><path d="M10 20v-5h4v5"/></svg>',
     dlna: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 21h7"/><path d="M12 17v4"/></svg>',
+    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h11v10H3z"/><path d="M14 10.5 21 7v10l-7-3.5z"/></svg>',
     lockscreen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.3A8.5 8.5 0 1 1 9.7 3.5a6.7 6.7 0 0 0 10.8 10.8z"/></svg>'
   };
 
   /**
-   * The four destinations, in a FIXED order that never depends on the response. Only those in
+   * The destinations, in a FIXED order that never depends on the response. Only those in
    * `panel.available` are drawn — a feature switched off in Rusty's settings is not a place you
    * can go, so offering it (even greyed) would just be a button that always refuses.
+   *
+   * `full` is not decoration: `labelFor()` and every segment's aria-label read it, so an entry
+   * without one renders "undefined" in the status line.
    */
   var PANELS = [
     { id: "spotify", label: "Spotify", full: "Spotify" },
     { id: "home_assistant", label: "Home", full: "Home Assistant" },
     { id: "dlna", label: "DLNA", full: "DLNA" },
+    { id: "camera", label: "Camera", full: "Camera" },
     { id: "lockscreen", label: "Lock", full: "Lock screen" }
   ];
 
@@ -753,6 +799,7 @@
       "filters-save", "filters-status", "filters-summary",
       "update-status", "update-notes", "update-error", "update-button", "update-summary",
       "update-progress", "update-progress-bar",
+      "camera-strip", "camera-chips", "camera-error",
       "toast", "toast-text"
     ].forEach(function (id) {
       el[id] = document.getElementById(id);
@@ -975,6 +1022,18 @@
   var lastSegTarget = null;
   var lastSegPending = false;
 
+  /**
+   * The source the USER has selected, which is the pending one while a switch is in flight.
+   *
+   * Deliberately not `panel.active`: the segmented thumb already slides optimistically on tap, so
+   * anything that reveals itself with a segment has to follow on the same beat or it would lag a
+   * poll (up to REFRESH_INTERVAL_MS) behind the switch that summoned it.
+   */
+  function selectedPanel() {
+    if (pendingPanel) return pendingPanel;
+    return state && state.panel ? state.panel.active : null;
+  }
+
   function segButtons() {
     return Array.prototype.slice.call(el.segmented.querySelectorAll("button"));
   }
@@ -1174,6 +1233,9 @@
     renderPanel(data.panel);
     renderApp(data.app);
     renderLockscreen(data.panel);
+    // Repainted from the same snapshot: the Grid chip's pressed state is a function of
+    // panel.active, so it must settle on the state poll, not only on the camera poll.
+    renderCameraStrip();
     renderScreen(data.screen);
     renderVolume(data.volume);
   }
@@ -1229,6 +1291,9 @@
     pendingSince = Date.now();
     startFastPoll();
     renderPanel(state.panel);
+    // Follows the thumb: the strip belongs to the segment, so it appears (or leaves) on the tap
+    // rather than waiting for the device to confirm the switch.
+    renderCameraStrip();
 
     writeJSON("/api/panel", "POST", { id: id })
       .catch(function (err) {
@@ -1778,6 +1843,174 @@
     });
   }
 
+  // ---- cameras ----
+
+  /**
+   * The camera strip is a SELECTOR, not a viewer: it says which camera the device is showing and
+   * lets you change it. The page deliberately renders no camera imagery — the per-camera snapshot
+   * route is still published, but a frame from inside the house is a different class of secret
+   * from a control surface, and this page is reachable by anyone on the LAN.
+   *
+   * Polled on its own timer at the same cadence as `/api/state` (REFRESH_INTERVAL_MS), so a
+   * camera feature switched on or off elsewhere shows up without a reload. The two are separate
+   * responses, never one atomic snapshot — which is exactly why the Grid chip's pressed state is
+   * decided from the device's own `panel.active` and never inferred from the camera list alone.
+   */
+
+  /** Latest `GET /api/cameras`, or null when the feature is off / not loaded yet. */
+  var cameraList = null;
+
+  /** Identity+order key of the chips currently in the DOM. Rebuilt only when that actually
+   *  changes: recreating chips on every 5s poll would drop keyboard focus out of the strip
+   *  mid-press, the same discipline `buildSegmented` follows. */
+  var cameraStripKey = null;
+
+  /** The Grid chip's stand-in camera id. Contains a space, which a real id never does (ids are
+   *  `cam_` + hex), so it can never collide with one. */
+  var GRID_CHIP = " grid";
+
+  function cameraChipEls() {
+    return Array.prototype.slice.call(el["camera-chips"].querySelectorAll(".chip"));
+  }
+
+  function buildCameraChips(list) {
+    el["camera-chips"].innerHTML = "";
+
+    var gridChip = document.createElement("button");
+    gridChip.type = "button";
+    gridChip.className = "chip grid-chip";
+    gridChip.setAttribute("data-id", GRID_CHIP);
+    gridChip.setAttribute("aria-pressed", "false");
+    gridChip.textContent = "Grid";
+    gridChip.addEventListener("click", onSelectCameraGrid);
+    el["camera-chips"].appendChild(gridChip);
+
+    list.forEach(function (cam) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip";
+      chip.setAttribute("data-id", cam.id);
+      chip.setAttribute("aria-pressed", "false");
+      chip.textContent = cam.name;
+      chip.addEventListener("click", function () { onSelectCamera(cam.id); });
+      el["camera-chips"].appendChild(chip);
+    });
+  }
+
+  /**
+   * Paints the strip from BOTH polls: the camera list (which camera is live) and `/api/state`
+   * (which panel is showing, and whether anything is attached to take a switch).
+   *
+   * The two pressed rules are deliberately asymmetric:
+   *
+   *  - A camera chip is pressed on its own `state === "live"`. That is the device reporting its
+   *    live view is open on that camera, which stays true and stays useful even while the
+   *    screensaver covers it (`panel.active` reads "lockscreen" then, but the camera really is
+   *    the thing underneath).
+   *  - The Grid chip is pressed only when the device says the CAMERA panel is active and nothing
+   *    is live. Off the camera panel every camera reports "none" by design, so a bare "nothing is
+   *    live" test would light Grid up while Spotify is playing.
+   */
+  function renderCameraStrip() {
+    var list = cameraList;
+    var panel = state && state.panel ? state.panel : null;
+    var available = (panel && panel.available) || [];
+
+    // Hidden unless Camera is the selected source AND the feature is on AND there is something
+    // to pick. Unlike the lock-screen strip this is contextual: it reports what the device is
+    // showing right now, which is not a question anywhere else — see the .context-strip comment.
+    var show = selectedPanel() === "camera" &&
+      available.indexOf("camera") !== -1 &&
+      list !== null && list.length > 0;
+    el["camera-strip"].hidden = !show;
+    if (!show) return;
+
+    var key = list.map(function (cam) { return cam.id + ":" + cam.name; }).join(",");
+    if (key !== cameraStripKey) {
+      cameraStripKey = key;
+      buildCameraChips(list);
+    }
+
+    // `attached` only asks whether ANY window is there to take a switch; which panel is showing
+    // is already settled by the visibility gate above.
+    var attached = (panel ? panel.active : null) !== null;
+    var liveId = null;
+    list.forEach(function (cam) { if (cam.state === "live") liveId = cam.id; });
+
+    cameraChipEls().forEach(function (chip) {
+      var id = chip.getAttribute("data-id");
+      var isLive = id !== GRID_CHIP && id === liveId;
+      // No panel test needed: this strip is only on screen while Camera is the selected source.
+      // That is also what makes Grid the default — from the instant you tap the Camera segment,
+      // nothing is live yet, so Grid is the pressed chip while the device catches up.
+      var isGrid = id === GRID_CHIP && liveId === null;
+      chip.setAttribute("aria-pressed", String(isLive || isGrid));
+      chip.classList.toggle("live", isLive);
+      // The only reason a chip can't be pressed is the one that greys the segments above it:
+      // no window is attached to take the switch.
+      chip.disabled = !attached;
+    });
+  }
+
+  function refreshCameras() {
+    return getJSON("/api/cameras")
+      .then(function (list) {
+        cameraList = list;
+        setNotice(el["camera-error"], null);
+        renderCameraStrip();
+      })
+      .catch(function (err) {
+        if (err.status === 404) {
+          // Feature switched off: forget the list and let renderCameraStrip hide the strip.
+          cameraList = null;
+          cameraStripKey = null;
+          renderCameraStrip();
+          return;
+        }
+        if (err.status === 401) return; // login overlay already raised by apiFetch
+        setNotice(el["camera-error"], "Could not load cameras: " + err.message);
+      });
+  }
+
+  /** Both writes re-read the camera list as well as the state: the chip that should light up is
+   *  reported by `/api/cameras`, which has its own timer and would otherwise leave the strip
+   *  looking unchanged for up to a full poll after a tap. */
+  function refreshCameraSelection() {
+    return refresh().then(refreshCameras);
+  }
+
+  function onSelectCamera(id) {
+    setNotice(el["camera-error"], null);
+    writeJSON("/api/camera/view", "POST", { id: id })
+      .then(function () {
+        toast("Showing on device.");
+      })
+      .catch(function (err) {
+        setNotice(el["camera-error"], err.message);
+      })
+      .then(refreshCameraSelection);
+  }
+
+  /**
+   * "Show the camera grid" — `POST /api/camera/grid`, NOT `/api/camera/dismiss`.
+   *
+   * Dismiss undoes a summon: it restores whatever was on screen before, which from this chip
+   * would mean tapping "Grid" and landing on Spotify, and it answers 409 outright when the camera
+   * panel was reached by an ordinary panel switch with no summon to undo. The grid is a
+   * destination, so it gets a destination's endpoint.
+   */
+  function onSelectCameraGrid() {
+    setNotice(el["camera-error"], null);
+    writeJSON("/api/camera/grid", "POST", {})
+      .then(function () {
+        toast("Showing the camera grid.");
+      })
+      .catch(function (err) {
+        setNotice(el["camera-error"], err.message);
+      })
+      .then(refreshCameraSelection);
+  }
+
   // ---- wiring ----
 
   function init() {
@@ -1802,7 +2035,9 @@
     loadFilters();
     loadVoices();
     refreshUpdate();
+    refreshCameras();
     setInterval(refresh, REFRESH_INTERVAL_MS);
+    setInterval(refreshCameras, REFRESH_INTERVAL_MS);
   }
 
   if (document.readyState === "loading") {

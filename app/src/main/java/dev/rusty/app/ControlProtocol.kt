@@ -97,6 +97,42 @@ interface ControlRuntime {
 
     /** Kicks off the async APK download+install; returns immediately with the outcome class. */
     fun startUpdateInstall(): ControlInstallStart
+
+    // -- cameras ------------------------------------------------------------------------------
+    //
+    // All four are defaulted for the same reason [requiredPassword] is: the fakes in the other
+    // control tests don't care about cameras. The defaults are the FEATURE-OFF answers, which is
+    // also the honest reading of "this runtime has no camera support".
+
+    /** The configured cameras with their current tile/live state, or null when the Camera feature
+     *  is switched off (the router answers 404). An empty list is a real answer: the feature is on
+     *  and nothing is configured yet. */
+    fun cameras(): List<ControlCamera>? = null
+
+    /**
+     * Summons [cameraId] to the screen: wake + foreground (overlay-gated), switch to the camera
+     * feature, open its live view — and remember what was on screen so
+     * [dismissCamera] can put it back. Applied asynchronously like [setPanel]/[setForeground].
+     */
+    fun viewCamera(cameraId: String): ControlCameraViewResult = ControlCameraViewResult.FeatureDisabled
+
+    /** Undoes the summon, restoring the panel (and screensaver) that was up before the FIRST view.
+     *  409 when nothing is summoned — including when the user already left with BACK. */
+    fun dismissCamera(): ControlCameraDismissResult = ControlCameraDismissResult.FeatureDisabled
+
+    /**
+     * Puts the camera GRID on screen: the camera panel, showing no live view.
+     *
+     * A destination, not an undo — the difference from [dismissCamera] is the whole reason this
+     * exists. It abandons any summon capture rather than restoring it, and succeeds whether or not
+     * one was in force, so the control page's "Grid" chip means the same thing from every panel.
+     */
+    fun showCameraGrid(): ControlCameraGridResult = ControlCameraGridResult.FeatureDisabled
+
+    /** The latest snapshot JPEG for [cameraId]. Only ever reached with the API password enabled —
+     *  see the route's own gate in [ControlProtocol.dispatch]. */
+    fun cameraSnapshot(cameraId: String): ControlCameraSnapshotResult =
+        ControlCameraSnapshotResult.FeatureDisabled
 }
 
 sealed class ControlImmichResult {
@@ -182,6 +218,9 @@ object ControlProtocol {
 
     private const val JSON_CONTENT_TYPE = "application/json"
     private const val HTML_CONTENT_TYPE = "text/html; charset=utf-8"
+    private const val JPEG_CONTENT_TYPE = "image/jpeg"
+    private const val CAMERA_PATH_PREFIX = "/api/camera/"
+    private const val SNAPSHOT_PATH_SUFFIX = "/snapshot"
     private val IMMICH_KINDS = setOf("albums", "people", "tags")
 
     /** Diagnostic sink for failures caught at the [route] boundary. Defaults to a no-op: this
@@ -287,6 +326,21 @@ object ControlProtocol {
 
             req.method == "POST" && path == "/api/tts/voices/delete" ->
                 writeGuarded(req) { handleVoiceDelete(req, rt) }
+
+            req.method == "GET" && path == "/api/cameras" ->
+                handleCameraList(rt)
+
+            req.method == "POST" && path == "/api/camera/view" ->
+                writeGuarded(req) { handleCameraView(req, rt) }
+
+            req.method == "POST" && path == "/api/camera/dismiss" ->
+                writeGuarded(req) { handleCameraDismiss(rt) }
+
+            req.method == "POST" && path == "/api/camera/grid" ->
+                writeGuarded(req) { handleCameraGrid(rt) }
+
+            req.method == "GET" && path.startsWith(CAMERA_PATH_PREFIX) && path.endsWith(SNAPSHOT_PATH_SUFFIX) ->
+                handleCameraSnapshot(req, path, rt)
 
             req.method == "GET" && path == "/api/update" ->
                 jsonOk(rt.updateCheck().toJson())
@@ -566,6 +620,112 @@ object ControlProtocol {
                 errorResponse(404, "Not Found", "that voice is not installed")
             ControlVoiceDeleteResult.Busy ->
                 errorResponse(409, "Conflict", "that voice is being downloaded right now")
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // /api/cameras, /api/camera/{view,dismiss}, /api/camera/{id}/snapshot
+    // -------------------------------------------------------------------
+
+    private fun handleCameraList(rt: ControlRuntime): HttpResponse {
+        val cameras = rt.cameras() ?: return errorResponse(404, "Not Found", "camera feature is switched off")
+        val arr = JSONArray()
+        for (cam in cameras) {
+            val o = JSONObject()
+            o.put("id", cam.id)
+            o.put("name", cam.name)
+            o.put("state", cam.state)
+            arr.put(o)
+        }
+        return jsonOk(arr.toString())
+    }
+
+    private fun handleCameraView(req: HttpRequest, rt: ControlRuntime): HttpResponse {
+        val obj = parseJsonObject(req.body) ?: return errorResponse(400, "Bad Request", "malformed JSON")
+
+        val raw = obj.opt("id")
+        if (raw !is String) return errorResponse(400, "Bad Request", "'id' must be a string")
+        val id = raw.trim()
+        // Shape only — WHICH ids exist is the runtime's question (it owns the camera store), the
+        // same split /api/tts/voice makes between a malformed selector and an unknown voice.
+        if (id.isEmpty()) return errorResponse(400, "Bad Request", "'id' must not be blank")
+
+        return when (val result = rt.viewCamera(id)) {
+            is ControlCameraViewResult.Ok -> jsonOk(result.snapshot.toJson())
+            ControlCameraViewResult.FeatureDisabled ->
+                errorResponse(404, "Not Found", "camera feature is switched off")
+            ControlCameraViewResult.UnknownCamera ->
+                errorResponse(400, "Bad Request", "unknown camera '$id'")
+            // Machine-readable on purpose: an automation summoning a camera has to branch on this
+            // (it means "go grant the overlay permission"), not print it.
+            ControlCameraViewResult.OverlayPermissionRequired ->
+                errorResponse(409, "Conflict", "overlay_permission_required")
+        }
+    }
+
+    /** The request body is intentionally unread (a dismiss carries no parameters) — the write
+     *  guards still apply, exactly as for `/api/update/install`. */
+    private fun handleCameraDismiss(rt: ControlRuntime): HttpResponse =
+        when (val result = rt.dismissCamera()) {
+            is ControlCameraDismissResult.Ok -> jsonOk(result.snapshot.toJson())
+            ControlCameraDismissResult.FeatureDisabled ->
+                errorResponse(404, "Not Found", "camera feature is switched off")
+            ControlCameraDismissResult.NotSummoned ->
+                errorResponse(409, "Conflict", "no camera is summoned right now")
+            // Same wording as POST /api/panel's NoWindow: it is the same condition, and the page
+            // already knows what to say about it.
+            ControlCameraDismissResult.NoWindow ->
+                errorResponse(409, "Conflict", "Rusty isn't on screen right now")
+        }
+
+    /**
+     * `POST /api/camera/grid` → the camera grid on screen.
+     *
+     * No `NotSummoned` case by design: asking for the grid is meaningful from anywhere, including
+     * a device that reached the camera panel by an ordinary panel switch. See
+     * [ControlRuntime.showCameraGrid].
+     */
+    private fun handleCameraGrid(rt: ControlRuntime): HttpResponse =
+        when (val result = rt.showCameraGrid()) {
+            is ControlCameraGridResult.Ok -> jsonOk(result.snapshot.toJson())
+            ControlCameraGridResult.FeatureDisabled ->
+                errorResponse(404, "Not Found", "camera feature is switched off")
+            ControlCameraGridResult.NoWindow ->
+                errorResponse(409, "Conflict", "Rusty isn't on screen right now")
+        }
+
+    /**
+     * `GET /api/camera/{id}/snapshot` → the camera's latest JPEG.
+     *
+     * This is the only route that serves camera IMAGERY, and it is opt-in only: with the API
+     * password switched off it answers 403 for everyone, including on a device where every other
+     * route is deliberately open. Rationale (design doc): the rest of the API exposes control and
+     * state, which a LAN neighbour can at worst annoy you with; a frame from a camera inside the
+     * house is a different class of secret, and "the switch is off" is never a reason to hand it
+     * out. Checked BEFORE the runtime is asked, so an unauthenticated prober can't even learn
+     * which camera ids exist.
+     */
+    private fun handleCameraSnapshot(req: HttpRequest, path: String, rt: ControlRuntime): HttpResponse {
+        val id = path.removePrefix(CAMERA_PATH_PREFIX).removeSuffix(SNAPSHOT_PATH_SUFFIX)
+        // A 404 (not 400) for a malformed path: this is the route not matching at all. '/' also
+        // catches a traversal payload smuggled into the id segment.
+        if (id.isEmpty() || id.contains('/')) return errorResponse(404, "Not Found", "not found")
+
+        if (rt.requiredPassword() == null) {
+            return errorResponse(403, "Forbidden", "snapshots require the API password to be enabled")
+        }
+
+        return when (val result = rt.cameraSnapshot(id)) {
+            is ControlCameraSnapshotResult.Ok -> HttpResponse(
+                200, "OK", listOf("Content-Type" to JPEG_CONTENT_TYPE, "Cache-Control" to "no-store"),
+                body = "", binaryBody = result.jpeg,
+            )
+            ControlCameraSnapshotResult.FeatureDisabled ->
+                errorResponse(404, "Not Found", "camera feature is switched off")
+            ControlCameraSnapshotResult.UnknownCamera ->
+                errorResponse(400, "Bad Request", "unknown camera '$id'")
+            ControlCameraSnapshotResult.NoFrame ->
+                errorResponse(404, "Not Found", "no frame for that camera yet")
         }
     }
 

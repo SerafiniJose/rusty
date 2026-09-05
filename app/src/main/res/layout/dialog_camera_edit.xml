@@ -1,0 +1,323 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Add/edit camera card. Same outlined TextInputLayout fields as every other dialog in this app
+     (dialog_control_password.xml, dialog_camera_credentials.xml) — but this dialog has more rows
+     than any other card, so it is wrapped in a plain ScrollView: the Dialog's own bounds
+     (followDisplaySize) cap how tall the card can get, and the ScrollView lets the content scroll
+     within whatever height that leaves rather than overflowing a short portrait screen. Note:
+     android:maxHeight is not a real constraint here — plain ScrollView does not honor that
+     attribute during measurement — so it is not set; the Dialog's bounds do the actual capping. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_popup_card"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/tvCamEditTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_semibold"
+            android:text="Add camera"
+            android:textColor="@color/ink"
+            android:textSize="16sp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:textColorHint="@color/muted_dim"
+            app:boxStrokeColor="@color/accent_fallback"
+            app:hintTextColor="@color/muted_dim">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etCamEditName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:hint="Name"
+                android:imeOptions="actionNext"
+                android:inputType="text"
+                android:maxLines="1"
+                android:textColor="@color/ink" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textColorHint="@color/muted_dim"
+            app:boxStrokeColor="@color/accent_fallback"
+            app:hintTextColor="@color/muted_dim">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etCamEditRtsp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:hint="rtsp://192.168.1.10/stream1"
+                android:imeOptions="actionNext"
+                android:inputType="textUri"
+                android:maxLines="1"
+                android:textColor="@color/ink" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textColorHint="@color/muted_dim"
+            app:boxStrokeColor="@color/accent_fallback"
+            app:hintTextColor="@color/muted_dim">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etCamEditSnapshot"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:hint="Snapshot URL (optional)"
+                android:imeOptions="actionNext"
+                android:inputType="textUri"
+                android:maxLines="1"
+                android:textColor="@color/ink" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textColorHint="@color/muted_dim"
+            app:boxStrokeColor="@color/accent_fallback"
+            app:hintTextColor="@color/muted_dim">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etCamEditUser"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:hint="Username"
+                android:imeOptions="actionNext"
+                android:importantForAutofill="no"
+                android:inputType="text"
+                android:maxLines="1"
+                android:textColor="@color/ink" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textColorHint="@color/muted_dim"
+            app:boxStrokeColor="@color/accent_fallback"
+            app:endIconMode="password_toggle"
+            app:endIconTint="@color/muted_dim"
+            app:hintTextColor="@color/muted_dim">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etCamEditPass"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:hint="Password"
+                android:imeOptions="actionDone"
+                android:importantForAutofill="no"
+                android:inputType="textPassword"
+                android:maxLines="1"
+                android:textColor="@color/ink" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Audio + Force TCP toggles: label weighted, switch trailing (portrait-safe). -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Audio"
+                android:textColor="@color/ink"
+                android:textSize="15sp" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchCamEditAudio"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@null"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:minHeight="0dp"
+                android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+                app:switchMinWidth="0dp"
+                app:thumbTint="@color/switch_thumb_tint"
+                app:trackTint="@color/switch_track_tint" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Force TCP"
+                android:textColor="@color/ink"
+                android:textSize="15sp" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchCamEditForceTcp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@null"
+                android:checked="true"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:minHeight="0dp"
+                android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+                app:switchMinWidth="0dp"
+                app:thumbTint="@color/switch_thumb_tint"
+                app:trackTint="@color/switch_track_tint" />
+        </LinearLayout>
+
+        <!-- Position: two small buttons, hidden when adding (a new camera has nothing to swap
+             with yet — this is opened only while a save has already given it a position). -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Position"
+                android:textColor="@color/ink"
+                android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCamEditMoveUp"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:contentDescription="@string/camera_move_up_description"
+                android:foreground="@drawable/bg_tv_focus"
+                android:minWidth="0dp"
+                android:paddingHorizontal="14dp"
+                android:text="▲" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCamEditMoveDown"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="@string/camera_move_down_description"
+                android:foreground="@drawable/bg_tv_focus"
+                android:minWidth="0dp"
+                android:paddingHorizontal="14dp"
+                android:text="▼" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="14dp"
+            android:layout_marginBottom="14dp"
+            android:background="@color/surface_border" />
+
+        <!-- Test: runs the RTSP (and snapshot, if set) probe off the main thread and reports a
+             per-step result line. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCamEditTest"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:foreground="@drawable/bg_tv_focus"
+                android:text="Test" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvCamEditTestResult"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:fontFamily="@font/hanken_regular"
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tvCamEditError"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:fontFamily="@font/hanken_regular"
+            android:textColor="@color/dot_red"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCamEditDelete"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:foreground="@drawable/bg_tv_focus"
+                android:text="Delete"
+                android:textColor="@color/dot_red" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCamEditCancel"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:foreground="@drawable/bg_tv_focus"
+                android:text="Cancel" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCamEditSave"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:foreground="@drawable/bg_tv_focus"
+                android:text="Save" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

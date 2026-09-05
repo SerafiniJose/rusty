@@ -55,6 +55,42 @@ class PanelControlRelayTest {
         assertEquals(ControlPanelId.HOME_ASSISTANT, PanelControlRelay.current())
     }
 
+    /** While the saver is up, `current` is LOCKSCREEN and the feature it covers is only visible
+     *  through `currentFeature` — which is what a camera summon captures so its restore can put
+     *  the feature back UNDER the saver rather than under the camera it summoned. */
+    @Test fun `currentFeature reports the panel beneath a showing screensaver`() {
+        val host = FakeHost()
+        PanelControlRelay.attachHost(host, ControlPanelId.LOCKSCREEN, ControlPanelId.HOME_ASSISTANT)
+        assertEquals(ControlPanelId.LOCKSCREEN, PanelControlRelay.current())
+        assertEquals(ControlPanelId.HOME_ASSISTANT, PanelControlRelay.currentFeature())
+
+        PanelControlRelay.publishCurrent(ControlPanelId.DLNA, ControlPanelId.DLNA)
+        assertEquals(ControlPanelId.DLNA, PanelControlRelay.currentFeature())
+
+        PanelControlRelay.detachHost(host)
+        assertEquals(null, PanelControlRelay.currentFeature())
+    }
+
+    /**
+     * The idle path of an unattended camera summon: the saver comes up over the CAMERA feature, so
+     * `current` flips to LOCKSCREEN while `currentFeature` must keep naming CAMERA. The summon's
+     * restore reads the feature for exactly this reason — a guard reading `current` would conclude
+     * the shell had moved off the camera and skip the restore that matters most.
+     */
+    @Test fun `saver over a feature moves current but not currentFeature`() {
+        val host = FakeHost()
+        PanelControlRelay.attachHost(host, ControlPanelId.CAMERA, ControlPanelId.CAMERA)
+        PanelControlRelay.publishCurrent(ControlPanelId.LOCKSCREEN, ControlPanelId.CAMERA)
+
+        assertEquals(ControlPanelId.LOCKSCREEN, PanelControlRelay.current())
+        assertEquals(ControlPanelId.CAMERA, PanelControlRelay.currentFeature())
+
+        // ...whereas a genuine move off the camera changes both, which is what the restore's guard
+        // is meant to see.
+        PanelControlRelay.publishCurrent(ControlPanelId.SPOTIFY, ControlPanelId.SPOTIFY)
+        assertEquals(ControlPanelId.SPOTIFY, PanelControlRelay.currentFeature())
+    }
+
     @Test fun `requestPanel forwards to the host and reports acceptance`() {
         val host = FakeHost()
         PanelControlRelay.attachHost(host, ControlPanelId.SPOTIFY)

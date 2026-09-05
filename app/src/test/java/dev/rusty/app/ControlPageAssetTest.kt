@@ -26,6 +26,7 @@ class ControlPageAssetTest {
             "/api/state", "/api/panel", "/api/foreground", "/api/lockscreen",
             "/api/screen", "/api/volume", "/api/announce/text",
             "/api/slideshow/filters", "/api/immich/", "/api/update/install",
+            "/api/cameras", "\"/api/camera/view\"", "\"/api/camera/grid\"",
         ).forEach { endpoint ->
             assertTrue("page must reference $endpoint", page.contains(endpoint))
         }
@@ -123,6 +124,81 @@ class ControlPageAssetTest {
         ).forEach { marker ->
             assertTrue("redesign marker missing: $marker", page.contains(marker))
         }
+    }
+
+    /**
+     * The camera picker is a chip strip inset under the source switch that selects it — the same
+     * shape the lock screen's themes use — and Camera is one of the switch's own destinations.
+     */
+    @Test fun page_hasCameraStripUnderTheSourceSwitch() {
+        listOf(
+            "id=\"camera-strip\"",
+            "id=\"camera-chips\"",
+            "data-endpoint=\"/api/cameras\"",
+            "renderCameraStrip",
+        ).forEach { marker ->
+            assertTrue("camera strip marker missing: $marker", page.contains(marker))
+        }
+        // Camera is a segment of the source switch, and every PANELS entry needs `full`:
+        // labelFor() and the segment aria-label both read it.
+        assertTrue(
+            "Camera must be a source panel with a full label",
+            page.contains("""{ id: "camera", label: "Camera", full: "Camera" }"""),
+        )
+    }
+
+    /**
+     * The camera strip is CONTEXTUAL: it reports what the device is showing right now, which is
+     * not a question anywhere but the camera panel — and off that panel every camera reports
+     * "none" anyway. Gated on the SELECTED source (`pendingPanel || active`), not on `active`
+     * alone, so it appears on the tap rather than a poll later.
+     *
+     * The lock-screen theme is deliberately NOT gated this way: selecting Lock actually shows the
+     * screensaver, so gating the theme behind it would make the theme unsettable while music
+     * plays. That asymmetry is the point, so pin both halves.
+     */
+    @Test fun page_cameraStripIsContextualButLockThemeIsNot() {
+        assertTrue("camera strip must gate on the selected source", page.contains("selectedPanel"))
+        assertTrue(
+            "the gate must be the selected source, pending included",
+            page.contains("""selectedPanel() === "camera""""),
+        )
+        // The lock-screen strip keeps its own rule: shown whenever there are themes to pick.
+        assertTrue(
+            "lock theme must stay available from any source",
+            page.contains("""el["lockscreen-strip"].hidden = themes.length === 0"""),
+        )
+    }
+
+    /**
+     * The strip SELECTS; it never renders camera imagery. `GET /api/camera/{id}/snapshot` stays a
+     * published route, but a frame from inside the house is a different class of secret from a
+     * control surface, and this page is reachable by anyone on the LAN — so the tile grid and all
+     * its snapshot plumbing must not creep back in.
+     */
+    @Test fun page_neverRendersCameraImagery() {
+        listOf(
+            "cameras-section", "camera-tile", "cameraBlobUrls", "cameraGenerations",
+            "/snapshot", "Set an API password to see camera tiles.",
+        ).forEach { marker ->
+            assertFalse("camera imagery must stay off the page: $marker", page.contains(marker))
+        }
+    }
+
+    /**
+     * "Grid" is a DESTINATION, so it posts to `/api/camera/grid`. `/api/camera/dismiss` undoes a
+     * summon — it restores whatever was on screen before (tap Grid, land on Spotify) and 409s
+     * when the camera panel was reached by an ordinary panel switch — so the page must not reach
+     * for it here.
+     */
+    @Test fun page_gridChipUsesTheGridEndpointNotDismiss() {
+        assertTrue("Grid chip must post /api/camera/grid", page.contains("\"/api/camera/grid\""))
+        // The QUOTED literal, i.e. an actual call — the doc comment on onSelectCameraGrid names
+        // the dismiss route in prose to explain why it is the wrong one, and must stay legal.
+        assertFalse(
+            "dismiss is not the Grid chip's endpoint",
+            page.contains("\"/api/camera/dismiss\""),
+        )
     }
 
     @Test fun page_keepsPendingConfirmMachinery() {

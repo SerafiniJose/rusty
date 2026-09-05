@@ -154,6 +154,88 @@ data class ControlSnapshot(
     }
 }
 
+/**
+ * One row of `GET /api/cameras`.
+ *
+ * [state] is the wire vocabulary the grid already draws with: the camera's [TileState] lowercased
+ * ("ok" | "stale" | "unreachable" | "none"), plus "live" for the camera a live view is currently
+ * showing. A camera whose feature screen isn't mounted has no snapshot loop running at all, so it
+ * reports "none" — the same thing the grid shows for a camera that has never produced a frame.
+ */
+data class ControlCamera(val id: String, val name: String, val state: String)
+
+/**
+ * Outcome of `POST /api/camera/view` (the summon).
+ *
+ * [UnknownCamera] is a 400, not a 404: it is a client mistake about an id, matching how
+ * `POST /api/panel` treats a panel name it does not know. [FeatureDisabled] IS a 404 — with the
+ * Camera feature off, none of these routes exist on this device.
+ */
+sealed class ControlCameraViewResult {
+    /** Accepted; [snapshot] is the PRE-summon state, like every other asynchronously applied
+     *  command (see [ControlPanelResult.Ok]). */
+    data class Ok(val snapshot: ControlSnapshot) : ControlCameraViewResult()
+    object FeatureDisabled : ControlCameraViewResult()
+    object UnknownCamera : ControlCameraViewResult()
+
+    /**
+     * Rusty is not in front and holds no "Display over other apps" grant, so the summon cannot put
+     * the camera on screen. The same underlying check as [ControlForegroundResult.CannotBringForward];
+     * reported with the machine-readable `overlay_permission_required` because a summoning
+     * automation (Home Assistant, a doorbell trigger) has to branch on it, not display it.
+     */
+    object OverlayPermissionRequired : ControlCameraViewResult()
+}
+
+/** Outcome of `POST /api/camera/dismiss`. Both refusals are 409, like [ControlPanelResult]'s. */
+sealed class ControlCameraDismissResult {
+    data class Ok(val snapshot: ControlSnapshot) : ControlCameraDismissResult()
+    object FeatureDisabled : ControlCameraDismissResult()
+
+    /** Nothing to put back — never summoned, or the user already left with BACK. */
+    object NotSummoned : ControlCameraDismissResult()
+
+    /**
+     * No app window is attached to take the restore. Refused rather than accepted for the same
+     * reason [ControlPanelResult.NoWindow] is: with no host every step of the restore is a silent
+     * no-op, so a 200 would report a restore that never happened AND spend the capture, leaving
+     * the device stuck on the camera with nothing left to undo it.
+     */
+    object NoWindow : ControlCameraDismissResult()
+}
+
+/**
+ * Outcome of `POST /api/camera/grid` — "show the camera grid".
+ *
+ * Distinct from [ControlCameraDismissResult] on purpose. Dismiss UNDOES a summon and therefore has
+ * a "nothing to undo" refusal; this is a destination request, so it succeeds whether or not a
+ * summon is in force and has no [ControlCameraDismissResult.NotSummoned] equivalent.
+ */
+sealed class ControlCameraGridResult {
+    data class Ok(val snapshot: ControlSnapshot) : ControlCameraGridResult()
+    object FeatureDisabled : ControlCameraGridResult()
+
+    /** No app window is attached to take the panel switch — refused for the same reason
+     *  [ControlCameraDismissResult.NoWindow] is: nothing would move, and the capture would still
+     *  be spent. */
+    object NoWindow : ControlCameraGridResult()
+}
+
+/** Outcome of `GET /api/camera/{id}/snapshot`. The 403-when-auth-is-off rule is the ROUTER's, not
+ *  this type's — it is decided before the runtime is ever asked. */
+sealed class ControlCameraSnapshotResult {
+    data class Ok(val jpeg: ByteArray) : ControlCameraSnapshotResult() {
+        override fun equals(other: Any?) = this === other ||
+            (other is Ok && jpeg.contentEquals(other.jpeg))
+        override fun hashCode() = jpeg.contentHashCode()
+    }
+    object FeatureDisabled : ControlCameraSnapshotResult()
+    object UnknownCamera : ControlCameraSnapshotResult()
+    /** The camera is known, but no frame has landed yet (grid never mounted, refresh off, or the
+     *  first fetch still in flight). */
+    object NoFrame : ControlCameraSnapshotResult()
+}
+
 /** Router-level outcome of a remote install request; maps 1:1 to an HTTP status. */
 enum class ControlInstallStart { STARTED, NO_UPDATE, BUSY, NO_APK }
 

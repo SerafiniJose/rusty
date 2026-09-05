@@ -129,4 +129,12 @@ interface ShellHost {
     fun applyBitrate(newKbps: Int)
     val currentDeviceName: String
     val currentBitrateKbps: Int
+
+    /**
+     * Re-arms the shell's input-idle screensaver timer, exactly like a real key/touch would.
+     * A feature that keeps rendering without generating any input of its own — the camera live
+     * view watching an RTSP stream is the first case — calls this periodically while active so the
+     * idle screensaver does not cover a video the user is actively watching.
+     */
+    fun keepAlive()
 }

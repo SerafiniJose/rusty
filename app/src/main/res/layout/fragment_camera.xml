@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Camera feature: one fragment, two mutually-exclusive states inside a FrameLayout —
+  cameraGridContainer (snapshot grid) and cameraLiveContainer (PlayerView + chrome). Only one is
+  VISIBLE at a time; showGrid()/showLive() toggle them.
+
+  The live view's controls (back, prev, next) are TOUCH affordances: on a touchscreen with no
+  BACK key there was otherwise no way out of a live view and no way to switch cameras. They are
+  non-focusable by design — see the comment on cameraBackButton — and are revealed and faded as
+  one group with the chrome by CameraFragment.setChromeVisible().
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/cameraRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base">
+
+    <!-- ==================== GRID ==================== -->
+    <FrameLayout
+        android:id="@+id/cameraGridContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/cameraGrid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:padding="10dp" />
+
+        <TextView
+            android:id="@+id/cameraGridEmpty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/camera_grid_empty"
+            android:textColor="@color/muted"
+            android:textSize="14sp"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <!-- ==================== LIVE VIEW ==================== -->
+    <FrameLayout
+        android:id="@+id/cameraLiveContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/black"
+        android:visibility="gone">
+
+        <androidx.media3.ui.PlayerView
+            android:id="@+id/cameraPlayerView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:keepScreenOn="false"
+            app:use_controller="false"
+            app:resize_mode="fit"
+            app:surface_type="surface_view" />
+
+        <!-- Top chrome: LIVE badge, camera name, audio state. Fades after 4s of inactivity. -->
+        <LinearLayout
+            android:id="@+id/cameraLiveChrome"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="14dp"
+            android:background="@drawable/bg_tile_top_gradient">
+
+            <!-- The way out, for a screen with no BACK key. Not focusable: HomeActivity routes
+                 keys to CameraFragment.onKeyEvent BEFORE focus search, and LIVE mode consumes
+                 BACK/LEFT/RIGHT there, so a D-pad could never reach these buttons anyway — the
+                 keys ARE the D-pad path, and every action here has one. -->
+            <ImageButton
+                android:id="@+id/cameraBackButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="10dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/camera_back_description"
+                android:focusable="false"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_close"
+                android:tint="@color/ink" />
+
+            <TextView
+                android:id="@+id/cameraLiveBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/camera_live_badge"
+                android:textColor="@android:color/white"
+                android:textStyle="bold"
+                android:textSize="12sp"
+                android:background="@drawable/bg_camera_chip"
+                android:backgroundTint="@color/dot_red"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="3dp" />
+
+            <TextView
+                android:id="@+id/cameraLiveName"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:textColor="@color/ink"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end"
+                tools:text="Front Door" />
+
+            <TextView
+                android:id="@+id/cameraLiveAudioState"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Edge chevrons: the touch equivalent of D-pad LEFT/RIGHT. GONE with fewer than two
+             cameras (nothing to switch to), and faded with the rest of the chrome. Deliberately
+             left visible over a Fatal overlay — switching away from a dead camera is exactly what
+             you want to do there. -->
+        <ImageButton
+            android:id="@+id/cameraPrevButton"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:layout_gravity="start|center_vertical"
+            android:layout_marginStart="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/camera_prev_description"
+            android:focusable="false"
+            android:padding="16dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_chevron_left"
+            android:tint="@color/ink"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/cameraNextButton"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:layout_gravity="end|center_vertical"
+            android:layout_marginEnd="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/camera_next_description"
+            android:focusable="false"
+            android:padding="16dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_chevron_right"
+            android:tint="@color/ink"
+            android:visibility="gone" />
+
+        <!-- Bottom hint row -->
+        <TextView
+            android:id="@+id/cameraLiveHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:padding="14dp"
+            android:background="@drawable/bg_tile_bottom_gradient"
+            android:text="@string/camera_hint_row"
+            android:textColor="@color/muted"
+            android:textSize="12sp"
+            android:gravity="center" />
+
+        <!-- Connecting / reconnecting overlay -->
+        <LinearLayout
+            android:id="@+id/cameraConnectOverlay"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <ProgressBar
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:indeterminate="true" />
+
+            <TextView
+                android:id="@+id/cameraConnectText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textColor="@color/ink"
+                android:textSize="14sp"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <!-- Fatal-error overlay -->
+        <LinearLayout
+            android:id="@+id/cameraFatalOverlay"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:src="@drawable/ic_mdi_alert"
+                app:tint="@color/dot_red"
+                android:importantForAccessibility="no" />
+
+            <TextView
+                android:id="@+id/cameraFatalText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:layout_marginHorizontal="24dp"
+                android:textColor="@color/ink"
+                android:textSize="14sp"
+                android:gravity="center" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/cameraRetryButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="@string/camera_retry"
+                android:foreground="@drawable/bg_tv_focus" />
+        </LinearLayout>
+    </FrameLayout>
+
+</FrameLayout>

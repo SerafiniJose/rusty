@@ -703,7 +703,15 @@ class AndroidSoapTransport : SoapTransport {
 
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
+            // Bounded: a camera/NVR is the least trustworthy peer in this feature (cleartext HTTP,
+            // arbitrary firmware), and a body that never ends (a firmware bug streaming video on
+            // the SOAP port, or a hostile device on the LAN) must not grow this unbounded and take
+            // the whole process down with an OutOfMemoryError. readCappedSoapBody throws once the
+            // cap is passed; the exception is caught by OnvifSoap.authedCall's existing
+            // `catch (e: Exception)` and turned into a normal Failed(step, ...), same as any other
+            // transport failure.
+            val text = stream?.use { readCappedSoapBody(it, MAX_SOAP_RESPONSE_BYTES) }
+                ?.toString(Charsets.UTF_8) ?: ""
             val responseHeaders = connection.headerFields
                 .filterKeys { it != null }
                 .mapValues { (_, values) -> values.firstOrNull().orEmpty() }
@@ -716,5 +724,31 @@ class AndroidSoapTransport : SoapTransport {
 
     private companion object {
         const val TIMEOUT_MS = 5_000
+
+        /** SOAP responses (GetServices/GetProfiles/GetStreamUri replies) are a few KB at most; 1 MiB
+         *  is generous headroom while still being nowhere near a size that threatens the process. */
+        const val MAX_SOAP_RESPONSE_BYTES = 1L * 1024 * 1024
     }
+}
+
+/**
+ * Reads at most [maxBytes] from [input], throwing [java.io.IOException] the instant the body
+ * exceeds the cap — a body that keeps going is rejected outright rather than truncated (a
+ * truncated SOAP reply is not worth parsing). Package-visible so it can be exercised directly by
+ * tests without spinning up real sockets for [AndroidSoapTransport] itself, which stays thin I/O.
+ */
+internal fun readCappedSoapBody(input: java.io.InputStream, maxBytes: Long): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buf = ByteArray(16 * 1024)
+    var total = 0L
+    while (true) {
+        val read = input.read(buf)
+        if (read < 0) break
+        total += read
+        if (total > maxBytes) {
+            throw java.io.IOException("SOAP response exceeded $maxBytes bytes")
+        }
+        out.write(buf, 0, read)
+    }
+    return out.toByteArray()
 }

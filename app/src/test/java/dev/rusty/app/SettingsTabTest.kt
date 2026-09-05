@@ -1,7 +1,7 @@
 package dev.rusty.app
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsTabTest {
@@ -13,12 +13,16 @@ class SettingsTabTest {
         assertEquals(SettingsTabKey.HOME_ASSISTANT, defaultSettingsTab(FeatureId.HOME_ASSISTANT))
     }
 
+    @Test fun cameraFeatureOpensCameraTab() {
+        assertEquals(SettingsTabKey.CAMERA, defaultSettingsTab(FeatureId.CAMERA))
+    }
+
     @Test fun nullFeatureOpensGeneral() {
         assertEquals(SettingsTabKey.GENERAL, defaultSettingsTab(null))
     }
 
-    @Test fun noCameraPlaceholders() {
-        assertFalse(FeatureId.entries.any { it.name == "CAMERA" })
-        assertFalse(SettingsTabKey.entries.any { it.name == "CAMERA" })
+    @Test fun cameraSettingsTabExists() {
+        // Task 12 gives Camera its own dedicated settings tab (no more General placeholder).
+        assertTrue(SettingsTabKey.entries.any { it.name == "CAMERA" })
     }
 }

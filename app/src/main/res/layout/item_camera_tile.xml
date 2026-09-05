@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One grid tile: 16:9 snapshot + bottom gradient with name/age, a placeholder glyph when no
+  snapshot has ever been fetched (state NONE), and a warning overlay when UNREACHABLE. Focus ring
+  is the app's existing D-pad focus indicator (bg_tv_focus), applied as android:foreground so the
+  ripple/selectable background underneath is preserved.
+
+  The 16:9 ratio lives on tileImage, NOT on tileRoot: this layout is inflated as a RecyclerView item,
+  so the root's LayoutParams are the GridLayoutManager's — app:layout_constraintDimensionRatio is a
+  ConstraintLayout.LayoutParams attribute and is silently ignored there, which left the root at its
+  literal 0dp height and made every tile invisible. The root wraps its content instead, and the
+  image (width 0dp = the fixed column width, height 0dp + ratio) is what gives the tile its height.
+-->
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/tileRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="6dp"
+    android:background="@color/surface"
+    android:foreground="@drawable/bg_tv_focus"
+    android:focusable="true"
+    android:clickable="true"
+    android:defaultFocusHighlightEnabled="false">
+
+    <ImageView
+        android:id="@+id/tileImage"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintDimensionRatio="H,16:9"
+        android:scaleType="centerCrop"
+        android:importantForAccessibility="no"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Placeholder glyph: visible only when the camera has never produced a frame (TileState.NONE). -->
+    <ImageView
+        android:id="@+id/tilePlaceholder"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:src="@drawable/ic_mdi_cctv"
+        android:alpha="0.35"
+        android:importantForAccessibility="no"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Warning overlay: visible only when TileState.UNREACHABLE (drawn over a dimmed last frame). -->
+    <ImageView
+        android:id="@+id/tileWarning"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:src="@drawable/ic_mdi_alert"
+        app:tint="@color/dot_red"
+        android:contentDescription="@string/camera_tile_unreachable"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/tileBottomScrim"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <View
+        android:id="@+id/tileBottomScrim"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:background="@drawable/bg_tile_bottom_gradient"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <TextView
+        android:id="@+id/tileName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginBottom="6dp"
+        android:layout_marginEnd="4dp"
+        android:textColor="@color/ink"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:maxLines="1"
+        android:ellipsize="end"
+        app:layout_constraintBottom_toBottomOf="@id/tileBottomScrim"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/tileAgeChip"
+        tools:text="Front Door" />
+
+    <TextView
+        android:id="@+id/tileAgeChip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="4dp"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="2dp"
+        android:background="@drawable/bg_camera_chip"
+        android:textSize="11sp"
+        android:textColor="@color/dot_green"
+        app:layout_constraintBottom_toBottomOf="@id/tileBottomScrim"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="5s" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

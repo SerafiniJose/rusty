@@ -118,7 +118,9 @@ class ControlHttpServer(
                     return
                 }
                 val response = ControlProtocol.route(req, runtime, localHostsProvider())
-                output.write(response.render().toByteArray(Charsets.UTF_8))
+                // renderBytes, not render().toByteArray: the camera snapshot route answers with
+                // raw JPEG bytes, which have no valid UTF-8 reading to round-trip through a String.
+                output.write(response.renderBytes())
                 output.flush()
             }
         } catch (_: IOException) {

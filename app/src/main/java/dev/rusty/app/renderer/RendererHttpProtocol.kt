@@ -10,21 +10,55 @@ data class HttpRequest(
     val body: String,
 )
 
+/**
+ * One HTTP response. Textual by default ([body]); [binaryBody] carries bytes that must reach the
+ * socket verbatim — the camera snapshot route's JPEG (`GET /api/camera/{id}/snapshot`) is the only
+ * such payload today. When it is set, [body] is ignored for the wire and Content-Length is measured
+ * from the bytes, so a payload with no valid UTF-8 reading cannot be silently mangled.
+ *
+ * Writers should use [renderBytes]; [render] stays the textual view every existing (SOAP/GENA/JSON)
+ * caller uses, and returns only the headers when the body is binary.
+ */
 data class HttpResponse(
     val status: Int,
     val reason: String,
     val headers: List<Pair<String, String>>,
     val body: String,
+    val binaryBody: ByteArray? = null,
 ) {
-    fun render(): String {
-        val bodyBytes = body.toByteArray(Charsets.UTF_8)
-        val allHeaders = headers + ("Content-Length" to bodyBytes.size.toString()) + ("Connection" to "close")
+    private fun bodyBytes(): ByteArray = binaryBody ?: body.toByteArray(Charsets.UTF_8)
+
+    private fun head(): String {
+        val allHeaders = headers + ("Content-Length" to bodyBytes().size.toString()) + ("Connection" to "close")
         val sb = StringBuilder()
         sb.append("HTTP/1.1 ").append(status).append(' ').append(reason).append("\r\n")
         for ((k, v) in allHeaders) sb.append(k).append(": ").append(v).append("\r\n")
         sb.append("\r\n")
-        sb.append(body)
         return sb.toString()
+    }
+
+    fun render(): String = head() + body
+
+    /** The exact bytes to write to the socket, binary bodies included. */
+    fun renderBytes(): ByteArray = head().toByteArray(Charsets.UTF_8) + bodyBytes()
+
+    // A ByteArray field breaks data-class structural equality (array identity), so both are
+    // written out by hand — nothing compares responses today, and a surprise identity comparison
+    // sneaking in later would be a genuinely nasty bug to find.
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is HttpResponse) return false
+        return status == other.status && reason == other.reason && headers == other.headers &&
+            body == other.body && binaryBody.contentEquals(other.binaryBody)
+    }
+
+    override fun hashCode(): Int {
+        var result = status
+        result = 31 * result + reason.hashCode()
+        result = 31 * result + headers.hashCode()
+        result = 31 * result + body.hashCode()
+        result = 31 * result + (binaryBody?.contentHashCode() ?: 0)
+        return result
     }
 }
 

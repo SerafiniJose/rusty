@@ -7,7 +7,7 @@ package dev.rusty.app
  * enabling/disabling the DLNA Player toggle in General shows/hides the tab, consistent with Home
  * Assistant. The de-dup in [settingsTabsFor] is retained as a safety net.
  */
-enum class SettingsTabKey { GENERAL, SCREENSAVER, SLIDESHOW, REMOTE_CONTROL, DLNA_PLAYER, SPOTIFY, HOME_ASSISTANT }
+enum class SettingsTabKey { GENERAL, SCREENSAVER, SLIDESHOW, REMOTE_CONTROL, DLNA_PLAYER, SPOTIFY, HOME_ASSISTANT, CAMERA }
 
 /**
  * The tab to open when settings is launched from [activeFeature]. App-wide tabs
@@ -18,6 +18,7 @@ fun defaultSettingsTab(activeFeature: FeatureId?): SettingsTabKey = when (active
     FeatureId.SPOTIFY -> SettingsTabKey.SPOTIFY
     FeatureId.HOME_ASSISTANT -> SettingsTabKey.HOME_ASSISTANT
     FeatureId.DLNA -> SettingsTabKey.DLNA_PLAYER
+    FeatureId.CAMERA -> SettingsTabKey.CAMERA
     null -> SettingsTabKey.GENERAL
 }
 

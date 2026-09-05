@@ -1,3 +1,30 @@
 <resources>
     <string name="app_name">Rusty</string>
+
+    <!-- Camera feature (Task 11) -->
+    <string name="camera_feature_name">Cameras</string>
+    <string name="camera_grid_empty">No cameras yet. Add one in Settings.</string>
+    <string name="camera_tile_unreachable">Unreachable</string>
+    <string name="camera_live_badge">LIVE</string>
+    <string name="camera_audio_on">Audio on</string>
+    <string name="camera_audio_off">Audio off</string>
+    <!-- Bottom hint. Two of them: the key hint is useless on a touchscreen with no D-pad, and
+         the tap hint is noise on a TV remote. CameraFragment picks by View.isInTouchMode. -->
+    <string name="camera_hint_row">◀ ▶ Switch camera · BACK Grid</string>
+    <string name="camera_hint_touch">Tap for controls</string>
+    <string name="camera_back_description">Back</string>
+    <string name="camera_prev_description">Previous camera</string>
+    <string name="camera_next_description">Next camera</string>
+    <string name="camera_connecting">Connecting…</string>
+    <string name="camera_reconnecting">Reconnecting… (attempt %1$d, retrying in %2$ds)</string>
+    <string name="camera_tile_age_seconds">%1$ds</string>
+    <string name="camera_retry">Retry</string>
+    <string name="camera_fatal_auth">Authentication failed. Check the camera credentials.</string>
+    <string name="camera_fatal_not_found">Stream not found.</string>
+    <string name="camera_fatal_unsupported">This stream is not supported.</string>
+    <string name="camera_fatal_generic">Camera unavailable.</string>
+
+    <!-- Camera settings panel (Task 12) -->
+    <string name="camera_move_up_description">Move up</string>
+    <string name="camera_move_down_description">Move down</string>
 </resources>

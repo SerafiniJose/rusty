@@ -7,7 +7,7 @@ import android.content.SharedPreferences
  * only Spotify; HA/Camera are appended by their own sub-projects.
  */
 object FeatureRegistry {
-    val all: List<Feature> = listOf(SpotifyFeature, HomeAssistantFeature, DlnaPlayerFeature)
+    val all: List<Feature> = listOf(SpotifyFeature, HomeAssistantFeature, DlnaPlayerFeature, CameraFeature)
 
     /** The enabled feature ids, in ring order. */
     fun enabledIds(prefs: SharedPreferences): List<FeatureId> =

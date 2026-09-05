@@ -299,7 +299,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         // Same window as the takeover consumer, for the same reason: past onPause the navigator's
         // commitNow is unsafe, so the remote must see no host rather than crash one from an HTTP
         // thread. Seeded with what is on screen right now.
-        PanelControlRelay.attachHost(panelHost, currentPanelId())
+        PanelControlRelay.attachHost(panelHost, currentPanelId(), currentFeaturePanelId())
         applyKeepScreenOn()
     }
 
@@ -507,6 +507,10 @@ class HomeActivity : AppCompatActivity(), ShellHost {
 
     override fun showScreensaver() = screensaver.show()
 
+    override fun keepAlive() {
+        if (!screensaver.isShowing) screensaver.resetIdleTimer()
+    }
+
     // ---- Remote control: the panel host ------------------------------------
 
     /**
@@ -518,9 +522,14 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         if (screensaver.isShowing) ControlPanelId.LOCKSCREEN
         else ControlPanelId.of(featureNavigator.current)
 
+    /** The feature the shell is on, saver or no saver — what [currentPanelId] hides while the
+     *  screensaver is up, and what a camera summon has to be able to restore under it. */
+    private fun currentFeaturePanelId(): ControlPanelId = ControlPanelId.of(featureNavigator.current)
+
     /** Pushes [currentPanelId] to the relay. Called from every edge that can change it; the relay
      *  drops it while detached, so a late callback cannot resurrect a dead window's panel. */
-    private fun publishCurrentPanel() = PanelControlRelay.publishCurrent(currentPanelId())
+    private fun publishCurrentPanel() =
+        PanelControlRelay.publishCurrent(currentPanelId(), currentFeaturePanelId())
 
     /**
      * Held as a field so `onPause` detaches the SAME instance `onResume` attached — the relay's
@@ -816,6 +825,34 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             FeatureDisable.switchTargetOnDisable(FeatureId.DLNA, activeBefore, stillEnabled)
                 ?.let { switchTo(it) }
             featureNavigator.removeRetained(FeatureId.DLNA)
+        }
+        shellChrome.onFeatureChanged(currentFeatureId(), animate = false)
+        screensaver.onEnabledFeaturesChanged()
+    }
+
+    /** Whether the Camera feature is enabled, for the General toggle's initial state. */
+    val isCameraFeatureEnabled: Boolean
+        get() = CameraFeature.isEnabled(prefs)
+
+    /**
+     * Persists the Camera feature flag and reconciles the shell, the same way [setHomeAssistantEnabled]
+     * does: capture the active feature BEFORE the ring is mutated (so disabling the *showing* camera
+     * screen switches away rather than stranding it), then drop the retained fragment so its player /
+     * snapshot pipeline is torn down instead of kept alive behind a disabled feature.
+     *
+     * There is no service to start or stop here — [CameraFragment] owns everything the feature runs,
+     * and it also watches [CameraFeature.KEY_ENABLED] itself (its `prefsListener` falls back to the
+     * grid when the flag goes off) so a summon can't leave a live stream up across the toggle.
+     */
+    fun setCameraFeatureEnabled(enabled: Boolean) {
+        val activeBefore = currentFeatureId()
+        prefs.edit().putBoolean(CameraFeature.KEY_ENABLED, enabled).apply()
+        val stillEnabled = FeatureRegistry.enabledIds(prefs)
+        featureNavigator.state.onEnabledChanged(stillEnabled)
+        if (!enabled) {
+            FeatureDisable.switchTargetOnDisable(FeatureId.CAMERA, activeBefore, stillEnabled)
+                ?.let { switchTo(it) }
+            featureNavigator.removeRetained(FeatureId.CAMERA)
         }
         shellChrome.onFeatureChanged(currentFeatureId(), animate = false)
         screensaver.onEnabledFeaturesChanged()

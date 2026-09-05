@@ -601,6 +601,14 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
          *  it a device with no working TTS engine would pay [TTS_INIT_TIMEOUT_MS] on EVERY
          *  voice-list poll (the page polls every 1.5 s during a download). */
         const val TTS_INIT_COOLDOWN_MS = 60_000L
+
+        /** Gap between attempts at opening a summoned live view — see [attemptShowLive]. */
+        const val SUMMON_RETRY_MS = 250L
+
+        /** How many attempts before a summon gives up (~10 s at [SUMMON_RETRY_MS]): long enough
+         *  for a cold start (activity launch + fragment mount + the camera list load) on a slow
+         *  Echo Show, short enough that a stuck summon cannot post forever. */
+        const val SUMMON_MAX_ATTEMPTS = 40
     }
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -800,6 +808,250 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
         // trusted an optimistic answer here would show a switch that silently lied on the OEM
         // builds where the launch is dropped.
         ControlForegroundResult.Ok(snapshot())
+    }
+
+    // -- cameras: list, summon, dismiss, snapshot ------------------------------------------
+
+    /**
+     * The summon's memory. Lives on the runtime (not the fragment) because it must outlive every
+     * camera screen: a summon foregrounds the app and switches panels, both of which tear the
+     * previous fragment down.
+     */
+    private val summonPlan = CameraSummonPlan()
+
+    /**
+     * Bumped by every summon and every restore, so a retry loop still waiting for a camera screen
+     * dies the moment a newer command supersedes it (a switch to another camera, or a dismiss).
+     * Main thread only.
+     */
+    private var summonGeneration = 0
+
+    init {
+        // The camera screen's only way to tell the API that a summon ended by itself (BACK, the
+        // camera deleted, the feature switched off, the app stopped) — see CameraControlRelay.
+        // Owner-keyed so a restarted service's registration can't be cleared by the outgoing
+        // runtime's release().
+        CameraControlRelay.setExitListener(this) { onCameraLiveExited() }
+    }
+
+    override fun cameras(): List<ControlCamera>? {
+        if (!CameraFeature.isEnabled(prefs)) return null
+        // Published by the mounted camera screen (≤1 s stale); no screen mounted means no snapshot
+        // loop is running at all, so every camera honestly reports "none".
+        val states = CameraControlRelay.host()?.cameraStates() ?: emptyMap()
+        return CameraStore.load(prefs).map {
+            ControlCamera(id = it.id, name = it.name, state = states[it.id] ?: "none")
+        }
+    }
+
+    override fun viewCamera(cameraId: String): ControlCameraViewResult = synchronized(commandLock) {
+        if (!CameraFeature.isEnabled(prefs)) return ControlCameraViewResult.FeatureDisabled
+        // Membership is decided here, against the same store the grid renders from, so an unknown
+        // id can never reach the shell (which would foreground the app to show nothing).
+        if (CameraStore.load(prefs).none { it.id == cameraId }) return ControlCameraViewResult.UnknownCamera
+
+        // The overlay grant, checked exactly as POST /api/foreground checks it: without it Android
+        // silently drops a background activity start, so a summon from a backgrounded Rusty would
+        // report success and put nothing on screen. With Rusty already in front no grant is needed.
+        val current = PanelControlRelay.current()
+        if (current == null && !AppForeground.canBringForward(context)) {
+            return ControlCameraViewResult.OverlayPermissionRequired
+        }
+
+        // `panelId` is the panel to RESELECT, which while the saver is up is the feature the saver
+        // covers — not LOCKSCREEN. Capturing what the shell "shows" (LOCKSCREEN) would lose the
+        // feature underneath: the restore would re-show the saver over the summoned CAMERA, and
+        // dismissing the saver a moment later would land the user on the camera grid rather than
+        // where they were. `screensaverWasActive` is the separate instruction to bring the saver
+        // back on top afterwards.
+        val capture = SummonCapture(
+            panelId = when {
+                current == null -> SummonCapture.BACKGROUND
+                current == ControlPanelId.LOCKSCREEN ->
+                    // The shell always reports its feature alongside the saver; the fallback keeps
+                    // an older/odd host from producing a capture that restores nothing at all.
+                    (PanelControlRelay.currentFeature() ?: ControlPanelId.LOCKSCREEN).wire
+                else -> current.wire
+            },
+            screensaverWasActive = current == ControlPanelId.LOCKSCREEN,
+        )
+        // Only the FIRST view of a summon captures — see CameraSummonPlan.
+        val commands = summonPlan.onView(cameraId, capture)
+        mainHandler.post { executeSummon(commands) }
+        // The pre-summon snapshot by design, like every other asynchronously applied command.
+        ControlCameraViewResult.Ok(snapshot())
+    }
+
+    override fun dismissCamera(): ControlCameraDismissResult = synchronized(commandLock) {
+        if (!CameraFeature.isEnabled(prefs)) return ControlCameraDismissResult.FeatureDisabled
+        // Checked BEFORE the plan is consumed, exactly as setPanel checks it before posting: with
+        // no attached window every restore step is a silent no-op, so a 200 here would report a
+        // restore that never happened AND burn the capture, leaving the next dismiss to 409.
+        if (!PanelControlRelay.hasHost()) return ControlCameraDismissResult.NoWindow
+        val commands = summonPlan.onDismiss()
+        if (commands.isEmpty()) return ControlCameraDismissResult.NotSummoned
+        mainHandler.post { executeSummon(commands) }
+        ControlCameraDismissResult.Ok(snapshot())
+    }
+
+    override fun showCameraGrid(): ControlCameraGridResult = synchronized(commandLock) {
+        if (!CameraFeature.isEnabled(prefs)) return ControlCameraGridResult.FeatureDisabled
+        // Same window check dismissCamera makes, and for the same reason: with nothing attached
+        // the panel switch below is a silent no-op, so a 200 would report a screen change that
+        // never happened. Deliberately NOT a summon — this does not wake or foreground the device
+        // (that is what viewCamera's overlay-gated path is for), it only moves a screen that is
+        // already there.
+        if (!PanelControlRelay.hasHost()) return ControlCameraGridResult.NoWindow
+        // Clears any capture SYNCHRONOUSLY, before the executor below can reach showGridNow() —
+        // see CameraSummonPlan.onGrid for why that ordering is the whole trick.
+        val commands = summonPlan.onGrid()
+        mainHandler.post { executeSummon(commands) }
+        ControlCameraGridResult.Ok(snapshot())
+    }
+
+    /** Lock-free like the other reads: [CameraControlRelay]'s map and the snapshot store behind it
+     *  are each individually thread-safe, and a frame poll must never queue behind a command. */
+    override fun cameraSnapshot(cameraId: String): ControlCameraSnapshotResult {
+        if (!CameraFeature.isEnabled(prefs)) return ControlCameraSnapshotResult.FeatureDisabled
+        // Filtered by the STORE, not by what the snapshot map happens to hold: a just-deleted
+        // camera can still have a frame cached for a tick, and serving it would be serving a
+        // camera the user removed.
+        if (CameraStore.load(prefs).none { it.id == cameraId }) return ControlCameraSnapshotResult.UnknownCamera
+        val jpeg = CameraControlRelay.host()?.snapshotJpeg(cameraId)
+            ?: return ControlCameraSnapshotResult.NoFrame
+        return ControlCameraSnapshotResult.Ok(jpeg)
+    }
+
+    /** Runs the plan's commands. Main thread: every one of them touches windows or fragments. */
+    private fun executeSummon(commands: List<SummonCmd>) {
+        for (command in commands) {
+            when (command) {
+                is SummonCmd.ShowLive -> executeShowLive(command.cameraId)
+                is SummonCmd.Restore -> executeRestore(command.capture)
+                SummonCmd.ShowGrid -> executeShowGrid()
+                SummonCmd.None -> Unit
+            }
+        }
+    }
+
+    /**
+     * Wake → foreground → camera panel → live view, in that order, because
+     * [CameraFragment.showLive] refuses to open a session unless its fragment is RESUMED and its
+     * camera list has loaded. Neither is true yet at this point on a cold summon (the app may not
+     * even be in front), so the last step is a bounded retry loop rather than a single call — see
+     * [attemptShowLive].
+     */
+    private fun executeShowLive(cameraId: String) {
+        summonGeneration++
+        // A summon to a dark device has to light it up; same path POST /api/screen drives.
+        ScreenControlModel.set(true, null)
+        // Not gated on the grant here: viewCamera already refused the summon without it. With a
+        // host attached Rusty is already in front and this would be a no-op anyway.
+        if (!PanelControlRelay.hasHost()) AppForeground.bringToFront(context)
+        attemptShowLive(cameraId, summonGeneration, attempt = 0)
+    }
+
+    /**
+     * One attempt at putting [cameraId]'s live view up, re-posted every [SUMMON_RETRY_MS] until it
+     * lands or [SUMMON_MAX_ATTEMPTS] is reached (~10 s — an activity start plus a fragment mount,
+     * with generous room for a device that was asleep). Abandoned immediately when [generation] is
+     * stale, i.e. when a newer view or a dismiss has superseded this summon.
+     */
+    private fun attemptShowLive(cameraId: String, generation: Int, attempt: Int) {
+        if (generation != summonGeneration) return
+
+        // Re-asked rather than asked once: on a cold summon the first attempts run before the
+        // Activity exists, so there is no host to take the switch yet.
+        if (PanelControlRelay.current() != ControlPanelId.CAMERA) {
+            PanelControlRelay.requestPanel(ControlPanelId.CAMERA)
+        }
+        // False = dropped (not resumed yet, or the camera list hasn't loaded) — the exact case
+        // this loop exists for.
+        if (CameraControlRelay.host()?.showLiveNow(cameraId) == true) return
+
+        if (attempt >= SUMMON_MAX_ATTEMPTS) {
+            Log.w(TAG, "camera summon gave up waiting for the camera screen")
+            return
+        }
+        mainHandler.postDelayed({ attemptShowLive(cameraId, generation, attempt + 1) }, SUMMON_RETRY_MS)
+    }
+
+    /**
+     * Puts the camera grid on screen.
+     *
+     * No capture is consulted: [CameraSummonPlan.onGrid] already dropped it, which is what keeps
+     * [CameraFragment.showGrid]'s external-exit notification from turning this into a restore.
+     *
+     * A camera screen that is not mounted yet needs no [CameraControlHost.showGridNow] call at
+     * all: [CameraFragment] resets its mode to GRID in `onStop`, so the fragment the panel switch
+     * brings up always comes up on the grid. The call below is for the case that actually needs
+     * it — the camera panel already showing, with a live view open on top of it.
+     */
+    private fun executeShowGrid() {
+        // Cancels any retry loop still chasing a summon this request supersedes; without it a
+        // late attemptShowLive would re-open the live view the user just asked to leave.
+        summonGeneration++
+        if (PanelControlRelay.current() != ControlPanelId.CAMERA) {
+            PanelControlRelay.requestPanel(ControlPanelId.CAMERA)
+        }
+        CameraControlRelay.host()?.showGridNow()
+    }
+
+    /** Puts back what [SummonCapture] recorded. */
+    private fun executeRestore(capture: SummonCapture) {
+        // Cancels any retry loop still chasing the summon being undone.
+        summonGeneration++
+        // Leave the live view first: it holds a decoder (and possibly audio focus), and the panel
+        // switch below does not by itself close it. Idempotent, and a no-op when the user already
+        // left with BACK.
+        CameraControlRelay.host()?.showGridNow()
+
+        // Someone else already moved the shell off the camera (a manual feature switch from the
+        // launcher, a playback takeover): the summon is over, and forcing the captured panel now
+        // would override a choice the user made after it.
+        //
+        // Read from the FEATURE, never from the raw panel: an unattended summon — the core use
+        // case — idles into the screensaver over the camera, at which point the panel reads
+        // LOCKSCREEN while the feature underneath is still CAMERA. Guarding on the panel would
+        // abandon exactly the restore that matters most. A null feature (detached, or a host that
+        // doesn't report one) falls through to the restore, which is harmlessly inert with no host.
+        val feature = PanelControlRelay.currentFeature()
+            ?: PanelControlRelay.current()?.takeIf { it != ControlPanelId.LOCKSCREEN }
+        if (feature != null && feature != ControlPanelId.CAMERA) return
+
+        if (capture.panelId == SummonCapture.BACKGROUND) {
+            // Rusty was not on screen when it was summoned, so "restore" means getting out of the
+            // way again — but only while the grant that let it come forward is still held, the
+            // same both-directions rule POST /api/foreground follows.
+            if (AppForeground.canBringForward(context)) PanelControlRelay.requestBackground()
+            return
+        }
+        // Feature first, saver second — the saver covers whatever feature is current, so showing
+        // it before the switch would leave the camera underneath it.
+        // ...and skipped entirely when that feature is already the one showing (summoned from the
+        // camera feature itself): switching to it would dismiss the saver only for the line below
+        // to put it straight back — a visible double transition for no change at all.
+        val panel = ControlPanelId.fromWire(capture.panelId)
+        if (panel != null && panel != ControlPanelId.LOCKSCREEN && panel != feature) {
+            PanelControlRelay.requestPanel(panel)
+        }
+        if (capture.screensaverWasActive || panel == ControlPanelId.LOCKSCREEN) {
+            PanelControlRelay.requestPanel(ControlPanelId.LOCKSCREEN)
+        }
+    }
+
+    /**
+     * The camera screen left its live view by itself (BACK, the camera deleted, the feature
+     * switched off). Restores exactly as a dismiss would; a no-op when no summon is in force
+     * (an ordinary in-app BACK out of a live view the user opened themselves).
+     */
+    private fun onCameraLiveExited() {
+        val commands = summonPlan.onExternalExit()
+        if (commands.isEmpty()) return
+        // Already on the main thread, but POSTED: this arrives from inside
+        // CameraFragment.showGrid, and restoring the panel re-enters the shell — that must not
+        // happen underneath a fragment mid-teardown.
+        mainHandler.post { executeSummon(commands) }
     }
 
     override fun filters(): ImmichFilters = SlideshowSettings.filters(prefs)
@@ -1061,6 +1313,10 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
     /** Idempotent; called (off the main thread — engine shutdown and the announce lock can both
      *  block) by the service's onDestroy after the HTTP server is stopped. */
     fun release() {
+        // Dropped first: nothing should be able to drive a panel restore through a runtime that is
+        // being torn down (the camera screen outlives this service — the feature works with the
+        // API off).
+        CameraControlRelay.clearExitListener(this)
         released = true   // volatile write FIRST: an init mid-await sees it and discards its engine
         val engine = synchronized(ttsInitLock) {
             val e = tts

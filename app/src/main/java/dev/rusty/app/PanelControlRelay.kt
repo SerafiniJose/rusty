@@ -63,17 +63,23 @@ object PanelControlRelay {
 
     private var host: PanelControlHost? = null
     private var current: ControlPanelId? = null
+    private var currentFeature: ControlPanelId? = null
 
     /**
      * Registers [h] as the shell that can take panel commands, and seeds the panel it is showing.
      * A second attach replaces the first: during an Activity recreation the incoming instance's
      * `onResume` can run before the outgoing one's `onPause`, and the newer window is the right
      * one to command.
+     *
+     * [feature] is the FEATURE panel the shell is on, which differs from [showing] only while the
+     * screensaver covers it — see [currentFeature]. Defaulted to null ("not reported") so callers
+     * that don't care (tests) stay unchanged.
      */
-    fun attachHost(h: PanelControlHost, showing: ControlPanelId) {
+    fun attachHost(h: PanelControlHost, showing: ControlPanelId, feature: ControlPanelId? = null) {
         synchronized(lock) {
             host = h
             current = showing
+            currentFeature = feature
         }
     }
 
@@ -88,21 +94,36 @@ object PanelControlRelay {
             if (host !== h) return
             host = null
             current = null
+            currentFeature = null
         }
     }
 
-    /** Records the panel now on screen. Called by the shell on every edge that changes it. */
-    fun publishCurrent(id: ControlPanelId) {
+    /** Records the panel now on screen (and, when the shell reports it, the feature panel beneath
+     *  a showing screensaver). Called by the shell on every edge that changes either. */
+    fun publishCurrent(id: ControlPanelId, feature: ControlPanelId? = null) {
         synchronized(lock) {
             // Ignored while detached: an edge fired between onPause and onDestroy would otherwise
             // resurrect `current` and make the API report a live panel with no host to command.
             if (host == null) return
             current = id
+            currentFeature = feature
         }
     }
 
     /** The panel on screen, or null when no shell is attached to be showing one. */
     fun current(): ControlPanelId? = synchronized(lock) { current }
+
+    /**
+     * The FEATURE the shell is on, which [current] hides while the screensaver is up (the saver
+     * covers the feature completely, so `current` reports LOCKSCREEN). Null when detached, or when
+     * the shell did not report it.
+     *
+     * Exists for the camera summon: to put the screen back the way it was, a restore must know
+     * BOTH that a saver was up and which feature it was covering — re-showing the saver alone
+     * leaves the summoned camera underneath, so dismissing the saver later lands the user on the
+     * camera instead of where they were.
+     */
+    fun currentFeature(): ControlPanelId? = synchronized(lock) { currentFeature }
 
     /** Whether a shell is attached — i.e. whether [requestPanel] can do anything. */
     fun hasHost(): Boolean = synchronized(lock) { host != null }
@@ -151,6 +172,7 @@ object PanelControlRelay {
         synchronized(lock) {
             host = null
             current = null
+            currentFeature = null
         }
     }
 }

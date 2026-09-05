@@ -131,6 +131,48 @@ private class FakeControlRuntime : ControlRuntime {
         installStartCalls++
         return installStartResult
     }
+
+    /** null = the camera feature is switched off (the router answers 404). */
+    var camerasResult: List<ControlCamera>? = listOf(ControlCamera("cam_1", "Front door", "ok"))
+    var camerasCalls = 0
+    override fun cameras(): List<ControlCamera>? {
+        camerasCalls++
+        return camerasResult
+    }
+
+    var viewCameraResult: ControlCameraViewResult? = null
+    val viewCameraCalls = mutableListOf<String>()
+    override fun viewCamera(cameraId: String): ControlCameraViewResult {
+        viewCameraCalls.add(cameraId)
+        return viewCameraResult ?: ControlCameraViewResult.Ok(snap)
+    }
+
+    var dismissCameraResult: ControlCameraDismissResult? = null
+    var dismissCameraCalls = 0
+    override fun dismissCamera(): ControlCameraDismissResult {
+        dismissCameraCalls++
+        return dismissCameraResult ?: ControlCameraDismissResult.Ok(snap)
+    }
+
+    var showCameraGridResult: ControlCameraGridResult? = null
+    var showCameraGridCalls = 0
+    override fun showCameraGrid(): ControlCameraGridResult {
+        showCameraGridCalls++
+        return showCameraGridResult ?: ControlCameraGridResult.Ok(snap)
+    }
+
+    /** null = no password required (the whole-API gate is off — and, for the snapshot route,
+     *  the reason it answers 403). */
+    var password: String? = null
+    override fun requiredPassword(): String? = password
+
+    var snapshotJpeg: ByteArray = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0x00, 0x7F, 0xFF.toByte(), 0xD9.toByte())
+    var cameraSnapshotResult: ControlCameraSnapshotResult? = null
+    val cameraSnapshotCalls = mutableListOf<String>()
+    override fun cameraSnapshot(cameraId: String): ControlCameraSnapshotResult {
+        cameraSnapshotCalls.add(cameraId)
+        return cameraSnapshotResult ?: ControlCameraSnapshotResult.Ok(snapshotJpeg)
+    }
 }
 
 class ControlProtocolTest {
@@ -142,10 +184,12 @@ class ControlProtocolTest {
         body: String = "",
         contentType: String? = "application/json",
         host: String? = "192.168.7.116",
+        authorization: String? = null,
     ): HttpRequest {
         val headers = LinkedHashMap<String, String>()
         if (host != null) headers["HOST"] = host
         if (contentType != null) headers["CONTENT-TYPE"] = contentType
+        if (authorization != null) headers["AUTHORIZATION"] = authorization
         return HttpRequest(method, path, headers, body)
     }
 
@@ -807,5 +851,331 @@ class ControlProtocolTest {
         assertEquals(404, res.status)
         assertTrue(rt.screenCalls.isEmpty())
         assertTrue(res.headers.none { it.first.startsWith("Access-Control-", ignoreCase = true) })
+    }
+
+    // -- GET /api/cameras -------------------------------------------------------
+
+    @Test fun getCameras_returnsIdNameState() {
+        val rt = FakeControlRuntime()
+        rt.camerasResult = listOf(
+            ControlCamera("cam_1", "Front door", "ok"),
+            ControlCamera("cam_2", "Garden", "unreachable"),
+        )
+        val res = route(req("GET", "/api/cameras"), rt)
+        assertEquals(200, res.status)
+        assertTrue(res.headers.any { it.first == "Content-Type" && it.second.contains("application/json") })
+        val arr = org.json.JSONArray(res.body)
+        assertEquals(2, arr.length())
+        assertEquals("cam_1", arr.getJSONObject(0).getString("id"))
+        assertEquals("Front door", arr.getJSONObject(0).getString("name"))
+        assertEquals("ok", arr.getJSONObject(0).getString("state"))
+        assertEquals("unreachable", arr.getJSONObject(1).getString("state"))
+    }
+
+    @Test fun getCameras_emptyList_isAnEmptyArray_not404() {
+        // "no cameras configured" is not "no camera feature": the page must be able to tell them
+        // apart, or an empty list would look like an old build with no camera support.
+        val rt = FakeControlRuntime()
+        rt.camerasResult = emptyList()
+        val res = route(req("GET", "/api/cameras"), rt)
+        assertEquals(200, res.status)
+        assertEquals(0, org.json.JSONArray(res.body).length())
+    }
+
+    @Test fun getCameras_featureDisabled_404() {
+        val rt = FakeControlRuntime()
+        rt.camerasResult = null
+        val res = route(req("GET", "/api/cameras"), rt)
+        assertEquals(404, res.status)
+        assertTrue(JSONObject(res.body).getString("error").contains("camera"))
+    }
+
+    @Test fun postCameras_isNotARoute_404() {
+        val rt = FakeControlRuntime()
+        assertEquals(404, route(req("POST", "/api/cameras", body = "{}"), rt).status)
+        assertEquals(0, rt.camerasCalls)
+    }
+
+    // -- POST /api/camera/view --------------------------------------------------
+
+    @Test fun postCameraView_summons_200() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/camera/view", body = """{"id":"cam_1"}"""), rt)
+        assertEquals(200, res.status)
+        assertEquals(listOf("cam_1"), rt.viewCameraCalls)
+        assertEquals(rt.snap.toJson(), res.body)
+    }
+
+    @Test fun postCameraView_unknownCamera_400() {
+        val rt = FakeControlRuntime()
+        rt.viewCameraResult = ControlCameraViewResult.UnknownCamera
+        val res = route(req("POST", "/api/camera/view", body = """{"id":"cam_nope"}"""), rt)
+        assertEquals(400, res.status)
+        assertTrue(JSONObject(res.body).getString("error").contains("cam_nope"))
+    }
+
+    @Test fun postCameraView_featureDisabled_404() {
+        val rt = FakeControlRuntime()
+        rt.viewCameraResult = ControlCameraViewResult.FeatureDisabled
+        assertEquals(404, route(req("POST", "/api/camera/view", body = """{"id":"cam_1"}"""), rt).status)
+    }
+
+    /** Backgrounded with no "Display over other apps" grant: the summon cannot put Rusty in front,
+     *  and the same machine-readable code the page already handles for /api/foreground says so. */
+    @Test fun postCameraView_withoutOverlayGrant_409_overlayPermissionRequired() {
+        val rt = FakeControlRuntime()
+        rt.viewCameraResult = ControlCameraViewResult.OverlayPermissionRequired
+        val res = route(req("POST", "/api/camera/view", body = """{"id":"cam_1"}"""), rt)
+        assertEquals(409, res.status)
+        assertEquals("overlay_permission_required", JSONObject(res.body).getString("error"))
+    }
+
+    @Test fun postCameraView_missingOrNonStringId_400_runtimeUntouched() {
+        val rt = FakeControlRuntime()
+        assertEquals(400, route(req("POST", "/api/camera/view", body = """{}"""), rt).status)
+        assertEquals(400, route(req("POST", "/api/camera/view", body = """{"id":3}"""), rt).status)
+        assertEquals(400, route(req("POST", "/api/camera/view", body = """{"id":null}"""), rt).status)
+        assertEquals(400, route(req("POST", "/api/camera/view", body = """{"id":"  "}"""), rt).status)
+        assertTrue(rt.viewCameraCalls.isEmpty())
+    }
+
+    @Test fun postCameraView_malformedJson_400_runtimeUntouched() {
+        val rt = FakeControlRuntime()
+        assertEquals(400, route(req("POST", "/api/camera/view", body = "{"), rt).status)
+        assertTrue(rt.viewCameraCalls.isEmpty())
+    }
+
+    @Test fun postCameraView_requiresJsonContentType() {
+        val rt = FakeControlRuntime()
+        val res = route(
+            req("POST", "/api/camera/view", body = """{"id":"cam_1"}""", contentType = "text/plain"), rt
+        )
+        assertEquals(415, res.status)
+        assertTrue(rt.viewCameraCalls.isEmpty())
+    }
+
+    @Test fun postCameraView_foreignHost_403_runtimeUntouched() {
+        val rt = FakeControlRuntime()
+        val res = route(
+            req("POST", "/api/camera/view", body = """{"id":"cam_1"}""", host = "evil.example.com"), rt
+        )
+        assertEquals(403, res.status)
+        assertTrue(rt.viewCameraCalls.isEmpty())
+    }
+
+    // -- POST /api/camera/dismiss -----------------------------------------------
+
+    @Test fun postCameraDismiss_restores_200() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/camera/dismiss", body = "{}"), rt)
+        assertEquals(200, res.status)
+        assertEquals(1, rt.dismissCameraCalls)
+        assertEquals(rt.snap.toJson(), res.body)
+    }
+
+    @Test fun postCameraDismiss_nothingSummoned_409() {
+        val rt = FakeControlRuntime()
+        rt.dismissCameraResult = ControlCameraDismissResult.NotSummoned
+        val res = route(req("POST", "/api/camera/dismiss", body = "{}"), rt)
+        assertEquals(409, res.status)
+        assertTrue(JSONObject(res.body).getString("error").contains("summon"))
+    }
+
+    /** No attached window means every restore step is a silent no-op, so the dismiss must refuse
+     *  (and keep the capture) rather than report a restore that never happened — the same answer,
+     *  and the same wording, POST /api/panel gives. */
+    @Test fun postCameraDismiss_noWindow_409() {
+        val rt = FakeControlRuntime()
+        rt.dismissCameraResult = ControlCameraDismissResult.NoWindow
+        val res = route(req("POST", "/api/camera/dismiss", body = "{}"), rt)
+        assertEquals(409, res.status)
+        assertTrue(JSONObject(res.body).getString("error").contains("isn't on screen"))
+    }
+
+    @Test fun postCameraDismiss_featureDisabled_404() {
+        val rt = FakeControlRuntime()
+        rt.dismissCameraResult = ControlCameraDismissResult.FeatureDisabled
+        assertEquals(404, route(req("POST", "/api/camera/dismiss", body = "{}"), rt).status)
+    }
+
+    @Test fun postCameraDismiss_requiresJsonContentType() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/camera/dismiss", body = "{}", contentType = "text/plain"), rt)
+        assertEquals(415, res.status)
+        assertEquals(0, rt.dismissCameraCalls)
+    }
+
+    @Test fun getCameraDismiss_isNotARoute_404() {
+        val rt = FakeControlRuntime()
+        assertEquals(404, route(req("GET", "/api/camera/dismiss"), rt).status)
+        assertEquals(0, rt.dismissCameraCalls)
+    }
+
+    // -- POST /api/camera/grid --------------------------------------------------
+
+    @Test fun postCameraGrid_showsTheGrid_200() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/camera/grid", body = "{}"), rt)
+        assertEquals(200, res.status)
+        assertEquals(1, rt.showCameraGridCalls)
+        assertEquals(rt.snap.toJson(), res.body)
+    }
+
+    /**
+     * The difference from dismiss that this route exists for: asking for the grid is meaningful
+     * with no summon in force (the Camera panel was selected directly), so there is no
+     * `NotSummoned` refusal to give — it simply succeeds.
+     */
+    @Test fun postCameraGrid_withNoSummon_stillSucceeds_200() {
+        val rt = FakeControlRuntime()
+        rt.showCameraGridResult = ControlCameraGridResult.Ok(rt.snap)
+        assertEquals(200, route(req("POST", "/api/camera/grid", body = "{}"), rt).status)
+    }
+
+    @Test fun postCameraGrid_noWindow_409() {
+        val rt = FakeControlRuntime()
+        rt.showCameraGridResult = ControlCameraGridResult.NoWindow
+        val res = route(req("POST", "/api/camera/grid", body = "{}"), rt)
+        assertEquals(409, res.status)
+        assertTrue(JSONObject(res.body).getString("error").contains("isn't on screen"))
+    }
+
+    @Test fun postCameraGrid_featureDisabled_404() {
+        val rt = FakeControlRuntime()
+        rt.showCameraGridResult = ControlCameraGridResult.FeatureDisabled
+        assertEquals(404, route(req("POST", "/api/camera/grid", body = "{}"), rt).status)
+    }
+
+    @Test fun postCameraGrid_requiresJsonContentType() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/camera/grid", body = "{}", contentType = "text/plain"), rt)
+        assertEquals(415, res.status)
+        assertEquals(0, rt.showCameraGridCalls)
+    }
+
+    /** `/api/camera/grid` must not be mistaken for a camera id by the snapshot route, which lives
+     *  under the same prefix. */
+    @Test fun getCameraGrid_isNotARoute_404() {
+        val rt = FakeControlRuntime()
+        assertEquals(404, route(req("GET", "/api/camera/grid"), rt).status)
+        assertEquals(0, rt.showCameraGridCalls)
+    }
+
+    // -- GET /api/camera/{id}/snapshot ------------------------------------------
+    //
+    // The one route that serves camera IMAGERY, so it is opt-in only: without the API password
+    // enabled it answers 403 no matter what else is true. Everything below therefore turns the
+    // gate on and presents the Bearer token.
+
+    private fun authed(rt: FakeControlRuntime, path: String) =
+        route(req("GET", path, contentType = null, authorization = "Bearer s3cret"), rt)
+
+    @Test fun getCameraSnapshot_withAuthEnabled_200_imageJpegBytes() {
+        val rt = FakeControlRuntime().apply { password = "s3cret" }
+        val res = authed(rt, "/api/camera/cam_1/snapshot")
+        assertEquals(200, res.status)
+        assertEquals(listOf("cam_1"), rt.cameraSnapshotCalls)
+        assertTrue(res.headers.any { it.first == "Content-Type" && it.second == "image/jpeg" })
+        // The bytes must survive verbatim — a JPEG routed through a UTF-8 String body would be
+        // mangled beyond recognition, so this asserts on the binary body the server writes.
+        assertTrue(rt.snapshotJpeg.contentEquals(res.binaryBody))
+    }
+
+    /** The whole point of the route's own gate: with the API password OFF, anyone on the LAN could
+     *  otherwise pull frames from the house's cameras. */
+    @Test fun getCameraSnapshot_withAuthDisabled_403_runtimeUntouched() {
+        val rt = FakeControlRuntime()
+        rt.password = null
+        val res = route(req("GET", "/api/camera/cam_1/snapshot", contentType = null), rt)
+        assertEquals(403, res.status)
+        assertTrue(res.headers.any { it.first == "Content-Type" && it.second.contains("application/json") })
+        assertTrue(rt.cameraSnapshotCalls.isEmpty())
+        assertNull(res.binaryBody)
+    }
+
+    @Test fun getCameraSnapshot_withAuthEnabledButNoToken_401() {
+        val rt = FakeControlRuntime().apply { password = "s3cret" }
+        val res = route(req("GET", "/api/camera/cam_1/snapshot", contentType = null), rt)
+        assertEquals(401, res.status)
+        assertTrue(rt.cameraSnapshotCalls.isEmpty())
+    }
+
+    @Test fun getCameraSnapshot_wrongToken_401() {
+        val rt = FakeControlRuntime().apply { password = "s3cret" }
+        val res = route(
+            req("GET", "/api/camera/cam_1/snapshot", contentType = null, authorization = "Bearer nope"), rt
+        )
+        assertEquals(401, res.status)
+        assertTrue(rt.cameraSnapshotCalls.isEmpty())
+    }
+
+    @Test fun getCameraSnapshot_unknownCamera_400() {
+        val rt = FakeControlRuntime().apply { password = "s3cret" }
+        rt.cameraSnapshotResult = ControlCameraSnapshotResult.UnknownCamera
+        val res = authed(rt, "/api/camera/cam_nope/snapshot")
+        assertEquals(400, res.status)
+        assertEquals(listOf("cam_nope"), rt.cameraSnapshotCalls)
+    }
+
+    @Test fun getCameraSnapshot_noFrameYet_404() {
+        val rt = FakeControlRuntime().apply { password = "s3cret" }
+        rt.cameraSnapshotResult = ControlCameraSnapshotResult.NoFrame
+        val res = authed(rt, "/api/camera/cam_1/snapshot")
+        assertEquals(404, res.status)
+        assertTrue(JSONObject(res.body).getString("error").contains("frame"))
+    }
+
+    @Test fun getCameraSnapshot_featureDisabled_404() {
+        val rt = FakeControlRuntime().apply { password = "s3cret" }
+        rt.cameraSnapshotResult = ControlCameraSnapshotResult.FeatureDisabled
+        assertEquals(404, authed(rt, "/api/camera/cam_1/snapshot").status)
+    }
+
+    @Test fun getCameraSnapshot_emptyOrTraversedId_404_runtimeUntouched() {
+        val rt = FakeControlRuntime().apply { password = "s3cret" }
+        assertEquals(404, authed(rt, "/api/camera//snapshot").status)
+        assertEquals(404, authed(rt, "/api/camera/../secrets/snapshot").status)
+        assertEquals(404, authed(rt, "/api/camera/cam_1/snapshot/extra").status)
+        assertEquals(404, authed(rt, "/api/camera/cam_1").status)
+        assertTrue(rt.cameraSnapshotCalls.isEmpty())
+    }
+
+    @Test fun getCameraSnapshot_foreignHost_403_runtimeUntouched() {
+        val rt = FakeControlRuntime().apply { password = "s3cret" }
+        val res = route(
+            req("GET", "/api/camera/cam_1/snapshot", contentType = null, host = "evil.example.com",
+                authorization = "Bearer s3cret"),
+            rt,
+        )
+        assertEquals(403, res.status)
+        assertTrue(rt.cameraSnapshotCalls.isEmpty())
+    }
+
+    @Test fun getCameraSnapshot_rendersTheJpegVerbatimOnTheWire() {
+        // render() is what the server writes to the socket. A binary body must land byte-for-byte
+        // with a Content-Length measured in BYTES, not in UTF-8-mangled characters.
+        val rt = FakeControlRuntime().apply { password = "s3cret" }
+        rt.snapshotJpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0x80.toByte(), 0x00, 0xFF.toByte(), 0xD9.toByte())
+        val wire = authed(rt, "/api/camera/cam_1/snapshot").renderBytes()
+        val headerEnd = String(wire, Charsets.ISO_8859_1).indexOf("\r\n\r\n") + 4
+        val head = String(wire, 0, headerEnd, Charsets.ISO_8859_1)
+        assertTrue(head.contains("Content-Type: image/jpeg"))
+        assertTrue(head.contains("Content-Length: ${rt.snapshotJpeg.size}"))
+        assertTrue(rt.snapshotJpeg.contentEquals(wire.copyOfRange(headerEnd, wire.size)))
+    }
+
+    @Test fun cameraRoutes_emitNoCorsHeaders() {
+        val rt = FakeControlRuntime().apply { password = "s3cret" }
+        val responses = listOf(
+            route(req("GET", "/api/cameras", contentType = null, authorization = "Bearer s3cret"), rt),
+            route(req("POST", "/api/camera/view", body = """{"id":"cam_1"}""", authorization = "Bearer s3cret"), rt),
+            route(req("POST", "/api/camera/dismiss", body = "{}", authorization = "Bearer s3cret"), rt),
+            route(req("POST", "/api/camera/grid", body = "{}", authorization = "Bearer s3cret"), rt),
+            authed(rt, "/api/camera/cam_1/snapshot"),
+        )
+        for (res in responses) {
+            assertTrue(res.headers.none { it.first.startsWith("Access-Control-", ignoreCase = true) })
+        }
+        assertEquals(listOf(200, 200, 200, 200, 200), responses.map { it.status })
     }
 }

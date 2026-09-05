@@ -17,6 +17,10 @@ enum class ControlPanelId(val wire: String) {
     SPOTIFY("spotify"),
     HOME_ASSISTANT("home_assistant"),
     DLNA("dlna"),
+    // Wire value pre-declared here (Task 11) so FeatureId.CAMERA has a total panel mapping — the
+    // dedicated summon/dismiss and snapshot endpoints that make POST /api/panel {"id":"camera"}
+    // fully behave are Task 13's.
+    CAMERA("camera"),
     LOCKSCREEN("lockscreen");
 
     /** The feature this panel shows, or null for [LOCKSCREEN] — an overlay, not a feature. */
@@ -25,6 +29,7 @@ enum class ControlPanelId(val wire: String) {
             SPOTIFY -> FeatureId.SPOTIFY
             HOME_ASSISTANT -> FeatureId.HOME_ASSISTANT
             DLNA -> FeatureId.DLNA
+            CAMERA -> FeatureId.CAMERA
             LOCKSCREEN -> null
         }
 

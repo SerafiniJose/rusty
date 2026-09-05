@@ -22,7 +22,7 @@ import com.google.android.material.tabs.TabLayout
 
 /**
  * The shell-owned tabbed settings card
- * (General · Screensaver · Slideshow · DLNA Player · Spotify · Home Assistant).
+ * (General · Screensaver · Slideshow · DLNA Player · Spotify · Home Assistant · Cameras).
  *
  * Replaces the old flat per-feature sheet. The shell ([HomeActivity]) opens this and lands it on
  * the active feature's tab; each tab inflates its own panel layout and binds the controls that used
@@ -52,6 +52,7 @@ object SettingsSheet {
         SettingsTabKey.DLNA_PLAYER -> Tab(key, "DLNA Player", R.drawable.ic_mdi_dlna, R.layout.settings_panel_dlna_player)
         SettingsTabKey.SPOTIFY -> Tab(key, "Spotify", R.drawable.ic_music_note, R.layout.settings_panel_spotify)
         SettingsTabKey.HOME_ASSISTANT -> Tab(key, "Home Assistant", R.drawable.ic_mdi_home_assistant, R.layout.settings_panel_home_assistant)
+        SettingsTabKey.CAMERA -> Tab(key, "Cameras", R.drawable.ic_mdi_cctv, R.layout.settings_panel_camera)
     }
 
     fun show(
@@ -108,6 +109,7 @@ object SettingsSheet {
             val provider: SettingsPanelProvider? = when (spec.key) {
                 SettingsTabKey.SPOTIFY -> SpotifyFeature.settingsPanel(panelCtx)
                 SettingsTabKey.HOME_ASSISTANT -> HomeAssistantFeature.settingsPanel(panelCtx)
+                SettingsTabKey.CAMERA -> CameraFeature.settingsPanel(panelCtx)
                 SettingsTabKey.DLNA_PLAYER -> DlnaPlayerSettingsPanel(panelCtx)
                 SettingsTabKey.REMOTE_CONTROL -> RemoteControlSettingsPanel(panelCtx)
                 SettingsTabKey.SLIDESHOW -> SlideshowSettingsPanel(panelCtx)
@@ -218,6 +220,13 @@ object SettingsSheet {
         dlnaSwitch.isChecked = activity.isDlnaFeatureEnabled
         dlnaSwitch.setOnCheckedChangeListener { _, isChecked ->
             activity.setDlnaFeatureEnabled(isChecked)
+            onFeatureTabsChanged()
+        }
+
+        val camerasSwitch = panel.findViewById<SwitchMaterial>(R.id.switchCameras)
+        camerasSwitch.isChecked = activity.isCameraFeatureEnabled
+        camerasSwitch.setOnCheckedChangeListener { _, isChecked ->
+            activity.setCameraFeatureEnabled(isChecked)
             onFeatureTabsChanged()
         }
 
