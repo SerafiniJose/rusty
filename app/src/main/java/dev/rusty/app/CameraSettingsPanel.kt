@@ -306,6 +306,9 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         }
 
         val rowViews = HashMap<String, View>()
+        // Reorder only means something with two or more cameras; bound here, before the list
+        // renderer that shows and hides it.
+        val reorderRow = panel.findViewById<View>(R.id.btnCamReorder)
 
         fun paintRow(row: View, cam: CameraRecord, status: CameraStatus?) {
             val dot = row.findViewById<View>(R.id.dotCamRowStatus)
@@ -355,6 +358,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             rowViews.clear()
             val sorted = cameras.sortedBy { it.position }
             cameraListEmpty.isVisible = sorted.isEmpty()
+            reorderRow.isVisible = sorted.size >= 2
             val statuses = CameraStatusRelay.current()
             sorted.forEach { cam ->
                 val row = activity.layoutInflater.inflate(R.layout.view_camera_row, cameraListContainer, false)
@@ -398,7 +402,6 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         rowTicker.postDelayed(rowTick, 1_000L)
 
         val actionBar = panel.findViewById<View>(R.id.camActionBar)
-        val reorderRow = panel.findViewById<View>(R.id.btnCamReorder)
         val reorderStrip = panel.findViewById<View>(R.id.camReorderStrip)
         val reorderDoneRow = panel.findViewById<View>(R.id.btnCamReorderDone)
 
