@@ -10,6 +10,29 @@ user-facing.
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-09-05
+
+### Added
+- Cameras. A wall of snapshot tiles from your RTSP cameras, refreshed on a
+  timer, and a full-screen live view with sound, a sub/main stream switch and
+  a snapshot button that saves to Pictures/Rusty. Add a camera by scanning
+  the network (ONVIF), by address, or by hand; drag to reorder; show every
+  camera at once or pages of 4, 6 or 8 that can turn on their own. Off by
+  default; turn it on in Settings → General.
+- Cameras on the control page. Pick a camera to show on the device, or go
+  back to the wall, from any browser. New /api/camera endpoints.
+- Startup volume. New Spotify Connect sessions start at the level you choose
+  in Settings → Spotify, not at half volume.
+
+### Changed
+- The app download is about 23 MB smaller.
+- The corner clock and the floating buttons line up with each page's own
+  controls.
+
+### Fixed
+- Popup cards no longer bring the system bars back while immersive mode is
+  on.
+
 ## [2.5.0] - 2026-08-30
 
 ### Added
