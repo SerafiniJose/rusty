@@ -5,6 +5,15 @@ enum class JobKind {
     /** Pull the camera's still-image (`snapshotUrl`) over HTTP. */
     HTTP,
 
+    /**
+     * Pull the still-image over HTTP and, if that fails, fall back to a frame grab within whatever
+     * is left of the job's deadline. A snapshot URL can be broken in ways the camera itself is not
+     * — a redirect the fetcher deliberately refuses to follow, a still too large for
+     * [SnapshotGuards.MAX_BYTES], a `cgi-bin` endpoint that answers `500` — and a working RTSP
+     * stream should still fill the tile.
+     */
+    HTTP_THEN_FRAME,
+
     /** Open the RTSP stream briefly and decode a single frame. */
     FRAME_GRAB,
 }
@@ -59,6 +68,9 @@ class SnapshotScheduler(
 
         /** Earliest `now` at which this camera may be scheduled again. */
         var dueAt: Long = DUE_NOW
+
+        /** When the current run of failures began, or null while there is none. */
+        var offlineSince: Long? = null
     }
 
     private val states = LinkedHashMap<String, CameraState>()
@@ -154,8 +166,9 @@ class SnapshotScheduler(
         if (ok) {
             state.lastOk = now
             state.consecutiveFailures = 0
+            state.offlineSince = null
         } else {
-            state.consecutiveFailures++
+            recordFailure(state, now)
         }
         state.dueAt = now + refreshIntervalMs
     }
@@ -172,10 +185,15 @@ class SnapshotScheduler(
         inFlight = null
         val state = states[job.cameraId]
         if (state != null) {
-            state.consecutiveFailures++
+            recordFailure(state, now)
             state.dueAt = now + refreshIntervalMs
         }
         return job.cameraId
+    }
+
+    private fun recordFailure(state: CameraState, now: Long) {
+        if (state.consecutiveFailures == 0) state.offlineSince = state.lastOk ?: now
+        state.consecutiveFailures++
     }
 
     /** What the grid should draw for [cameraId] at [now]. See [TileState]. */
@@ -194,11 +212,16 @@ class SnapshotScheduler(
     /** Failures since [cameraId]'s last success; 0 for an unknown id. */
     fun consecutiveFailures(cameraId: String): Int = states[cameraId]?.consecutiveFailures ?: 0
 
+    /** When the current run of failures began (the last good frame's time, else the first
+     *  failure's), or null if the camera is fine or unknown. */
+    fun offlineSince(cameraId: String): Long? = states[cameraId]?.offlineSince
+
     /** The job currently out, or null. */
     fun inFlightJob(): SnapshotJob? = inFlight
 
     private fun kindFor(record: CameraRecord): JobKind? = when {
-        !record.snapshotUrl.isNullOrBlank() -> JobKind.HTTP
+        !record.snapshotUrl.isNullOrBlank() ->
+            if (frameGrabAllowed) JobKind.HTTP_THEN_FRAME else JobKind.HTTP
         frameGrabAllowed -> JobKind.FRAME_GRAB
         else -> null
     }

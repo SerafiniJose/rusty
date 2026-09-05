@@ -111,6 +111,23 @@ ${profiles.joinToString("\n")}
         </s:Envelope>
     """.trimIndent()
 
+    private val mainToken = "MainStream"
+
+    private val streamUriMainXml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
+          <s:Body>
+            <trt:GetStreamUriResponse>
+              <trt:MediaUri>
+                <tt:Uri>rtsp://192.168.2.44:554/h264Preview_01_main</tt:Uri>
+                <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
+                <tt:Timeout>PT60S</tt:Timeout>
+              </trt:MediaUri>
+            </trt:GetStreamUriResponse>
+          </s:Body>
+        </s:Envelope>
+    """.trimIndent()
+
     private val snapshotUriXml = """
         <?xml version="1.0" encoding="UTF-8"?>
         <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
@@ -151,7 +168,7 @@ ${profiles.joinToString("\n")}
         body.contains("GetSystemDateAndTime") -> ok(deviceTimeXml)
         body.contains("GetServices") -> ok(servicesXml)
         body.contains("GetProfiles") -> ok(threeProfilesXml)
-        body.contains("GetStreamUri") -> ok(streamUriXml)
+        body.contains("GetStreamUri") -> ok(if (body.contains(mainToken)) streamUriMainXml else streamUriXml)
         body.contains("GetSnapshotUri") -> ok(snapshotUriXml)
         else -> SoapResponse(500, "unexpected", emptyMap())
     }
@@ -234,47 +251,88 @@ ${profiles.joinToString("\n")}
 
     // --- profile selection --------------------------------------------------------------------
 
-    @Test
-    fun `selectProfile skips over-cap H264 and prefers H264 over H265`() {
-        val profiles = OnvifSoap.parseProfiles(threeProfilesXml)
-
-        // 1440p is over the 1080 cap, so the only eligible H264 is the 360p sub-stream.
-        assertEquals("SubStream", OnvifSoap.selectProfile(profiles, hevcAllowed = false)?.token)
-        // An eligible H264 always beats an eligible H265.
-        assertEquals("SubStream", OnvifSoap.selectProfile(profiles, hevcAllowed = true)?.token)
-    }
+    private val anyDecoder: (String, Int, Int) -> Boolean = { _, _, _ -> true }
+    private val upTo1080: (String, Int, Int) -> Boolean = { _, _, h -> h <= 1080 }
 
     @Test
-    fun `selectProfile prefers the tallest eligible H264`() {
-        val profiles = OnvifSoap.parseProfiles(
-            profilesEnvelope(
-                profileXml("MainStream", "H264", 2560, 1440, 25),
-                profileXml("SubStream", "H264", 640, 360, 15),
-                profileXml("MidStream", "H264", 1920, 1080, 25),
-                profileXml("HevcStream", "H265", 1920, 1080, 25),
-            )
-        )
-
-        assertEquals("MidStream", OnvifSoap.selectProfile(profiles, hevcAllowed = false)?.token)
-    }
-
-    @Test
-    fun `selectProfile prefers a normal frame rate at the same height`() {
+    fun `selectProfiles - office CX820 - sub 360p and main 1440p when decodable`() {
         val profiles = listOf(
-            OnvifProfile("fast", "H264", 1920, 1080, 60),
-            OnvifProfile("normal", "H264", 1920, 1080, 25),
+            OnvifProfile("000", "H264", 2560, 1440, 25),
+            OnvifProfile("001", "H264", 640, 360, 15),
         )
-
-        assertEquals("normal", OnvifSoap.selectProfile(profiles, hevcAllowed = false)?.token)
+        val pair = OnvifSoap.selectProfiles(profiles, hevcAllowed = false, canDecode = anyDecoder)!!
+        assertEquals("001", pair.sub.token)
+        assertEquals("000", pair.main?.token)
+        assertNull(pair.skippedMain)
     }
 
     @Test
-    fun `selectProfile falls back to H265 only when allowed`() {
-        val profiles = listOf(OnvifProfile("hevc", "H265", 1920, 1080, 25))
+    fun `selectProfiles - main skipped when the device cannot decode it`() {
+        val profiles = listOf(
+            OnvifProfile("000", "H264", 2560, 1440, 25),
+            OnvifProfile("001", "H264", 640, 360, 15),
+        )
+        val pair = OnvifSoap.selectProfiles(profiles, hevcAllowed = false, canDecode = upTo1080)!!
+        assertEquals("001", pair.sub.token)
+        assertNull(pair.main)
+        assertEquals("000", pair.skippedMain?.token)
+    }
 
-        assertNull(OnvifSoap.selectProfile(profiles, hevcAllowed = false))
-        assertEquals("hevc", OnvifSoap.selectProfile(profiles, hevcAllowed = true)?.token)
-        assertNull(OnvifSoap.selectProfile(emptyList(), hevcAllowed = true))
+    @Test
+    fun `selectProfiles - single profile is the sub and there is no main`() {
+        val pair = OnvifSoap.selectProfiles(listOf(OnvifProfile("only", "H264", 1920, 1080, 30)), false, anyDecoder)!!
+        assertEquals("only", pair.sub.token)
+        assertNull(pair.main)
+        assertNull(pair.skippedMain)
+    }
+
+    @Test
+    fun `selectProfiles - sub prefers the shortest at or above 360 lines, else the shortest`() {
+        val tall = listOf(OnvifProfile("a", "H264", 640, 360, 15), OnvifProfile("b", "H264", 1920, 576, 20), OnvifProfile("c", "H264", 4096, 1248, 20))
+        assertEquals("a", OnvifSoap.selectProfiles(tall, false, anyDecoder)!!.sub.token)
+        val tiny = listOf(OnvifProfile("q", "H264", 320, 240, 10), OnvifProfile("r", "H264", 352, 288, 10))
+        assertEquals("q", OnvifSoap.selectProfiles(tiny, false, anyDecoder)!!.sub.token)
+    }
+
+    @Test
+    fun `selectProfiles - main falls back to the next decodable H264 and prefers 30 fps or less`() {
+        val profiles = listOf(
+            OnvifProfile("4k", "H264", 3840, 2160, 30),
+            OnvifProfile("fhd60", "H264", 1920, 1080, 60),
+            OnvifProfile("fhd25", "H264", 1920, 1080, 25),
+            OnvifProfile("sub", "H264", 640, 360, 15),
+        )
+        val pair = OnvifSoap.selectProfiles(profiles, false, upTo1080)!!
+        assertEquals("fhd25", pair.main?.token)
+        assertNull(pair.skippedMain)
+    }
+
+    @Test
+    fun `selectProfiles - H265 only when allowed`() {
+        val hevcOnly = listOf(OnvifProfile("h", "H265", 1920, 1080, 25))
+        assertNull(OnvifSoap.selectProfiles(hevcOnly, hevcAllowed = false, canDecode = anyDecoder))
+        assertEquals("h", OnvifSoap.selectProfiles(hevcOnly, hevcAllowed = true, canDecode = anyDecoder)!!.sub.token)
+    }
+
+    @Test
+    fun `selectProfiles - no profiles at all yields no pair`() {
+        assertNull(OnvifSoap.selectProfiles(emptyList(), hevcAllowed = false, canDecode = anyDecoder))
+        assertNull(OnvifSoap.selectProfiles(emptyList(), hevcAllowed = true, canDecode = anyDecoder))
+        // A profile with no usable dimensions is not a profile either.
+        assertNull(OnvifSoap.selectProfiles(listOf(OnvifProfile("bad", "H264", 0, 0, 0)), hevcAllowed = true, canDecode = anyDecoder))
+    }
+
+    @Test
+    fun `selectProfiles - an eligible H264 still wins the sub slot over a shorter H265`() {
+        val mixed = listOf(
+            OnvifProfile("hevcSub", "H265", 320, 240, 15),
+            OnvifProfile("avcSub", "H264", 640, 360, 15),
+            OnvifProfile("avcMain", "H264", 2560, 1440, 25),
+        )
+        val pair = OnvifSoap.selectProfiles(mixed, hevcAllowed = true, canDecode = anyDecoder)!!
+        assertEquals("avcSub", pair.sub.token)
+        assertEquals("avcMain", pair.main?.token)
+        assertNull(pair.skippedMain)
     }
 
     // --- resolve ------------------------------------------------------------------------------
@@ -290,11 +348,13 @@ ${profiles.joinToString("\n")}
             OnvifResult.Resolved(
                 "rtsp://192.168.2.44:554/h264Preview_01_sub",
                 "http://192.168.2.44/onvif-http/snapshot?channel=1",
+                "rtsp://192.168.2.44:554/h264Preview_01_main",
+                null,
             ),
             result,
         )
         val bodies = transport.calls.map { it.body }
-        assertEquals(5, bodies.size)
+        assertEquals(6, bodies.size)
         assertTrue(bodies[0].contains("GetSystemDateAndTime"))
         assertTrue(bodies[1].contains("GetServices"))
         assertTrue(bodies[2].contains("GetProfiles"))
@@ -302,11 +362,17 @@ ${profiles.joinToString("\n")}
         assertTrue(bodies[3].contains("SubStream"))
         assertTrue(bodies[3].contains("RTP-Unicast"))
         assertTrue(bodies[3].contains("RTSP"))
-        assertTrue(bodies[4].contains("GetSnapshotUri"))
+        assertTrue(bodies[4].contains("GetStreamUri"))
+        assertTrue(bodies[4].contains(mainToken))
+        assertTrue(bodies[5].contains("GetSnapshotUri"))
+        // The snapshot is taken from the sub profile, the one the grid shows.
+        assertTrue(bodies[5].contains("SubStream"))
         // Media calls go to the media service address, not the device service.
         assertEquals(mediaXAddr, transport.calls[2].url)
         assertEquals(mediaXAddr, transport.calls[3].url)
+        assertEquals(mediaXAddr, transport.calls[4].url)
     }
+
 
     @Test
     fun `resolve stamps Created with the device clock and skips auth on the time call`() {
@@ -330,7 +396,7 @@ ${profiles.joinToString("\n")}
         val client = OnvifClient(transport, { fixedNonce })
 
         assertEquals(
-            OnvifResult.Resolved("rtsp://192.168.2.44:554/h264Preview_01_sub", null),
+            OnvifResult.Resolved("rtsp://192.168.2.44:554/h264Preview_01_sub", null, "rtsp://192.168.2.44:554/h264Preview_01_main", null),
             client.resolve(deviceXAddr, "admin", "pass"),
         )
     }
@@ -568,5 +634,39 @@ ${profiles.joinToString("\n")}
 
         assertTrue("expected a failure, got $result", result is OnvifResult.Failed)
         assertEquals("streamUri", (result as OnvifResult.Failed).step)
+    }
+
+    // --- probe --------------------------------------------------------------------------------
+
+    @Test
+    fun `probeDevice answers on a SystemDateAndTime reply`() {
+        val transport = ScriptedTransport { _, _, _, _ -> ok(deviceTimeXml) }
+        assertEquals(OnvifProbe.Answered, OnvifClient(transport, { fixedNonce }).probeDevice(deviceXAddr))
+        assertTrue(transport.calls.single().body.contains("GetSystemDateAndTime"))
+        assertFalse(transport.calls.single().body.contains("wsse:Security"))
+    }
+
+    @Test
+    fun `probeDevice answers on a 400 or 401 carrying a SOAP fault`() {
+        // An endpoint that refuses the anonymous clock call with a SOAP fault is still ONVIF.
+        assertEquals(OnvifProbe.Answered, OnvifClient(ScriptedTransport { _, _, _, _ -> SoapResponse(400, "<s:Fault/>", emptyMap()) }, { fixedNonce }).probeDevice(deviceXAddr))
+        assertEquals(
+            OnvifProbe.Answered,
+            OnvifClient(
+                ScriptedTransport { _, _, _, _ ->
+                    SoapResponse(401, "<SOAP-ENV:Fault><SOAP-ENV:Code><SOAP-ENV:Value>ter:NotAuthorized</SOAP-ENV:Value></SOAP-ENV:Code></SOAP-ENV:Fault>", emptyMap())
+                },
+                { fixedNonce },
+            ).probeDevice(deviceXAddr),
+        )
+    }
+
+    @Test
+    fun `probeDevice says NotOnvif for a plain error page or html and NoAnswer for a transport failure`() {
+        // 400 without any SOAP fault marker — a web server, not a camera.
+        assertEquals(OnvifProbe.NotOnvif, OnvifClient(ScriptedTransport { _, _, _, _ -> SoapResponse(400, "<html><body>Bad Request</body></html>", emptyMap()) }, { fixedNonce }).probeDevice(deviceXAddr))
+        assertEquals(OnvifProbe.NotOnvif, OnvifClient(ScriptedTransport { _, _, _, _ -> SoapResponse(404, "<s:Fault/>", emptyMap()) }, { fixedNonce }).probeDevice(deviceXAddr))
+        assertEquals(OnvifProbe.NotOnvif, OnvifClient(ScriptedTransport { _, _, _, _ -> SoapResponse(200, "<html>router</html>", emptyMap()) }, { fixedNonce }).probeDevice(deviceXAddr))
+        assertEquals(OnvifProbe.NoAnswer, OnvifClient(ScriptedTransport { _, _, _, _ -> throw java.net.ConnectException("refused") }, { fixedNonce }).probeDevice(deviceXAddr))
     }
 }

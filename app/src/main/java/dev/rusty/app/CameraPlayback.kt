@@ -33,6 +33,10 @@ sealed interface LiveState {
 /** The two connect-phase watchdogs. media3 1.4.1's RTSP stack has no connect timeout of its own. */
 enum class Watchdog { HANDSHAKE, FIRST_FRAME }
 
+/** Which of a camera's two RTSP streams a session is playing: the required sub stream, or the
+ *  optional high-resolution main stream. */
+enum class StreamChoice { SUB, MAIN }
+
 /** What the Android owner must do after an event. Effects are executed in list order. */
 sealed interface PlaybackEffect {
     /** Post a [w] timer to fire at [atMs] (absolute). */
@@ -261,6 +265,18 @@ class CameraPlayback(
     /** Whether arbitration has granted us audible audio. Survives player rebuilds. */
     private var audioActive = false
 
+    /** Which stream the current session is playing. */
+    private var stream = StreamChoice.SUB
+
+    /** The stream the live view is on, for the chrome pill and the hint row. */
+    val currentStream: StreamChoice get() = stream
+
+    /** The last video format this session actually saw, for the fatal overlay's codec sentence.
+     *  Cleared at the start of every session. */
+    @Volatile
+    var lastVideoFormat: VideoFormatInfo? = null
+        private set
+
     private var released = false
 
     /** The plan's view of the world, for the fragment to render on attach. */
@@ -289,10 +305,23 @@ class CameraPlayback(
             }
         }
 
+        override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+            val f = player?.videoFormat ?: return
+            val mime = f.sampleMimeType ?: return
+            lastVideoFormat = VideoFormatInfo(mime, f.width, f.height, f.frameRate)
+        }
+
         override fun onPlayerError(error: PlaybackException) {
             if (released) return
             val flattened = flatten(error)
             val kind = CameraRetryPolicy.classify(error.errorCode, flattened)
+            // A decoder-init failure often knows the format it choked on, and that is exactly the
+            // case the fatal overlay wants to name — so refresh before the plan turns it terminal.
+            player?.videoFormat?.let { f ->
+                f.sampleMimeType?.let { mime ->
+                    lastVideoFormat = VideoFormatInfo(mime, f.width, f.height, f.frameRate)
+                }
+            }
             // Never log `flattened`: media3 folds the (credentialed) URI into its messages.
             Log.w(TAG, "live error ${error.errorCodeName} -> $kind (${redactedUrl()})")
             run(plan.onError(error.errorCode, flattened))
@@ -316,9 +345,9 @@ class CameraPlayback(
      * waits for [setAudioActive]. Use [switchTo] to change camera within an open session, which
      * keeps whatever audio state arbitration already granted.
      */
-    fun open(cam: CameraRecord, user: String?, pass: String?) {
+    fun open(cam: CameraRecord, user: String?, pass: String?, stream: StreamChoice = StreamChoice.SUB) {
         if (released) return
-        startSession(cam, user, pass, audio = false)
+        startSession(cam, user, pass, audio = false, stream = stream)
     }
 
     /**
@@ -328,18 +357,32 @@ class CameraPlayback(
      * that before this call; resetting to muted here would strand the new stream silent while we
      * still hold audio focus.
      */
-    fun switchTo(cam: CameraRecord, user: String?, pass: String?) {
+    fun switchTo(cam: CameraRecord, user: String?, pass: String?, stream: StreamChoice = StreamChoice.SUB) {
         if (released) return
-        startSession(cam, user, pass, audio = audioActive)
+        startSession(cam, user, pass, audio = audioActive, stream = stream)
     }
 
-    private fun startSession(cam: CameraRecord, user: String?, pass: String?, audio: Boolean) {
+    /**
+     * Same camera, the other stream: a full teardown and a fresh session, not a seek — the other
+     * stream is a whole new RTSP negotiation, so the backoff ladder starts over. Audio state
+     * carries over, exactly as in [switchTo]. Refuses MAIN for a camera that has no main URL.
+     */
+    fun switchStream(next: StreamChoice) {
+        if (released) return
+        val cam = camera ?: return
+        if (next == StreamChoice.MAIN && cam.mainRtspUrl.isNullOrBlank()) return
+        startSession(cam, username, password, audio = audioActive, stream = next)
+    }
+
+    private fun startSession(cam: CameraRecord, user: String?, pass: String?, audio: Boolean, stream: StreamChoice) {
         handler.removeCallbacksAndMessages(null)
         tearDownPlayer()
         camera = cam
         username = user
         password = pass
         audioActive = audio
+        this.stream = stream
+        lastVideoFormat = null
         plan = CameraPlaybackPlan(clock)
         buildPlayer()
         onKeepScreenOn(true)
@@ -408,7 +451,8 @@ class CameraPlayback(
     private fun buildPlayer() {
         tearDownPlayer()
         val cam = camera ?: return
-        val uri = CameraUri.withCredentials(cam.rtspUrl, username, password)
+        val rawUrl = rawStreamUrl(cam)
+        val uri = CameraUri.withCredentials(rawUrl, username, password)
         val loadControl = DefaultLoadControl.Builder()
             // Live video: a small buffer keeps latency down and recovers fast after a rebuffer.
             .setBufferDurationsMs(1_000, 3_000, 500, 500)
@@ -432,7 +476,7 @@ class CameraPlayback(
         view?.player = p
         p.prepare()
         p.playWhenReady = true
-        Log.i(TAG, "live open ${CameraUri.redact(cam.rtspUrl)} tcp=${cam.forceTcp}")
+        Log.i(TAG, "live open ${CameraUri.redact(rawUrl)} tcp=${cam.forceTcp} stream=$stream")
     }
 
     private fun tearDownPlayer() {
@@ -447,7 +491,20 @@ class CameraPlayback(
     private fun playbackVolume(): Float =
         if (audioActive && camera?.audioEnabled == true) 1f else 0f
 
-    private fun redactedUrl(): String = camera?.let { CameraUri.redact(it.rtspUrl) } ?: "?"
+    /**
+     * The URL the current [stream] actually plays, still carrying whatever credentials the record
+     * itself holds — never log this directly, only [CameraUri.redact] of it.
+     *
+     * The single source of truth for the choice: [buildPlayer] opens what this returns and
+     * [redactedUrl] redacts what this returns, so the log can never drift into naming a stream
+     * other than the one playing.
+     */
+    private fun rawStreamUrl(cam: CameraRecord): String =
+        if (stream == StreamChoice.MAIN) cam.mainRtspUrl?.takeIf { it.isNotBlank() } ?: cam.rtspUrl else cam.rtspUrl
+
+    /** The stream the session is actually on, credentials stripped. The only URL shape any log
+     *  line here may ever carry. */
+    private fun redactedUrl(): String = camera?.let { CameraUri.redact(rawStreamUrl(it)) } ?: "?"
 
     /**
      * Folds an exception's `cause` chain into one string, with any embedded URI credentials

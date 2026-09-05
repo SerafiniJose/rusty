@@ -12,12 +12,13 @@ class CameraSettingsModelTest {
         id: String? = null,
         name: String = "Front door",
         rtspUrl: String = "rtsp://192.168.1.50/stream1",
+        mainRtspUrl: String? = null,
         snapshotUrl: String? = null,
         username: String? = null,
         password: String? = null,
         audioEnabled: Boolean = false,
         forceTcp: Boolean = true,
-    ) = CameraEdit(id, name, rtspUrl, snapshotUrl, username, password, audioEnabled, forceTcp)
+    ) = CameraEdit(id, name, rtspUrl, mainRtspUrl, snapshotUrl, username, password, audioEnabled, forceTcp)
 
     // ---- add ------------------------------------------------------------------------------
 
@@ -250,13 +251,40 @@ class CameraSettingsModelTest {
         id: String,
         position: Int,
         name: String = "Camera $id",
+        mainRtspUrl: String? = null,
     ) = CameraRecord(
         id = id,
         name = name,
         rtspUrl = "rtsp://192.168.1.1/stream",
+        mainRtspUrl = mainRtspUrl,
         snapshotUrl = null,
         audioEnabled = false,
         forceTcp = true,
         position = position,
     )
+
+    @Test
+    fun `blank main stream is stored as null`() {
+        val result = CameraSettingsModel.applyEdit(emptyList(), edit(mainRtspUrl = "   "))
+        assertNull(result.cameras.single().mainRtspUrl)
+    }
+
+    @Test
+    fun `inline credentials on the main stream only are stored and stripped`() {
+        val result = CameraSettingsModel.applyEdit(emptyList(), edit(mainRtspUrl = "rtsp://u:p@h/main"))
+        assertEquals("rtsp://h/main", result.cameras.single().mainRtspUrl)
+        assertEquals("u", result.credentials?.username)
+        assertEquals("p", result.credentials?.password)
+    }
+
+    @Test
+    fun `inline credentials on both streams - the stream's win`() {
+        val result = CameraSettingsModel.applyEdit(
+            emptyList(),
+            edit(rtspUrl = "rtsp://a:1@h/sub", mainRtspUrl = "rtsp://b:2@h/main"),
+        )
+        assertEquals("a", result.credentials?.username)
+        assertEquals("1", result.credentials?.password)
+        assertEquals("rtsp://h/main", result.cameras.single().mainRtspUrl)
+    }
 }

@@ -22,6 +22,7 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -49,8 +50,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 object SnapshotGuards {
 
     /** Hard ceiling on a single snapshot response. A grid tile never needs more than this, and a
-     *  camera that answers a snapshot URL with a video stream must not be read into memory. */
-    const val MAX_BYTES: Long = 4L * 1024 * 1024
+     *  camera that answers a snapshot URL with a video stream must not be read into memory. 8 MiB
+     *  leaves room for the full-resolution still a 4K camera serves (a 4096x1248 Reolink sends
+     *  ~5.5 MB) while still refusing anything stream-shaped. */
+    const val MAX_BYTES: Long = 8L * 1024 * 1024
 
     /**
      * Whether a response advertising [len] bytes may be read. A null length (chunked transfer, or
@@ -77,9 +80,64 @@ object SnapshotGuards {
     }
 }
 
+/**
+ * Pure, JVM-testable HTTP authentication decisions for snapshot fetching.
+ *
+ * Some cameras — Reolink's ONVIF-advertised `cgi-bin/api.cgi?cmd=onvifSnapPic` among them — answer
+ * an anonymous *or* Basic-authenticated snapshot request with `401` and a `WWW-Authenticate: Digest`
+ * challenge, and hand over the JPEG only once the request is repeated with a digest response.
+ */
+object SnapshotAuth {
+
+    /**
+     * The `Authorization` value for the single retry of a request that came back `401`, or null
+     * when no retry is worth making: no credentials to answer with, no challenge, or a challenge
+     * naming a scheme other than Digest (Basic was already tried on the first attempt).
+     *
+     * [uri] must be the request-target the retry will use — see [requestTarget] — because the
+     * digest hash is bound to it.
+     */
+    fun digestRetry(
+        user: String?,
+        pass: String?,
+        method: String,
+        uri: String,
+        challenge: String?,
+        cnonce: String,
+    ): String? {
+        if (user.isNullOrEmpty()) return null
+        val trimmed = challenge?.trim().orEmpty()
+        if (!trimmed.startsWith("Digest", ignoreCase = true)) return null
+        return OnvifSoap.httpDigestAuthorization(
+            username = user,
+            password = pass ?: "",
+            method = method,
+            uri = uri,
+            challenge = trimmed,
+            cnonce = cnonce,
+        )
+    }
+
+    /** Request-target for the digest hash: [url]'s path plus query, defaulting to `/`. */
+    fun requestTarget(url: String): String {
+        val afterScheme = url.substringAfter("://", missingDelimiterValue = "")
+        if (afterScheme.isEmpty()) return url
+        val slash = afterScheme.indexOf('/')
+        return if (slash < 0) "/" else afterScheme.substring(slash)
+    }
+
+    /** A fresh client nonce: 8 random bytes, lowercase hex. */
+    fun cnonce(): String {
+        val bytes = ByteArray(8)
+        SecureRandom().nextBytes(bytes)
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+}
+
 /** Platform side of a snapshot fetch. Split out so the loop holds no I/O of its own. */
 interface SnapshotIo {
-    /** GETs [url], sending HTTP Basic auth when [user] is present, and returns at most
+    /** GETs [url], sending HTTP Basic auth when [user] is present and retrying once with HTTP
+     *  Digest if the camera answers `401` with a Digest challenge, and returns at most
      *  [SnapshotGuards.MAX_BYTES] bytes — or null on any failure or an oversized body. */
     suspend fun fetchHttp(url: String, user: String?, pass: String?): ByteArray?
 
@@ -246,18 +304,47 @@ class CameraSnapshots(
         val remaining = (job.deadlineAt - clock()).coerceAtLeast(0L)
         if (remaining <= 0L) return null
         return when (job.kind) {
-            JobKind.HTTP -> {
-                val url = cam.snapshotUrl?.takeIf { it.isNotBlank() } ?: return null
-                val bytes = withTimeoutOrNull(remaining) { io.fetchHttp(url, user, pass) } ?: return null
-                val bitmap = decodeSampled(bytes)
-                SnapshotFrame(bitmap, bitmap?.let { encodeJpeg(it) } ?: bytes)
+            JobKind.HTTP -> httpFrame(cam, user, pass, remaining)
+            JobKind.HTTP_THEN_FRAME -> {
+                // A failing snapshot URL says nothing about the RTSP stream, so a camera whose
+                // still-image endpoint redirects, oversizes or errors still gets a tile. The
+                // fallback runs on what is left of the *same* job deadline.
+                // A throwing fetch is as good as a failed one here (the I/O layer logs its own
+                // failures); only cancellation still ends the job.
+                val http = runCatching { httpFrame(cam, user, pass, remaining) }
+                    .getOrElse { if (it is CancellationException) throw it else null }
+                http ?: grabbedFrame(cam, user, pass, (job.deadlineAt - clock()).coerceAtLeast(0L))
             }
-            JobKind.FRAME_GRAB -> {
-                val uri = CameraUri.withCredentials(cam.rtspUrl, user, pass)
-                val bitmap = io.grabFrame(uri, cam.forceTcp, remaining) ?: return null
-                SnapshotFrame(bitmap, encodeJpeg(bitmap))
-            }
+            JobKind.FRAME_GRAB -> grabbedFrame(cam, user, pass, remaining)
         }
+    }
+
+    /** Pulls [CameraRecord.snapshotUrl] within [budgetMs]. Null when there is no URL, the fetch
+     *  failed, or it outran the budget. */
+    private suspend fun httpFrame(
+        cam: CameraRecord,
+        user: String?,
+        pass: String?,
+        budgetMs: Long,
+    ): SnapshotFrame? {
+        if (budgetMs <= 0L) return null
+        val url = cam.snapshotUrl?.takeIf { it.isNotBlank() } ?: return null
+        val bytes = withTimeoutOrNull(budgetMs) { io.fetchHttp(url, user, pass) } ?: return null
+        val bitmap = decodeSampled(bytes)
+        return SnapshotFrame(bitmap, bitmap?.let { encodeJpeg(it) } ?: bytes)
+    }
+
+    /** Decodes a single frame off the RTSP stream within [budgetMs]. */
+    private suspend fun grabbedFrame(
+        cam: CameraRecord,
+        user: String?,
+        pass: String?,
+        budgetMs: Long,
+    ): SnapshotFrame? {
+        if (budgetMs <= 0L) return null
+        val uri = CameraUri.withCredentials(cam.rtspUrl, user, pass)
+        val bitmap = io.grabFrame(uri, cam.forceTcp, budgetMs) ?: return null
+        return SnapshotFrame(bitmap, encodeJpeg(bitmap))
     }
 
     private suspend fun decodeSampled(bytes: ByteArray): Bitmap? = withContext(worker) {
@@ -313,27 +400,35 @@ class AndroidSnapshotIo(context: Context) : SnapshotIo {
         return try {
             withContext(Dispatchers.IO) {
                 runInterruptible {
-                    val c = URL(url).openConnection() as HttpURLConnection
-                    holder.set(c)
-                    c.requestMethod = "GET"
-                    c.connectTimeout = HTTP_TIMEOUT_MS
-                    c.readTimeout = HTTP_TIMEOUT_MS
-                    // A redirect could carry the Basic credentials to another host; a snapshot URL
-                    // that redirects is not worth that risk.
-                    c.instanceFollowRedirects = false
+                    val first = open(url)
+                    holder.set(first)
                     if (!user.isNullOrEmpty()) {
                         val token = Base64.encodeToString(
                             "$user:${pass ?: ""}".toByteArray(Charsets.UTF_8),
                             Base64.NO_WRAP,
                         )
-                        c.setRequestProperty("Authorization", "Basic $token")
+                        first.setRequestProperty("Authorization", "Basic $token")
                     }
-                    if (c.responseCode !in 200..299) return@runInterruptible null
-                    val type = c.contentType?.substringBefore(';')?.trim()?.lowercase()
-                    if (type != null && !type.startsWith("image/")) return@runInterruptible null
-                    val advertised = c.contentLengthLong.takeIf { it >= 0L }
-                    if (!SnapshotGuards.acceptContentLength(advertised)) return@runInterruptible null
-                    c.inputStream.use { readCapped(it, ctx) }
+                    if (first.responseCode != HttpURLConnection.HTTP_UNAUTHORIZED) {
+                        return@runInterruptible readImage(first, ctx)
+                    }
+                    // Some cameras refuse both an anonymous and a Basic request with a Digest
+                    // challenge. Answer it once; a second 401 is a genuine auth failure.
+                    val authorization = SnapshotAuth.digestRetry(
+                        user = user,
+                        pass = pass,
+                        method = "GET",
+                        uri = SnapshotAuth.requestTarget(url),
+                        challenge = first.getHeaderField("WWW-Authenticate"),
+                        cnonce = SnapshotAuth.cnonce(),
+                    ) ?: return@runInterruptible null
+                    first.disconnect()
+                    val retry = open(url)
+                    // The holder always points at the live connection, so cancelling the job still
+                    // unblocks whichever socket is actually being read.
+                    holder.set(retry)
+                    retry.setRequestProperty("Authorization", authorization)
+                    readImage(retry, ctx)
                 }
             }
         } catch (e: CancellationException) {
@@ -345,6 +440,28 @@ class AndroidSnapshotIo(context: Context) : SnapshotIo {
             onCancel.dispose()
             holder.get()?.disconnect()
         }
+    }
+
+    private fun open(url: String): HttpURLConnection {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.requestMethod = "GET"
+        c.connectTimeout = HTTP_TIMEOUT_MS
+        c.readTimeout = HTTP_TIMEOUT_MS
+        // A redirect could carry the credentials to another host; a snapshot URL that redirects is
+        // not worth that risk.
+        c.instanceFollowRedirects = false
+        return c
+    }
+
+    /** The response side shared by both attempts: only a successful, image-typed, small-enough
+     *  body is read, and the read itself stays capped and cancellable. */
+    private fun readImage(c: HttpURLConnection, ctx: CoroutineContext): ByteArray? {
+        if (c.responseCode !in 200..299) return null
+        val type = c.contentType?.substringBefore(';')?.trim()?.lowercase()
+        if (type != null && !type.startsWith("image/")) return null
+        val advertised = c.contentLengthLong.takeIf { it >= 0L }
+        if (!SnapshotGuards.acceptContentLength(advertised)) return null
+        return c.inputStream.use { readCapped(it, ctx) }
     }
 
     /** Reads at most [SnapshotGuards.MAX_BYTES]; a body that keeps going past the cap is rejected

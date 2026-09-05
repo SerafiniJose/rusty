@@ -13,7 +13,11 @@ import org.json.JSONObject
 data class CameraRecord(
     val id: String,
     val name: String,
+    /** The required stream — the camera's sub stream (or its only stream). Thumbnails and the
+     *  live view's default come from here. */
     val rtspUrl: String,
+    /** Optional high-resolution stream; live view only, switchable with ▲▼. Null = none. */
+    val mainRtspUrl: String?,
     val snapshotUrl: String?,
     val audioEnabled: Boolean,
     val forceTcp: Boolean,
@@ -36,6 +40,7 @@ object CameraCodec {
             obj.put("id", cam.id)
             obj.put("name", cam.name)
             obj.put("rtspUrl", cam.rtspUrl)
+            obj.put("mainRtspUrl", cam.mainRtspUrl ?: JSONObject.NULL)
             obj.put("snapshotUrl", cam.snapshotUrl ?: JSONObject.NULL)
             obj.put("audioEnabled", cam.audioEnabled)
             obj.put("forceTcp", cam.forceTcp)
@@ -61,11 +66,12 @@ object CameraCodec {
             val id = obj.optString("id", "")
             val name = obj.optString("name", "")
             val rtspUrl = obj.optString("rtspUrl", "")
+            val mainRtspUrl = if (obj.has("mainRtspUrl") && !obj.isNull("mainRtspUrl")) obj.optString("mainRtspUrl") else null
             val snapshotUrl = if (obj.has("snapshotUrl") && !obj.isNull("snapshotUrl")) obj.optString("snapshotUrl") else null
             val audioEnabled = obj.optBoolean("audioEnabled", false)
             val forceTcp = obj.optBoolean("forceTcp", true)
             val position = obj.optInt("position", 0)
-            result.add(CameraRecord(id, name, rtspUrl, snapshotUrl, audioEnabled, forceTcp, position))
+            result.add(CameraRecord(id, name, rtspUrl, mainRtspUrl, snapshotUrl, audioEnabled, forceTcp, position))
         }
         return result
     }

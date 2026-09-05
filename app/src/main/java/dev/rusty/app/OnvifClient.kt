@@ -31,10 +31,22 @@ data class OnvifProfile(
 
 /** Outcome of resolving a camera's stream URI. */
 sealed interface OnvifResult {
-    data class Resolved(val streamUri: String, val snapshotUri: String?) : OnvifResult
+    data class Resolved(
+        val streamUri: String,
+        val snapshotUri: String?,
+        val mainStreamUri: String? = null,
+        val skippedMain: OnvifProfile? = null,
+    ) : OnvifResult
 
     /** [step] is one of `services`, `profiles`, `streamUri`, `auth`. */
     data class Failed(val step: String, val detail: String) : OnvifResult
+}
+
+/** What a typed camera address answered to an unauthenticated ONVIF clock request. */
+sealed interface OnvifProbe {
+    object Answered : OnvifProbe
+    object NotOnvif : OnvifProbe
+    object NoAnswer : OnvifProbe
 }
 
 /**
@@ -59,9 +71,6 @@ object OnvifSoap {
 
     private const val MEDIA10_NS = "http://www.onvif.org/ver10/media/wsdl"
     private const val MEDIA20_NS = "http://www.onvif.org/ver20/media/wsdl"
-
-    /** Highest video height we will ask a camera for — 1080p is the ceiling our players handle. */
-    private const val MAX_HEIGHT = 1080
 
     /** Above this frame rate a stream is decoded less reliably, so it loses same-height ties. */
     private const val PREFERRED_MAX_FRAME_RATE = 30
@@ -180,20 +189,44 @@ object OnvifSoap {
         }
     }
 
+    /** The stream to show in the grid and, when the device can decode one, a main stream. */
+    data class ProfilePair(val sub: OnvifProfile, val main: OnvifProfile?, val skippedMain: OnvifProfile?)
+
+    /** Below this a sub stream is too small to read; above it the shortest one wins. */
+    private const val SUB_MIN_HEIGHT = 360
+
     /**
-     * Picks the profile to stream: the tallest H264 profile no taller than 1080p, preferring a
-     * frame rate of 30 or less when two are the same height. H265 is considered only when
-     * [hevcAllowed] and no H264 profile qualifies — an eligible H264 always wins.
+     * Picks the stream (sub) and, when the camera has one this device can decode, the main
+     * stream. H.265 is considered for a slot only when [hevcAllowed] and no H.264 qualifies.
      */
-    fun selectProfile(profiles: List<OnvifProfile>, hevcAllowed: Boolean = false): OnvifProfile? {
-        val eligible = profiles.filter { it.height in 1..MAX_HEIGHT }
-        val order = compareBy<OnvifProfile>(
-            { it.height },
-            { if (it.frameRate in 1..PREFERRED_MAX_FRAME_RATE) 1 else 0 },
-        )
-        eligible.filter { isCodec(it.codec, "H264") }.maxWithOrNull(order)?.let { return it }
-        if (!hevcAllowed) return null
-        return eligible.filter { isCodec(it.codec, "H265") }.maxWithOrNull(order)
+    fun selectProfiles(
+        profiles: List<OnvifProfile>,
+        hevcAllowed: Boolean,
+        canDecode: (mime: String, w: Int, h: Int) -> Boolean,
+    ): ProfilePair? {
+        val usable = profiles.filter { it.height > 0 && it.width > 0 }
+        fun pool(codec: String) = usable.filter { isCodec(it.codec, codec) }
+        val h264 = pool("H264")
+        val h265 = if (hevcAllowed) pool("H265") else emptyList()
+
+        fun pickSub(list: List<OnvifProfile>): OnvifProfile? =
+            list.filter { it.height >= SUB_MIN_HEIGHT }.minByOrNull { it.height } ?: list.minByOrNull { it.height }
+        val sub = pickSub(h264) ?: pickSub(h265) ?: return null
+
+        val mainOrder = compareBy<OnvifProfile>({ it.height }, { if (it.frameRate in 1..PREFERRED_MAX_FRAME_RATE) 1 else 0 })
+        fun pickMain(list: List<OnvifProfile>, mime: String): Pair<OnvifProfile?, OnvifProfile?> {
+            val candidates = list.filter { it.token != sub.token }.sortedWith(mainOrder).reversed()
+            val tallest = candidates.firstOrNull() ?: return null to null
+            val decodable = candidates.firstOrNull { canDecode(mime, it.width, it.height) }
+            return decodable to (if (decodable == null) tallest else null)
+        }
+        var (main, skipped) = pickMain(h264, "video/avc")
+        if (main == null && h264.none { it.token != sub.token }) {
+            val hevcPick = pickMain(h265, "video/hevc")
+            main = hevcPick.first
+            skipped = hevcPick.second
+        }
+        return ProfilePair(sub, main, skipped)
     }
 
     private fun isCodec(codec: String, wanted: String): Boolean {
@@ -465,6 +498,7 @@ class OnvifClient(
     private val transport: SoapTransport,
     private val nonceSource: () -> ByteArray,
     private val hevcAllowed: Boolean = false,
+    private val canDecode: (String, Int, Int) -> Boolean = { _, _, _ -> true },
     private val cnonceSource: () -> String = { defaultCnonce() },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
@@ -495,8 +529,9 @@ class OnvifClient(
         }
         val profiles = OnvifSoap.parseProfiles(profilesXml)
         if (profiles.isEmpty()) return OnvifResult.Failed("profiles", "no media profiles in the reply")
-        val profile = OnvifSoap.selectProfile(profiles, hevcAllowed)
-            ?: return OnvifResult.Failed("profiles", "no compatible H264 profile at 1080p or below")
+        val pair = OnvifSoap.selectProfiles(profiles, hevcAllowed, canDecode)
+            ?: return OnvifResult.Failed("profiles", "no compatible H264 profile")
+        val profile = pair.sub
 
         val streamXml = when (
             val outcome = authedCall(mediaXAddr, OnvifSoap.getStreamUriBody(profile.token), username, password, created, "streamUri")
@@ -507,6 +542,14 @@ class OnvifClient(
         val streamUri = OnvifSoap.parseUri(streamXml)
             ?: return OnvifResult.Failed("streamUri", "no stream URI in the reply")
 
+        // Best effort: a camera without a usable main stream is still perfectly addable.
+        val mainStreamUri = pair.main?.let { main ->
+            when (val outcome = authedCall(mediaXAddr, OnvifSoap.getStreamUriBody(main.token), username, password, created, "streamUri")) {
+                is CallOutcome.Fail -> null
+                is CallOutcome.Ok -> OnvifSoap.parseUri(outcome.body)
+            }
+        }
+
         // Best effort: plenty of cameras have no snapshot endpoint at all.
         val snapshotUri = when (
             val outcome = authedCall(mediaXAddr, OnvifSoap.getSnapshotUriBody(profile.token), username, password, created, "streamUri")
@@ -515,7 +558,28 @@ class OnvifClient(
             is CallOutcome.Ok -> OnvifSoap.parseUri(outcome.body)
         }
 
-        return OnvifResult.Resolved(streamUri, snapshotUri)
+        return OnvifResult.Resolved(streamUri, snapshotUri, mainStreamUri, pair.skippedMain)
+    }
+
+    /** Add-by-address: is there an ONVIF device service at [deviceXAddr]? Unauthenticated on
+     *  purpose — GetSystemDateAndTime is the one call every device must answer without
+     *  credentials, and this runs before the user has typed any. */
+    fun probeDevice(deviceXAddr: String): OnvifProbe {
+        val body = OnvifSoap.envelope(OnvifSoap.getSystemDateAndTimeBody(), null)
+        val response = try {
+            transport.post(deviceXAddr, body, baseHeaders())
+        } catch (_: Exception) {
+            return OnvifProbe.NoAnswer
+        }
+        if (response.code == 200) {
+            return if (response.body.contains("SystemDateAndTime")) OnvifProbe.Answered else OnvifProbe.NotOnvif
+        }
+        // A device that refuses the anonymous call with a SOAP fault is still an ONVIF endpoint —
+        // it is only asking for credentials. Any other status, or a fault-less error page, is not.
+        if (response.code == 400 || response.code == 401) {
+            if (SOAP_FAULT_MARKERS.any { response.body.contains(it) }) return OnvifProbe.Answered
+        }
+        return OnvifProbe.NotOnvif
     }
 
     /**
@@ -635,6 +699,14 @@ class OnvifClient(
     private companion object {
         const val MAX_REDIRECTS = 2
         val REDIRECT_CODES = setOf(301, 302, 307, 308)
+
+        /**
+         * What an ONVIF SOAP fault body carries and a plain HTTP error page does not. Deliberately
+         * short and explicit: the fault element itself (`s:Fault`, `SOAP-ENV:Fault`, `env:Fault`,
+         * … — all end in `Fault`), the ONVIF error namespace prefix `ter:`, and the subcode every
+         * device uses for "you need credentials".
+         */
+        val SOAP_FAULT_MARKERS = listOf("Fault", "NotAuthorized", "ter:")
 
         fun defaultCnonce(): String {
             val bytes = ByteArray(8)

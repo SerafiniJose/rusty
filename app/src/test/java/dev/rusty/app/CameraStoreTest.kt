@@ -2,10 +2,11 @@ package dev.rusty.app
 
 import android.content.SharedPreferences
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class CameraStoreTest {
-    private val cam = CameraRecord("cam_01ab23cd", "Front door", "rtsp://192.168.2.30:554/s1", null, false, true, 0)
+    private val cam = CameraRecord("cam_01ab23cd", "Front door", "rtsp://192.168.2.30:554/s1", null, null, false, true, 0)
 
     private class FakePrefs : SharedPreferences {
         val map = HashMap<String, Any?>()
@@ -51,8 +52,8 @@ class CameraStoreTest {
 
     @Test fun storeLoadSavesSortedByPosition() {
         val prefs = FakePrefs()
-        val a = CameraRecord("cam_a", "A", "rtsp://h1/", null, false, true, 1)
-        val b = CameraRecord("cam_b", "B", "rtsp://h2/", null, false, true, 0)
+        val a = CameraRecord("cam_a", "A", "rtsp://h1/", null, null, false, true, 1)
+        val b = CameraRecord("cam_b", "B", "rtsp://h2/", null, null, false, true, 0)
         CameraStore.save(prefs, listOf(a, b))
         assertEquals(listOf(b, a), CameraStore.load(prefs))
     }
@@ -60,5 +61,19 @@ class CameraStoreTest {
     @Test fun storeLoadEmptyWhenUnset() {
         val prefs = FakePrefs()
         assertEquals(emptyList<CameraRecord>(), CameraStore.load(prefs))
+    }
+
+    @Test
+    fun `decode without a mainRtspUrl key yields null main stream`() {
+        val json = """[{"id":"cam_1","name":"Door","rtspUrl":"rtsp://h/sub","snapshotUrl":null,"audioEnabled":false,"forceTcp":true,"position":0}]"""
+        val cam = CameraCodec.decode(json).single()
+        assertNull(cam.mainRtspUrl)
+    }
+
+    @Test
+    fun `mainRtspUrl round-trips through encode and decode`() {
+        val cam = CameraRecord("cam_1", "Door", "rtsp://h/sub", "rtsp://h/main", null, false, true, 0)
+        val back = CameraCodec.decode(CameraCodec.encode(listOf(cam))).single()
+        assertEquals("rtsp://h/main", back.mainRtspUrl)
     }
 }

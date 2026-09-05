@@ -1,0 +1,6 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <!-- Material Design Icons "camera-iris" (U+F0104): the live view's Save-snapshot button. -->
+    <path android:fillColor="@android:color/white"
+        android:pathData="M13.73 15 9.84 21.75Q10.97 21.98 12 21.98Q13.78 21.98 15.4 21.4Q17.02 20.81 18.33 19.73L14.67 13.41ZM2.44 15Q3.14 17.2 4.73 18.87Q6.33 20.53 8.44 21.33L12.14 15ZM8.53 12 4.64 5.25Q3.38 6.56 2.7 8.32Q2.02 10.08 2.02 12Q2.02 12.98 2.2 14.02H9.7ZM21.8 9.98H14.3L19.36 18.75Q20.62 17.39 21.3 15.66Q21.98 13.92 21.98 12Q21.98 10.97 21.8 9.98ZM21.56 9Q20.86 6.8 19.27 5.13Q17.67 3.47 15.56 2.67L11.86 9ZM9.42 10.5 14.16 2.25Q13.03 2.02 12 2.02Q10.22 2.02 8.6 2.6Q6.98 3.19 5.67 4.27L9.33 10.59Z"/>
+</vector>

@@ -281,6 +281,70 @@ class CameraArbitrationTest {
     }
 
     @Test
+    fun audioToggledOffReleasesFocusAndResumesTheSpotifyWePaused() {
+        var state = ArbState(spotifyPlaying = true, spotifyGeneration = 7L)
+        state = step(state, ArbEvent.LiveOpened(audioWanted = true)).first
+        state = step(state, ArbEvent.FocusGranted).first
+        assertTrue(state.cameraAudioOn)
+
+        val (next, commands) = step(state, ArbEvent.AudioToggled(wanted = false))
+        assertEquals(
+            listOf(ArbCommand.MuteCameraAudio, ArbCommand.AbandonFocus, ArbCommand.ResumeSpotify),
+            commands,
+        )
+        assertFalse(next.cameraAudioOn)
+        assertFalse(next.focusHeld)
+        assertFalse(next.audioWanted)
+        assertNull(next.pausedGeneration)
+        // The session itself stays open — muting is not leaving the live view.
+        assertTrue(next.liveOpen)
+    }
+
+    @Test
+    fun audioToggledOnRequestsFocusAndStaysMutedUntilGranted() {
+        val muted = ArbState(liveOpen = true, audioWanted = false, spotifyPlaying = false)
+
+        val (next, commands) = step(muted, ArbEvent.AudioToggled(wanted = true))
+        assertEquals(listOf(ArbCommand.RequestFocus), commands)
+        assertTrue(next.audioWanted)
+        assertFalse(next.cameraAudioOn)
+
+        val (granted, grantCommands) = step(next, ArbEvent.FocusGranted)
+        assertEquals(listOf(ArbCommand.EnableCameraAudio), grantCommands)
+        assertTrue(granted.cameraAudioOn)
+    }
+
+    @Test
+    fun audioToggledOnWhileFocusHeldEnablesAudioWithoutAskingAgain() {
+        val held = ArbState(liveOpen = true, audioWanted = false, focusHeld = true)
+
+        val (next, commands) = step(held, ArbEvent.AudioToggled(wanted = true))
+        assertEquals(listOf(ArbCommand.EnableCameraAudio), commands)
+        assertTrue(next.cameraAudioOn)
+    }
+
+    @Test
+    fun audioToggledIsIgnoredWithNoLiveSession() {
+        val idle = ArbState(liveOpen = false, spotifyPlaying = true, spotifyGeneration = 4L)
+
+        val (next, commands) = step(idle, ArbEvent.AudioToggled(wanted = true))
+        assertEquals(emptyList<ArbCommand>(), commands)
+        assertEquals(idle, next)
+    }
+
+    @Test
+    fun audioToggledOffDoesNotResumeSpotifyStartedByTheUser() {
+        var state = ArbState(spotifyPlaying = true, spotifyGeneration = 7L)
+        state = step(state, ArbEvent.LiveOpened(audioWanted = true)).first
+        state = step(state, ArbEvent.FocusGranted).first
+        // The user starts a different track themselves: music wins and the generation moves on.
+        state = step(state, ArbEvent.SpotifyPlayingChanged(playing = true, generation = 8L)).first
+
+        val (_, commands) = step(state, ArbEvent.AudioToggled(wanted = false))
+        assertFalse(commands.contains(ArbCommand.ResumeSpotify))
+    }
+
+    @Test
     fun reduceDoesNotMutateTheInputState() {
         val start = ArbState(spotifyPlaying = true, spotifyGeneration = 7L)
         val (after, _) = CameraArbitration.reduce(start, ArbEvent.LiveOpened(audioWanted = true))

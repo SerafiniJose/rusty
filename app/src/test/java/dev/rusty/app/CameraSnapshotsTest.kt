@@ -5,6 +5,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -40,13 +42,19 @@ class CameraSnapshotsTest {
     }
 
     @Test
-    fun `content length exactly at the 4MB cap is accepted`() {
-        assertTrue(SnapshotGuards.acceptContentLength(4_194_304L))
+    fun `content length exactly at the 8MB cap is accepted`() {
+        assertEquals(8_388_608L, SnapshotGuards.MAX_BYTES)
+        assertTrue(SnapshotGuards.acceptContentLength(8_388_608L))
+    }
+
+    @Test
+    fun `a 5MB still from a 4K camera is accepted`() {
+        assertTrue(SnapshotGuards.acceptContentLength(5_460_000L))
     }
 
     @Test
     fun `content length one byte over the cap is rejected`() {
-        assertFalse(SnapshotGuards.acceptContentLength(4_194_305L))
+        assertFalse(SnapshotGuards.acceptContentLength(8_388_609L))
     }
 
     @Test
@@ -132,10 +140,11 @@ class CameraSnapshotsTest {
         }
     }
 
-    private fun camera(id: String) = CameraRecord(
+    private fun camera(id: String, mainRtspUrl: String? = null) = CameraRecord(
         id = id,
         name = id,
         rtspUrl = "rtsp://cam.local/$id",
+        mainRtspUrl = mainRtspUrl,
         snapshotUrl = "http://cam.local/$id.jpg",
         audioEnabled = false,
         forceTcp = true,
@@ -275,6 +284,141 @@ class CameraSnapshotsTest {
 
         io.completeAll()
         runCurrent()
+        snapshots.stop()
+    }
+
+    // --- frame-grab fallback ---------------------------------------------------------------
+
+    /** A fetch scripted by the test, plus a frame grab that only records how it was called. */
+    private class ScriptedIo(private val onFetch: suspend () -> ByteArray?) : SnapshotIo {
+        var fetchCalls = 0
+        var grabCalls = 0
+        var grabUri: String? = null
+        var grabForceTcp: Boolean? = null
+        var grabDeadlineMs: Long = -1L
+
+        override suspend fun fetchHttp(url: String, user: String?, pass: String?): ByteArray? {
+            fetchCalls++
+            return onFetch()
+        }
+
+        override suspend fun grabFrame(rtspUriWithCreds: String, forceTcp: Boolean, deadlineMs: Long): Bitmap? {
+            grabCalls++
+            grabUri = rtspUriWithCreds
+            grabForceTcp = forceTcp
+            grabDeadlineMs = deadlineMs
+            // No Bitmap can exist on the JVM, so a *successful* grab cannot be modelled here; what
+            // these tests pin down is that the fallback runs at all, and with the right budget.
+            return null
+        }
+    }
+
+    private fun TestScope.snapshotsWith(
+        io: SnapshotIo,
+        scheduler: SnapshotScheduler,
+        cams: List<CameraRecord>,
+        dispatcher: TestDispatcher,
+        clock: () -> Long,
+    ) = CameraSnapshots(
+        scope = backgroundScope,
+        scheduler = scheduler,
+        io = io,
+        cameras = { cams },
+        secrets = { null to null },
+        clock = clock,
+        tickMs = 500L,
+        main = dispatcher,
+        worker = dispatcher,
+    )
+
+    @Test
+    fun `a failed HTTP snapshot falls back to a frame grab with the remaining budget`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val cams = listOf(camera("A"))
+        val scheduler = SnapshotScheduler(refreshIntervalMs = 1_000, jobDeadlineMs = 2_000)
+        scheduler.setCameras(cams, frameGrabAllowed = true)
+        var now = 0L
+        // The fetch fails after burning half the job's budget.
+        val io = ScriptedIo {
+            now = 500L
+            null
+        }
+        val snapshots = snapshotsWith(io, scheduler, cams, dispatcher) { now }
+
+        snapshots.start()
+        runCurrent()
+
+        assertEquals(1, io.fetchCalls)
+        assertEquals(1, io.grabCalls)
+        assertEquals("rtsp://cam.local/A", io.grabUri)
+        assertEquals(true, io.grabForceTcp)
+        // deadlineAt (2_000) minus the clock as it stood after the failed fetch (500).
+        assertEquals(1_500L, io.grabDeadlineMs)
+        // The grab could not produce a bitmap either, so the job is simply a failure.
+        assertEquals(1, scheduler.consecutiveFailures("A"))
+
+        snapshots.stop()
+    }
+
+    @Test
+    fun `a successful HTTP snapshot never reaches the frame grab`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val cams = listOf(camera("A"))
+        val scheduler = SnapshotScheduler(refreshIntervalMs = 1_000, jobDeadlineMs = 2_000)
+        scheduler.setCameras(cams, frameGrabAllowed = true)
+        val now = 0L
+        val bytes = byteArrayOf(1, 2, 3)
+        val io = ScriptedIo { bytes }
+        val snapshots = snapshotsWith(io, scheduler, cams, dispatcher) { now }
+
+        snapshots.start()
+        runCurrent()
+
+        assertEquals(1, io.fetchCalls)
+        assertEquals(0, io.grabCalls)
+        assertEquals(bytes, snapshots.jpegs["A"])
+        assertEquals(0, scheduler.consecutiveFailures("A"))
+
+        snapshots.stop()
+    }
+
+    @Test
+    fun `a throwing HTTP snapshot still falls back to a frame grab`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val cams = listOf(camera("A"))
+        val scheduler = SnapshotScheduler(refreshIntervalMs = 1_000, jobDeadlineMs = 2_000)
+        scheduler.setCameras(cams, frameGrabAllowed = true)
+        val now = 0L
+        val io = ScriptedIo { throw IllegalStateException("boom") }
+        val snapshots = snapshotsWith(io, scheduler, cams, dispatcher) { now }
+
+        snapshots.start()
+        runCurrent()
+
+        assertEquals(1, io.fetchCalls)
+        assertEquals(1, io.grabCalls)
+        assertEquals(1, scheduler.consecutiveFailures("A"))
+
+        snapshots.stop()
+    }
+
+    @Test
+    fun `with frame grabs off a failed HTTP snapshot stays failed`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val cams = listOf(camera("A"))
+        val scheduler = SnapshotScheduler(refreshIntervalMs = 1_000, jobDeadlineMs = 2_000)
+        scheduler.setCameras(cams, frameGrabAllowed = false)
+        val now = 0L
+        val io = ScriptedIo { null }
+        val snapshots = snapshotsWith(io, scheduler, cams, dispatcher) { now }
+
+        snapshots.start()
+        runCurrent()
+
+        assertEquals(1, io.fetchCalls)
+        assertEquals(0, io.grabCalls)
+        assertEquals(1, scheduler.consecutiveFailures("A"))
+
         snapshots.stop()
     }
 }

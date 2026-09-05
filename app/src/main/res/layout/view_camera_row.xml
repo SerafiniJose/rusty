@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One configured camera in the Cameras section. Whole row opens the edit dialog. The status dot
-     is static (see CameraSettingsPanel's class doc) — grey, not wired to live reachability. -->
+<!-- One configured camera in the Cameras section. Whole row opens the edit dialog. The status dot and sub-line are live: CameraSettingsPanel paints them from CameraStatusRelay. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"

@@ -23,12 +23,35 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/cameraGrid"
+        <!-- The grid and its page row are stacked, NOT overlaid: the row has to be a real sibling
+             BELOW the RecyclerView for D-pad focus search to reach it with ▼ from the bottom tile
+             row. Overlaying it in the grid's padding (as the dot indicator used to be) leaves it
+             outside the focus order entirely. -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:padding="10dp" />
+            android:orientation="vertical">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/cameraGrid"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:clipToPadding="false"
+                android:padding="10dp" />
+
+            <!-- Page navigation (Pages layout only): one focusable number per page, the current one
+                 accent-filled. Populated by CameraFragment.renderPageNumbers from
+                 PageIndicator.model; the whole row is GONE with a single page. -->
+            <LinearLayout
+                android:id="@+id/cameraPageNumbers"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:paddingBottom="6dp"
+                android:orientation="horizontal"
+                android:visibility="gone" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/cameraGridEmpty"
@@ -99,6 +122,61 @@
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="3dp" />
 
+            <!-- SUB | MAIN, only when the camera has a main stream. Non-focusable like the rest of
+                 the chrome: ▲▼ is the D-pad path (CameraFragment.onKeyEvent). -->
+            <LinearLayout
+                android:id="@+id/cameraStreamToggle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/bg_camera_chip"
+                android:contentDescription="@string/camera_stream_toggle_description"
+                android:focusable="false"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/cameraStreamSub"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="3dp"
+                    android:text="SUB"
+                    android:textColor="@color/accent_fallback"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/cameraStreamMain"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="3dp"
+                    android:text="MAIN"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Camera audio mute/unmute. GONE for a camera saved without audio: its audio track is
+                 deselected outright at session start (CameraPlayback), so there would be nothing to
+                 unmute. The icon carries the state, which is why there is no "Audio on" text here
+                 any more. Touch-only by design — see the note on cameraBackButton; the D-pad path
+                 for audio is the camera's Audio switch in Settings. -->
+            <ImageButton
+                android:id="@+id/cameraAudioButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="10dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/camera_audio_mute_description"
+                android:focusable="false"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_mdi_volume_high"
+                android:tint="@color/ink"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/cameraLiveName"
                 android:layout_width="0dp"
@@ -111,13 +189,6 @@
                 android:maxLines="1"
                 android:ellipsize="end"
                 tools:text="Front Door" />
-
-            <TextView
-                android:id="@+id/cameraLiveAudioState"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/muted"
-                android:textSize="12sp" />
         </LinearLayout>
 
         <!-- Edge chevrons: the touch equivalent of D-pad LEFT/RIGHT. GONE with fewer than two
@@ -154,18 +225,50 @@
             android:tint="@color/ink"
             android:visibility="gone" />
 
-        <!-- Bottom hint row -->
-        <TextView
-            android:id="@+id/cameraLiveHint"
+        <!-- Bottom bar: snapshot button then the hint. One row, so the two can never overlap at any
+             width — the hint simply centres in whatever the button leaves. The snapshot lives HERE
+             rather than in the top row because the shell parks its clock in the top-right corner
+             (BloomGeometry), and the bottom-RIGHT is taken by the shell's own chrome cluster, which
+             floats over this feature. -->
+        <LinearLayout
+            android:id="@+id/cameraLiveBottomBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
-            android:padding="14dp"
             android:background="@drawable/bg_tile_bottom_gradient"
-            android:text="@string/camera_hint_row"
-            android:textColor="@color/muted"
-            android:textSize="12sp"
-            android:gravity="center" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="8dp">
+
+            <ImageButton
+                android:id="@+id/cameraSnapshotButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/camera_snapshot_description"
+                android:focusable="false"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_mdi_camera_iris"
+                android:tint="@color/ink" />
+
+            <TextView
+                android:id="@+id/cameraLiveHint"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/camera_hint_row"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+
+            <!-- Balances the snapshot button so the hint stays centred on the screen, not merely on
+                 the space the button leaves. -->
+            <Space
+                android:layout_width="40dp"
+                android:layout_height="1dp" />
+        </LinearLayout>
 
         <!-- Connecting / reconnecting overlay -->
         <LinearLayout

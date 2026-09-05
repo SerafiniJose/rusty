@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- D-pad focus ring for a page number in the camera grid. NOT bg_tv_focus: that ring is brand
+     green, and ▼ from the grid always lands on the CURRENT page's number, which is itself filled
+     green — an invisible ring on the one pill focus always arrives at. Ink reads on both the green
+     current pill and the dark others. Radius matches bg_page_number. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="11dp" />
+            <stroke
+                android:width="2dp"
+                android:color="@color/ink" />
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</selector>

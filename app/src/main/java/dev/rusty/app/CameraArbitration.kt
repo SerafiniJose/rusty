@@ -16,6 +16,13 @@ sealed interface ArbEvent {
     /** The live view stayed open but switched to another camera/profile. */
     data class CameraSwitched(val audioWanted: Boolean) : ArbEvent
 
+    /**
+     * The viewer muted or unmuted the open live view from the chrome's audio button. Distinct from
+     * [CameraSwitched] only in that it is ignored without an open session — the button cannot be
+     * pressed from the grid, so anything arriving there is stale.
+     */
+    data class AudioToggled(val wanted: Boolean) : ArbEvent
+
     object FocusGranted : ArbEvent
 
     object FocusDenied : ArbEvent
@@ -89,6 +96,21 @@ object CameraArbitration {
             if (e.audioWanted) {
                 if (s.focusHeld) {
                     // Focus already ours: just move the audio over to the new stream.
+                    s.copy(audioWanted = true, cameraAudioOn = true) to
+                        listOf(ArbCommand.EnableCameraAudio)
+                } else {
+                    s.copy(audioWanted = true) to listOf(ArbCommand.RequestFocus)
+                }
+            } else {
+                val (released, commands) = releaseAudio(s)
+                released.copy(audioWanted = false) to commands
+            }
+
+        is ArbEvent.AudioToggled ->
+            if (!s.liveOpen) {
+                s to emptyList()
+            } else if (e.wanted) {
+                if (s.focusHeld) {
                     s.copy(audioWanted = true, cameraAudioOn = true) to
                         listOf(ArbCommand.EnableCameraAudio)
                 } else {

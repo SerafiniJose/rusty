@@ -127,6 +127,74 @@
                 android:visibility="gone" />
         </LinearLayout>
 
+        <!-- Add by address: for cameras on another subnet, which multicast discovery can never
+             reach. Tries ONVIF on 8000 then 80 unless a port is typed. -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:fontFamily="@font/hanken_medium"
+            android:text="Add by address"
+            android:textColor="@color/ink"
+            android:textSize="16sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColorHint="@color/muted_dim"
+                app:boxStrokeColor="@color/accent_fallback"
+                app:hintTextColor="@color/muted_dim">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etCamAddress"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_regular"
+                    android:hint="192.168.4.90 or 192.168.4.90:8000"
+                    android:imeOptions="actionGo"
+                    android:inputType="textUri"
+                    android:maxLines="1"
+                    android:textColor="@color/ink" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCamLookup"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:foreground="@drawable/bg_tv_focus"
+                android:text="Look up" />
+
+            <ProgressBar
+                android:id="@+id/camLookupSpinner"
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="10dp"
+                android:indeterminateTint="@color/accent_fallback"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvCamAddressError"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:fontFamily="@font/hanken_regular"
+            android:textColor="@color/dot_red"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
         <LinearLayout
             android:id="@+id/camDiscoveryResults"
             android:layout_width="match_parent"
@@ -174,6 +242,8 @@
         android:orientation="vertical"
         android:paddingBottom="14dp">
 
+        <!-- Grid refresh: label + current value, compact slider on the right (Spotify Bitrate idiom).
+             Discrete: slider value = index into CameraBehaviorPrefs.REFRESH_STEPS_S. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -182,9 +252,8 @@
             android:orientation="horizontal">
 
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:orientation="vertical">
 
                 <TextView
@@ -196,21 +265,32 @@
                     android:textSize="16sp" />
 
                 <TextView
+                    android:id="@+id/tvCamRefreshValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:fontFamily="@font/hanken_regular"
-                    android:text="How often snapshot tiles update"
+                    android:text="10 s"
                     android:textColor="@color/muted_dim"
                     android:textSize="13sp" />
             </LinearLayout>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCamRefreshInterval"
-                style="@style/Widget.Rusty.Button.Secondary"
-                android:layout_width="wrap_content"
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderCamRefresh"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:foreground="@drawable/bg_tv_focus"
-                android:text="10s" />
+                android:layout_weight="1"
+                android:layout_marginStart="16dp"
+                android:value="2"
+                android:valueFrom="0"
+                android:valueTo="5"
+                android:stepSize="1"
+                app:labelBehavior="gone"
+                app:haloColor="@color/accent_fallback"
+                app:thumbColor="@color/accent_fallback"
+                app:tickColorActive="@color/white"
+                app:tickColorInactive="@color/muted_dim"
+                app:trackColorActive="@color/accent_fallback"
+                app:trackColorInactive="@color/surface_border" />
         </LinearLayout>
 
         <View
@@ -219,6 +299,135 @@
             android:layout_marginTop="14dp"
             android:layout_marginBottom="14dp"
             android:background="@color/surface_border" />
+
+        <!-- Grid layout: every camera on one screen, or fixed pages. Not a RadioGroup (Flow-positioned
+             radios are not its direct children); exclusivity lives in the binder. -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_medium"
+            android:text="Grid layout"
+            android:textColor="@color/ink"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:text="All: tiles shrink so every camera fits. Pages: bigger tiles, flip with ◀ ▶."
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp">
+
+            <androidx.constraintlayout.helper.widget.Flow
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:constraint_referenced_ids="rbCamLayoutAll,rbCamLayout4,rbCamLayout6,rbCamLayout8"
+                app:flow_horizontalBias="0"
+                app:flow_horizontalGap="20dp"
+                app:flow_horizontalStyle="packed"
+                app:flow_verticalGap="6dp"
+                app:flow_wrapMode="chain"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <RadioButton
+                android:id="@+id/rbCamLayoutAll"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:buttonTint="@color/accent_fallback"
+                android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="All in one view"
+                android:textColor="@color/ink" />
+
+            <RadioButton
+                android:id="@+id/rbCamLayout4"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:buttonTint="@color/accent_fallback"
+                android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="Pages of 4"
+                android:textColor="@color/ink" />
+
+            <RadioButton
+                android:id="@+id/rbCamLayout6"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:buttonTint="@color/accent_fallback"
+                android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="Pages of 6"
+                android:textColor="@color/ink" />
+
+            <RadioButton
+                android:id="@+id/rbCamLayout8"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:buttonTint="@color/accent_fallback"
+                android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="Pages of 8"
+                android:textColor="@color/ink" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+        <!-- Page rotation: only while a Pages option is selected (binder toggles visibility). -->
+        <LinearLayout
+            android:id="@+id/rowCamPageRotation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_medium"
+                    android:text="Page rotation"
+                    android:textColor="@color/ink"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tvCamPageRotationValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_regular"
+                    android:text="Off"
+                    android:textColor="@color/muted_dim"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderCamPageRotation"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="16dp"
+                android:value="0"
+                android:valueFrom="0"
+                android:valueTo="3"
+                android:stepSize="1"
+                app:labelBehavior="gone"
+                app:haloColor="@color/accent_fallback"
+                app:thumbColor="@color/accent_fallback"
+                app:tickColorActive="@color/white"
+                app:tickColorInactive="@color/muted_dim"
+                app:trackColorActive="@color/accent_fallback"
+                app:trackColorInactive="@color/surface_border" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -244,7 +453,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:fontFamily="@font/hanken_regular"
-                    android:text="Grab a video frame for cameras with no snapshot URL"
+                    android:text="Grab a video frame when a camera has no snapshot URL or its snapshot fails"
                     android:textColor="@color/muted_dim"
                     android:textSize="13sp" />
             </LinearLayout>

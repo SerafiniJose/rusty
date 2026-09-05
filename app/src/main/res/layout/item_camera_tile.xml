@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  One grid tile: 16:9 snapshot + bottom gradient with name/age, a placeholder glyph when no
-  snapshot has ever been fetched (state NONE), and a warning overlay when UNREACHABLE. Focus ring
+  One grid tile: 16:9 snapshot + bottom gradient carrying a coloured status dot, the camera name
+  and — only while UNREACHABLE — a plain "Offline for 12 min" sentence over a dimmed last frame.
+  A placeholder glyph stands in when no snapshot has ever been fetched (state NONE). Focus ring
   is the app's existing D-pad focus indicator (bg_tv_focus), applied as android:foreground so the
   ripple/selectable background underneath is preserved.
 
@@ -49,19 +50,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Warning overlay: visible only when TileState.UNREACHABLE (drawn over a dimmed last frame). -->
-    <ImageView
-        android:id="@+id/tileWarning"
-        android:layout_width="28dp"
-        android:layout_height="28dp"
-        android:src="@drawable/ic_mdi_alert"
-        app:tint="@color/dot_red"
-        android:contentDescription="@string/camera_tile_unreachable"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/tileBottomScrim"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
     <View
         android:id="@+id/tileBottomScrim"
         android:layout_width="0dp"
@@ -71,36 +59,48 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <View
+        android:id="@+id/tileDot"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:layout_marginStart="10dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/bg_status_dot"
+        app:layout_constraintBottom_toBottomOf="@id/tileBottomScrim"
+        app:layout_constraintStart_toStartOf="parent" />
+
     <TextView
         android:id="@+id/tileName"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
         android:layout_marginBottom="6dp"
-        android:layout_marginEnd="4dp"
+        android:ellipsize="end"
+        android:maxLines="1"
         android:textColor="@color/ink"
         android:textSize="13sp"
         android:textStyle="bold"
-        android:maxLines="1"
-        android:ellipsize="end"
+        app:layout_constrainedWidth="true"
+        app:layout_constraintHorizontal_bias="0"
+        app:layout_constraintHorizontal_chainStyle="packed"
         app:layout_constraintBottom_toBottomOf="@id/tileBottomScrim"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/tileAgeChip"
+        app:layout_constraintStart_toEndOf="@id/tileDot"
+        app:layout_constraintEnd_toStartOf="@id/tileOffline"
         tools:text="Front Door" />
 
     <TextView
-        android:id="@+id/tileAgeChip"
+        android:id="@+id/tileOffline"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="8dp"
-        android:layout_marginBottom="4dp"
-        android:paddingHorizontal="6dp"
-        android:paddingVertical="2dp"
-        android:background="@drawable/bg_camera_chip"
-        android:textSize="11sp"
-        android:textColor="@color/dot_green"
+        android:layout_marginEnd="10dp"
+        android:layout_marginBottom="7dp"
+        android:textColor="@color/dot_red"
+        android:textSize="12sp"
+        android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="@id/tileBottomScrim"
+        app:layout_constraintStart_toEndOf="@id/tileName"
         app:layout_constraintEnd_toEndOf="parent"
-        tools:text="5s" />
+        tools:text="Offline for 12 min" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

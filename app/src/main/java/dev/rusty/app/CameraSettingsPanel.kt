@@ -4,15 +4,19 @@ import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.view.KeyEvent
 import android.view.View
 import android.view.Window
+import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.RadioButton
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.security.SecureRandom
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +42,7 @@ data class CameraEdit(
     val id: String?,
     val name: String,
     val rtspUrl: String,
+    val mainRtspUrl: String?,
     val snapshotUrl: String?,
     val username: String?,
     val password: String?,
@@ -88,13 +93,17 @@ object CameraSettingsModel {
             ?.let { CameraCodec.splitInlineCredentials(it) }
 
         val cleanRtsp = splitRtsp.url
+        val splitMain = edit.mainRtspUrl
+            ?.takeIf { it.isNotBlank() }
+            ?.let { CameraCodec.splitInlineCredentials(it) }
+        val cleanMain = splitMain?.url
         // splitSnapshot is non-null exactly when edit.snapshotUrl is non-blank (see above), so
         // splitSnapshot's own .url already covers "blank/absent -> null" — no separate fallback
         // to edit.snapshotUrl needed.
         val cleanSnapshot = splitSnapshot?.url
 
-        val username = edit.username?.takeIf { it.isNotBlank() } ?: splitRtsp.username ?: splitSnapshot?.username
-        val password = edit.password?.takeIf { it.isNotBlank() } ?: splitRtsp.password ?: splitSnapshot?.password
+        val username = edit.username?.takeIf { it.isNotBlank() } ?: splitRtsp.username ?: splitMain?.username ?: splitSnapshot?.username
+        val password = edit.password?.takeIf { it.isNotBlank() } ?: splitRtsp.password ?: splitMain?.password ?: splitSnapshot?.password
 
         val id = edit.id ?: freshId(existing)
         val existingRecord = existing.firstOrNull { it.id == id }
@@ -104,6 +113,7 @@ object CameraSettingsModel {
             id = id,
             name = edit.name,
             rtspUrl = cleanRtsp,
+            mainRtspUrl = cleanMain,
             snapshotUrl = cleanSnapshot,
             audioEnabled = edit.audioEnabled,
             forceTcp = edit.forceTcp,
@@ -171,16 +181,43 @@ object CameraSettingsModel {
  *  `refreshCameraList`/`rebuildSnapshotPipeline`) — see that class's doc comments for how a
  *  0-second ("Off") refresh interval is handled without ever being passed to
  *  [SnapshotScheduler]'s constructor. */
+/** How the grid lays cameras out: every camera on one screen, or fixed-size pages. */
+enum class GridLayoutChoice(val prefValue: String, val pageSize: Int?) {
+    ALL("all", null),
+    PAGES_4("4", 4),
+    PAGES_6("6", 6),
+    PAGES_8("8", 8),
+}
+
 object CameraBehaviorPrefs {
     const val KEY_GRID_REFRESH_S = "camera_grid_refresh_s"
     const val KEY_FRAME_GRAB_ENABLED = "camera_frame_grab_enabled"
+    const val KEY_GRID_LAYOUT = "camera_grid_layout"
+    const val KEY_PAGE_ROTATION_S = "camera_page_rotation_s"
     const val DEFAULT_GRID_REFRESH_S = 10
     const val DEFAULT_FRAME_GRAB_ENABLED = true
 
-    /** Cycle order for the refresh-interval pill: 0 means "off". */
-    val REFRESH_STEPS_S = listOf(0, 5, 10, 30, 60)
+    /** Slider stops for the refresh interval; index = slider value. 0 means "off". */
+    val REFRESH_STEPS_S = listOf(0, 5, 10, 15, 30, 60)
 
-    fun label(seconds: Int): String = if (seconds <= 0) "Off" else "${seconds}s"
+    /** Slider stops for page rotation; index = slider value. 0 means "off". */
+    val ROTATION_STEPS_S = listOf(0, 10, 30, 60)
+
+    fun refreshIndex(seconds: Int): Int =
+        REFRESH_STEPS_S.indexOf(seconds).takeIf { it >= 0 } ?: REFRESH_STEPS_S.indexOf(DEFAULT_GRID_REFRESH_S)
+
+    fun refreshSecondsAt(index: Int): Int = REFRESH_STEPS_S[index.coerceIn(0, REFRESH_STEPS_S.lastIndex)]
+
+    fun label(seconds: Int): String = if (seconds <= 0) "Off" else "$seconds s"
+
+    fun rotationIndex(seconds: Int): Int = ROTATION_STEPS_S.indexOf(seconds).takeIf { it >= 0 } ?: 0
+
+    fun rotationSecondsAt(index: Int): Int = ROTATION_STEPS_S[index.coerceIn(0, ROTATION_STEPS_S.lastIndex)]
+
+    fun rotationLabel(seconds: Int): String = label(seconds)
+
+    fun gridLayoutFrom(pref: String?): GridLayoutChoice =
+        GridLayoutChoice.entries.firstOrNull { it.prefValue == pref } ?: GridLayoutChoice.ALL
 }
 
 /**
@@ -195,9 +232,10 @@ object CameraBehaviorPrefs {
  * (a handful of RTSP cameras, not hundreds) and full rebuilds keep the D-pad focus/measure story
  * simple.
  *
- * Status dots on each row are STATIC (last-known-reachability is not available from settings —
- * [SnapshotScheduler]'s tile state lives inside the running [CameraFragment], which this panel has
- * no reference to) — see the task-12 report.
+ * Status dots on each row are LIVE: [CameraFragment]'s grid tick publishes reachability to
+ * [CameraStatusRelay], and this panel subscribes while mounted, repainting rows in place (never a
+ * full [renderCameraList] rebuild, which would steal D-pad focus) plus a once-a-second ticker so
+ * "Offline for N min" keeps advancing on its own.
  */
 class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanelProvider {
 
@@ -250,22 +288,55 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             secrets.remove(passKey)
         }
 
+        val rowViews = HashMap<String, View>()
+
+        fun paintRow(row: View, cam: CameraRecord, status: CameraStatus?) {
+            val dot = row.findViewById<View>(R.id.dotCamRowStatus)
+            val subtitle = row.findViewById<TextView>(R.id.tvCamRowSubtitle)
+            val streams = if (cam.mainRtspUrl.isNullOrBlank()) "stream" else "main + sub stream"
+            val snapshot = if (cam.snapshotUrl.isNullOrBlank()) "" else " · snapshot URL"
+            val now = android.os.SystemClock.elapsedRealtime()
+            val (color, text) = when (status?.state) {
+                TileState.OK -> R.color.dot_green to "Online · $streams$snapshot"
+                TileState.STALE -> R.color.dot_amber to "Updating…"
+                TileState.UNREACHABLE -> R.color.dot_red to activity.getString(
+                    R.string.camera_tile_offline_for, OfflineText.duration(now - (status.offlineSinceMs ?: now)),
+                )
+                TileState.NONE, null -> R.color.dot_grey to "Not checked"
+            }
+            dot.backgroundTintList = ContextCompat.getColorStateList(activity, color)
+            subtitle.text = text
+            subtitle.setTextColor(ContextCompat.getColor(activity, if (status?.state == TileState.UNREACHABLE) R.color.dot_red else R.color.muted_dim))
+        }
+
+        fun renderSummary() {
+            val sorted = cameras.sortedBy { it.position }
+            val statuses = CameraStatusRelay.current()
+            val offline = sorted.count { statuses[it.id]?.state == TileState.UNREACHABLE }
+            val text = when {
+                sorted.isEmpty() -> "No cameras"
+                offline > 0 -> "${sorted.size} camera${if (sorted.size == 1) "" else "s"} · $offline offline"
+                else -> "${sorted.size} camera${if (sorted.size == 1) "" else "s"}"
+            }
+            camerasSection.setSummary(SectionSummary(text, active = sorted.isNotEmpty() && sorted.all { statuses[it.id]?.state == TileState.OK }))
+        }
+
+        fun repaintRows() {
+            val statuses = CameraStatusRelay.current()
+            for (cam in cameras) rowViews[cam.id]?.let { paintRow(it, cam, statuses[cam.id]) }
+            renderSummary()
+        }
+
         fun renderCameraList() {
             cameraListContainer.removeAllViews()
+            rowViews.clear()
             val sorted = cameras.sortedBy { it.position }
             cameraListEmpty.isVisible = sorted.isEmpty()
-            camerasSection.setSummary(
-                SectionSummary(
-                    text = if (sorted.isEmpty()) "None configured" else "${sorted.size} configured",
-                    active = sorted.isNotEmpty(),
-                ),
-            )
+            val statuses = CameraStatusRelay.current()
             sorted.forEach { cam ->
                 val row = activity.layoutInflater.inflate(R.layout.view_camera_row, cameraListContainer, false)
                 row.findViewById<TextView>(R.id.tvCamRowName).text = cam.name
-                row.findViewById<TextView>(R.id.tvCamRowSubtitle).text = CameraUri.redact(cam.rtspUrl)
-                row.findViewById<View>(R.id.dotCamRowStatus).backgroundTintList =
-                    ContextCompat.getColorStateList(activity, R.color.dot_grey)
+                paintRow(row, cam, statuses[cam.id])
                 row.setOnClickListener {
                     openEditDialog(
                         existingCamera = cam,
@@ -286,10 +357,22 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
                         },
                     )
                 }
+                rowViews[cam.id] = row
                 cameraListContainer.addView(row)
             }
+            renderSummary()
         }
         renderCameraList()
+
+        val statusListener: () -> Unit = { repaintRows() }
+        CameraStatusRelay.addListener(statusListener)
+        // "Offline for N min" moves on its own; a once-a-second repaint keeps it honest while the
+        // sheet is open. Cheap: a handful of rows, text only.
+        val rowTicker = android.os.Handler(android.os.Looper.getMainLooper())
+        val rowTick = object : Runnable {
+            override fun run() { repaintRows(); rowTicker.postDelayed(this, 1_000L) }
+        }
+        rowTicker.postDelayed(rowTick, 1_000L)
 
         addCameraRow.setOnClickListener {
             openEditDialog(
@@ -347,7 +430,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
                         openDiscoveryCredentialsDialog(found.name) { user, pass ->
                             scope.launch {
                                 val result = withContext(Dispatchers.IO) {
-                                    OnvifClient(AndroidSoapTransport(), nonceSource = ::randomNonce)
+                                    OnvifClient(AndroidSoapTransport(), nonceSource = ::randomNonce, canDecode = DeviceDecoders::canDecode)
                                         .resolve(xaddr, user, pass)
                                 }
                                 when (result) {
@@ -356,6 +439,12 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
                                         prefill = DiscoveryPrefill(
                                             name = found.name ?: found.hardware ?: "Camera",
                                             rtspUrl = result.streamUri,
+                                            mainRtspUrl = result.mainStreamUri,
+                                            mainSkippedNote = result.skippedMain?.let {
+                                                "Main stream skipped: this device can't decode " +
+                                                    "${it.width}×${it.height} " +
+                                                    CodecNames.label(CodecNames.mimeForOnvif(it.codec) ?: it.codec)
+                                            },
                                             snapshotUrl = result.snapshotUri,
                                             username = user,
                                             password = pass,
@@ -405,25 +494,186 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             }
         }
 
+        val addressField = panel.findViewById<EditText>(R.id.etCamAddress)
+        val lookupButton = panel.findViewById<MaterialButton>(R.id.btnCamLookup)
+        val lookupSpinner = panel.findViewById<ProgressBar>(R.id.camLookupSpinner)
+        val addressError = panel.findViewById<TextView>(R.id.tvCamAddressError)
+
+        fun lookUpAddress() {
+            // The button is disabled for the whole probe; a second OK (remote or soft keyboard)
+            // while one is in flight must not start another.
+            if (!lookupButton.isEnabled) return
+            val input = addressField.text?.toString().orEmpty()
+            val candidates = OnvifAddress.candidates(input)
+            addressError.isVisible = false
+            if (candidates.isEmpty()) {
+                addressError.text = "Enter a host name or IP address"
+                addressError.isVisible = true
+                return
+            }
+            lookupButton.isEnabled = false
+            lookupSpinner.isVisible = true
+            scope.launch {
+                var answered: String? = null
+                var sawNotOnvif = false
+                withContext(Dispatchers.IO) {
+                    for (xaddr in candidates) {
+                        when (OnvifClient(AndroidSoapTransport(), nonceSource = ::randomNonce).probeDevice(xaddr)) {
+                            OnvifProbe.Answered -> { answered = xaddr; break }
+                            OnvifProbe.NotOnvif -> sawNotOnvif = true
+                            OnvifProbe.NoAnswer -> Unit
+                        }
+                    }
+                }
+                lookupButton.isEnabled = true
+                lookupSpinner.isVisible = false
+                val xaddr = answered
+                if (xaddr == null) {
+                    val ports = candidates.map { it.substringAfter("://").substringBefore('/').substringAfterLast(':') }
+                    addressError.text = if (sawNotOnvif) "Not an ONVIF endpoint" else "Nothing answered on ${ports.joinToString(" or ")}"
+                    addressError.isVisible = true
+                    return@launch
+                }
+                val host = xaddr.substringAfter("://").substringBefore('/').substringBefore(':').trim('[', ']')
+                openDiscoveryCredentialsDialog(host) { user, pass ->
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            OnvifClient(AndroidSoapTransport(), nonceSource = ::randomNonce, canDecode = DeviceDecoders::canDecode)
+                                .resolve(xaddr, user, pass)
+                        }
+                        when (result) {
+                            is OnvifResult.Resolved -> openEditDialog(
+                                existingCamera = null,
+                                prefill = DiscoveryPrefill(
+                                    name = host,
+                                    rtspUrl = result.streamUri,
+                                    mainRtspUrl = result.mainStreamUri,
+                                    mainSkippedNote = result.skippedMain?.let {
+                                        "Main stream skipped: this device can't decode ${it.width}×${it.height} ${CodecNames.label(CodecNames.mimeForOnvif(it.codec) ?: it.codec)}"
+                                    },
+                                    snapshotUrl = result.snapshotUri,
+                                    username = user,
+                                    password = pass,
+                                ),
+                                cameras = { cameras },
+                                secretsFor = ::secretsFor,
+                                onSaved = { r ->
+                                    cameras = r.cameras
+                                    persistCredentials(r, isEdit = false)
+                                    CameraStore.save(prefs, cameras)
+                                    renderCameraList()
+                                },
+                                onDeleted = {},
+                            )
+                            is OnvifResult.Failed -> if (result.step == "auth") {
+                                addressError.text = "Wrong username or password"
+                                addressError.isVisible = true
+                            } else {
+                                showFeedback(
+                                    panel.findViewById(R.id.tvCamDiscoveryFeedback),
+                                    "Couldn't resolve the stream (${result.step}): ${result.detail}",
+                                    HaFeedbackKind.ERROR,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        lookupButton.setOnClickListener { lookUpAddress() }
+        // imeOptions on etCamAddress is actionGo; a hardware/Bluetooth Enter arrives as a
+        // KEYCODE_ENTER event with an unspecified action id instead. Gate on ACTION_DOWN so a
+        // remote's OK fires exactly one probe per press.
+        addressField.setOnEditorActionListener { _, actionId, event ->
+            val enterKeyDown = event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
+            if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE || enterKeyDown) {
+                lookUpAddress()
+                true
+            } else {
+                false
+            }
+        }
+
         // ---- Behavior ---------------------------------------------------------------------------
 
-        val refreshPill = panel.findViewById<MaterialButton>(R.id.btnCamRefreshInterval)
+        val refreshSlider = panel.findViewById<Slider>(R.id.sliderCamRefresh)
+        val refreshValue = panel.findViewById<TextView>(R.id.tvCamRefreshValue)
         val frameGrabSwitch = panel.findViewById<SwitchMaterial>(R.id.switchCamFrameGrab)
+        val rotationRow = panel.findViewById<View>(R.id.rowCamPageRotation)
+        val rotationSlider = panel.findViewById<Slider>(R.id.sliderCamPageRotation)
+        val rotationValue = panel.findViewById<TextView>(R.id.tvCamPageRotationValue)
 
         var refreshSeconds = prefs.getInt(CameraBehaviorPrefs.KEY_GRID_REFRESH_S, CameraBehaviorPrefs.DEFAULT_GRID_REFRESH_S)
-        fun renderRefreshPill() {
-            refreshPill.text = CameraBehaviorPrefs.label(refreshSeconds)
-            // Kept live so the collapsed section summary never shows a stale value after cycling.
-            behaviorSection.setSummary(SectionSummary(CameraBehaviorPrefs.label(refreshSeconds), active = refreshSeconds > 0))
+        var layout = CameraBehaviorPrefs.gridLayoutFrom(prefs.getString(CameraBehaviorPrefs.KEY_GRID_LAYOUT, null))
+        var rotationSeconds = prefs.getInt(CameraBehaviorPrefs.KEY_PAGE_ROTATION_S, 0)
+
+        fun layoutLabel(choice: GridLayoutChoice) = when (choice) {
+            GridLayoutChoice.ALL -> "All in one view"
+            else -> "Pages of ${choice.pageSize}"
         }
-        renderRefreshPill()
-        refreshPill.setOnClickListener {
-            val steps = CameraBehaviorPrefs.REFRESH_STEPS_S
-            val idx = steps.indexOf(refreshSeconds).let { if (it < 0) 0 else it }
-            refreshSeconds = steps[(idx + 1) % steps.size]
-            prefs.edit().putInt(CameraBehaviorPrefs.KEY_GRID_REFRESH_S, refreshSeconds).apply()
-            renderRefreshPill()
+        fun renderBehaviorSummary() {
+            behaviorSection.setSummary(
+                SectionSummary("${CameraBehaviorPrefs.label(refreshSeconds)} · ${layoutLabel(layout)}", active = refreshSeconds > 0),
+            )
         }
+
+        refreshSlider.value = CameraBehaviorPrefs.refreshIndex(refreshSeconds).toFloat()
+        refreshValue.text = CameraBehaviorPrefs.label(refreshSeconds)
+        fun commitRefresh(index: Int) {
+            val seconds = CameraBehaviorPrefs.refreshSecondsAt(index)
+            if (seconds == refreshSeconds) return
+            refreshSeconds = seconds
+            prefs.edit().putInt(CameraBehaviorPrefs.KEY_GRID_REFRESH_S, seconds).apply()
+            renderBehaviorSummary()
+        }
+        refreshSlider.addOnChangeListener { slider, value, fromUser ->
+            refreshValue.text = CameraBehaviorPrefs.label(CameraBehaviorPrefs.refreshSecondsAt(value.toInt()))
+            // A D-pad step never produces a touch-up, so commit here unless a touch drag is in
+            // progress (that commits on release below) — same rule as the Spotify startup volume.
+            if (fromUser && !slider.isPressed) commitRefresh(value.toInt())
+        }
+        refreshSlider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: Slider) {}
+            override fun onStopTrackingTouch(slider: Slider) = commitRefresh(slider.value.toInt())
+        })
+
+        fun renderRotationRow() {
+            rotationRow.isVisible = layout != GridLayoutChoice.ALL
+        }
+        bindCameraRadioChoice(
+            options = listOf(
+                panel.findViewById<RadioButton>(R.id.rbCamLayoutAll) to GridLayoutChoice.ALL,
+                panel.findViewById<RadioButton>(R.id.rbCamLayout4) to GridLayoutChoice.PAGES_4,
+                panel.findViewById<RadioButton>(R.id.rbCamLayout6) to GridLayoutChoice.PAGES_6,
+                panel.findViewById<RadioButton>(R.id.rbCamLayout8) to GridLayoutChoice.PAGES_8,
+            ),
+            selected = layout,
+            onSelect = { choice ->
+                layout = choice
+                prefs.edit().putString(CameraBehaviorPrefs.KEY_GRID_LAYOUT, choice.prefValue).apply()
+                renderRotationRow()
+                renderBehaviorSummary()
+            },
+        )
+        renderRotationRow()
+
+        rotationSlider.value = CameraBehaviorPrefs.rotationIndex(rotationSeconds).toFloat()
+        rotationValue.text = CameraBehaviorPrefs.rotationLabel(rotationSeconds)
+        fun commitRotation(index: Int) {
+            val seconds = CameraBehaviorPrefs.rotationSecondsAt(index)
+            if (seconds == rotationSeconds) return
+            rotationSeconds = seconds
+            prefs.edit().putInt(CameraBehaviorPrefs.KEY_PAGE_ROTATION_S, seconds).apply()
+        }
+        rotationSlider.addOnChangeListener { slider, value, fromUser ->
+            rotationValue.text = CameraBehaviorPrefs.rotationLabel(CameraBehaviorPrefs.rotationSecondsAt(value.toInt()))
+            if (fromUser && !slider.isPressed) commitRotation(value.toInt())
+        }
+        rotationSlider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: Slider) {}
+            override fun onStopTrackingTouch(slider: Slider) = commitRotation(slider.value.toInt())
+        })
+        renderBehaviorSummary()
 
         frameGrabSwitch.isChecked = prefs.getBoolean(
             CameraBehaviorPrefs.KEY_FRAME_GRAB_ENABLED,
@@ -436,7 +686,11 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         // Referenced only to keep the section non-empty lint-clean; it remains collapsible.
         discoverySection.setSummary(SectionSummary("ONVIF scan", active = false))
 
-        return { scope.cancel() }
+        return {
+            CameraStatusRelay.removeListener(statusListener)
+            rowTicker.removeCallbacks(rowTick)
+            scope.cancel()
+        }
     }
 
     // ---- Edit dialog ----------------------------------------------------------------------------
@@ -444,6 +698,8 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
     private data class DiscoveryPrefill(
         val name: String,
         val rtspUrl: String,
+        val mainRtspUrl: String?,
+        val mainSkippedNote: String?,
         val snapshotUrl: String?,
         val username: String?,
         val password: String?,
@@ -468,6 +724,8 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         val title = root.findViewById<TextView>(R.id.tvCamEditTitle)
         val nameField = root.findViewById<EditText>(R.id.etCamEditName)
         val rtspField = root.findViewById<EditText>(R.id.etCamEditRtsp)
+        val mainField = root.findViewById<EditText>(R.id.etCamEditMain)
+        val mainNote = root.findViewById<TextView>(R.id.tvCamEditMainNote)
         val snapshotField = root.findViewById<EditText>(R.id.etCamEditSnapshot)
         val userField = root.findViewById<EditText>(R.id.etCamEditUser)
         val passField = root.findViewById<EditText>(R.id.etCamEditPass)
@@ -490,6 +748,14 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
 
         nameField.setText(existingCamera?.name ?: prefill?.name.orEmpty())
         rtspField.setText(existingCamera?.rtspUrl ?: prefill?.rtspUrl.orEmpty())
+        mainField.setText(existingCamera?.mainRtspUrl ?: prefill?.mainRtspUrl.orEmpty())
+        // Discovery only skips a main stream when it found one this device can't decode. Saying so
+        // in amber, in place of the neutral hint, explains the empty field instead of leaving it
+        // looking like the camera has no main stream at all.
+        prefill?.mainSkippedNote?.let {
+            mainNote.text = it
+            mainNote.setTextColor(ContextCompat.getColor(activity, R.color.dot_amber))
+        }
         snapshotField.setText(existingCamera?.snapshotUrl ?: prefill?.snapshotUrl.orEmpty())
         audioSwitch.isChecked = existingCamera?.audioEnabled ?: false
         forceTcpSwitch.isChecked = existingCamera?.forceTcp ?: true
@@ -507,6 +773,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             id = existingCamera?.id,
             name = nameField.text?.toString()?.trim().orEmpty(),
             rtspUrl = rtspField.text?.toString()?.trim().orEmpty(),
+            mainRtspUrl = mainField.text?.toString()?.trim().takeUnless { it.isNullOrEmpty() },
             snapshotUrl = snapshotField.text?.toString()?.trim().takeUnless { it.isNullOrEmpty() },
             username = userField.text?.toString(),
             password = passField.text?.toString(),
@@ -550,25 +817,39 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
                     val split = CameraCodec.splitInlineCredentials(edit.rtspUrl)
                     val user = edit.username?.takeIf { it.isNotBlank() } ?: split.username
                     val pass = edit.password?.takeIf { it.isNotBlank() } ?: split.password
-                    val rtspUri = CameraUri.withCredentials(split.url, user, pass)
+                    val lines = mutableListOf<String>()
 
-                    val rtspOk = withTimeoutOrNull(TEST_TIMEOUT_MS) {
-                        probeRtsp(activity, rtspUri, edit.forceTcp)
-                    } == true
-
-                    val snapshotResult = edit.snapshotUrl?.takeIf { it.isNotBlank() }?.let { rawSnapshot ->
-                        val snapSplit = CameraCodec.splitInlineCredentials(rawSnapshot)
-                        val snapUser = user ?: snapSplit.username
-                        val snapPass = pass ?: snapSplit.password
-                        withTimeoutOrNull(TEST_TIMEOUT_MS) {
-                            AndroidSnapshotIo(activity).fetchHttp(snapSplit.url, snapUser, snapPass)
-                        } != null
+                    // Each step repaints as soon as it lands, so a slow camera shows the stream's
+                    // result while the main stream is still being probed instead of nothing at all.
+                    suspend fun probeLine(label: String, rawUrl: String, hintSuffix: String) {
+                        val s = CameraCodec.splitInlineCredentials(rawUrl)
+                        val uri = CameraUri.withCredentials(s.url, user ?: s.username, pass ?: s.password)
+                        val result = withTimeoutOrNull(TEST_TIMEOUT_MS) { probeRtsp(activity, uri, edit.forceTcp) }
+                            ?: ProbeResult(false, null)
+                        lines += TestReport.line(label, result.ok, result.format)
+                        val f = result.format
+                        if (result.ok && f != null) {
+                            // Still a ✓: the RTSP handshake really did succeed, only playback on
+                            // this device would fail. The ⚠ line is the hint, not the verdict.
+                            CodecHint.build(f, DeviceDecoders.canDecode(f.mime, f.width, f.height), hintSuffix)?.let { lines += "⚠ $it" }
+                        }
+                        testResult.text = lines.joinToString("\n")
                     }
 
+                    testResult.text = "Testing…"
+                    probeLine("Stream", edit.rtspUrl, "set the camera to H.264 at a lower resolution.")
+                    edit.mainRtspUrl?.takeIf { it.isNotBlank() }?.let {
+                        probeLine("Main", it, "use the stream above for live view, or set the camera to H.264.")
+                    }
+                    edit.snapshotUrl?.takeIf { it.isNotBlank() }?.let { rawSnapshot ->
+                        val snapSplit = CameraCodec.splitInlineCredentials(rawSnapshot)
+                        val ok = withTimeoutOrNull(TEST_TIMEOUT_MS) {
+                            AndroidSnapshotIo(activity).fetchHttp(snapSplit.url, user ?: snapSplit.username, pass ?: snapSplit.password)
+                        } != null
+                        lines += TestReport.line("Snapshot", ok, null)
+                        testResult.text = lines.joinToString("\n")
+                    }
                     testButton.isEnabled = true
-                    val lines = mutableListOf("RTSP: ${if (rtspOk) "✓" else "✗"}")
-                    if (snapshotResult != null) lines += "Snapshot: ${if (snapshotResult) "✓" else "✗"}"
-                    testResult.text = lines.joinToString("\n")
                 } finally {
                     testCameraId?.let(CameraTestRegistry::clearTesting)
                 }
@@ -602,12 +883,13 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
     }
 
     /** A short headless RTSP probe: builds a throwaway main-looper ExoPlayer against
-     *  [RtspMediaSource][androidx.media3.exoplayer.rtsp.RtspMediaSource] and reports true the
-     *  moment it reaches `STATE_READY`, false on any player error. Mirrors
+     *  [RtspMediaSource][androidx.media3.exoplayer.rtsp.RtspMediaSource] and reports success —
+     *  plus the video track's codec/resolution/frame rate when the player exposed one — the
+     *  moment it reaches `STATE_READY`, failure on any player error. Mirrors
      *  [CameraPlaybackPlan][dev.rusty.app.CameraPlaybackPlan]'s success/failure semantics without
      *  reusing its reconnect state machine — a Test button wants one shot, not a retry ladder.
      *  Always released in `finally`. */
-    private suspend fun probeRtsp(context: Context, rtspUriWithCreds: String, forceTcp: Boolean): Boolean =
+    private suspend fun probeRtsp(context: Context, rtspUriWithCreds: String, forceTcp: Boolean): ProbeResult =
         withContext(Dispatchers.Main.immediate) {
             RtspProbe.run(context, rtspUriWithCreds, forceTcp)
         }
@@ -662,25 +944,29 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
 
 /** Isolated so [CameraSettingsPanel] stays free of ExoPlayer wiring in its main body. Not unit
  *  tested — thin Android I/O, same posture as [AndroidSnapshotIo.grabFrame]. */
+data class ProbeResult(val ok: Boolean, val format: VideoFormatInfo?)
+
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 private object RtspProbe {
-    suspend fun run(context: Context, uri: String, forceTcp: Boolean): Boolean {
+    suspend fun run(context: Context, uri: String, forceTcp: Boolean): ProbeResult {
         val player = androidx.media3.exoplayer.ExoPlayer.Builder(context).build()
         return try {
             kotlinx.coroutines.suspendCancellableCoroutine { cont ->
                 val done = java.util.concurrent.atomic.AtomicBoolean(false)
-                fun finish(ok: Boolean) {
-                    if (done.compareAndSet(false, true) && cont.isActive) {
-                        cont.resumeWith(Result.success(ok))
-                    }
+                fun finish(result: ProbeResult) {
+                    if (done.compareAndSet(false, true) && cont.isActive) cont.resumeWith(Result.success(result))
                 }
                 player.addListener(object : androidx.media3.common.Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
-                        if (playbackState == androidx.media3.common.Player.STATE_READY) finish(true)
+                        if (playbackState == androidx.media3.common.Player.STATE_READY) {
+                            val f = player.videoFormat
+                            val info = f?.sampleMimeType?.let { VideoFormatInfo(it, f.width, f.height, f.frameRate) }
+                            finish(ProbeResult(true, info))
+                        }
                     }
 
                     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                        finish(false)
+                        finish(ProbeResult(false, null))
                     }
                 })
                 val source = androidx.media3.exoplayer.rtsp.RtspMediaSource.Factory()
@@ -688,10 +974,26 @@ private object RtspProbe {
                     .createMediaSource(androidx.media3.common.MediaItem.fromUri(uri))
                 player.setMediaSource(source)
                 player.prepare()
-                cont.invokeOnCancellation { finish(false) }
+                cont.invokeOnCancellation { finish(ProbeResult(false, null)) }
             }
         } finally {
             player.release()
+        }
+    }
+}
+
+/** Mutual exclusion for Flow-positioned radios (not a RadioGroup's direct children); copied from
+ *  SpotifyFeature.bindRadioChoice so the two panels share one behaviour. */
+private fun <T> bindCameraRadioChoice(options: List<Pair<RadioButton, T>>, selected: T, onSelect: (T) -> Unit) {
+    options.forEach { (radio, value) -> radio.isChecked = value == selected }
+    var suppress = false
+    options.forEach { (radio, value) ->
+        radio.setOnCheckedChangeListener { _, isChecked ->
+            if (!isChecked || suppress) return@setOnCheckedChangeListener
+            suppress = true
+            options.forEach { (other, _) -> if (other !== radio) other.isChecked = false }
+            suppress = false
+            onSelect(value)
         }
     }
 }

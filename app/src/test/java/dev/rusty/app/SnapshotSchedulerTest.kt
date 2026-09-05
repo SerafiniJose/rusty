@@ -11,10 +11,12 @@ class SnapshotSchedulerTest {
         id: String,
         position: Int,
         snapshotUrl: String? = "http://host/$id.jpg",
+        mainRtspUrl: String? = null,
     ) = CameraRecord(
         id = id,
         name = id.uppercase(),
         rtspUrl = "rtsp://host/$id",
+        mainRtspUrl = mainRtspUrl,
         snapshotUrl = snapshotUrl,
         audioEnabled = false,
         forceTcp = true,
@@ -69,9 +71,16 @@ class SnapshotSchedulerTest {
     // --- job kind ----------------------------------------------------------
 
     @Test
-    fun `camera with a snapshot url produces an HTTP job`() {
+    fun `camera with a snapshot url falls back to a frame grab when one is allowed`() {
         val s = scheduler()
         s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = true)
+        assertEquals(JobKind.HTTP_THEN_FRAME, s.onTick(0L)?.kind)
+    }
+
+    @Test
+    fun `camera with a snapshot url produces a plain HTTP job when frame grabs are off`() {
+        val s = scheduler()
+        s.setCameras(listOf(cam("a", 0)), frameGrabAllowed = false)
         assertEquals(JobKind.HTTP, s.onTick(0L)?.kind)
     }
 
@@ -290,5 +299,39 @@ class SnapshotSchedulerTest {
         // "a" is still in flight, so nothing else may start.
         assertNull(s.onTick(2L))
         assertEquals(TileState.NONE, s.tileState("b", 2L))
+    }
+
+    // --- offlineSince --------------------------------------------------------
+
+    @Test
+    fun `offlineSince is null before any failure and is lastOk once a run of failures starts`() {
+        val s = SnapshotScheduler(refreshIntervalMs = 10_000)
+        s.setCameras(listOf(cam("a", position = 0, snapshotUrl = "http://x/a.jpg")), frameGrabAllowed = false)
+        assertNull(s.offlineSince("a"))
+        s.onTick(0); s.onJobFinished("a", 1_000, ok = true)
+        assertNull(s.offlineSince("a"))
+        s.onTick(11_000); s.onJobFinished("a", 12_000, ok = false)
+        assertEquals(1_000L, s.offlineSince("a"))
+        s.onTick(22_000); s.onJobFinished("a", 23_000, ok = false)
+        assertEquals(1_000L, s.offlineSince("a"))
+        s.onTick(33_000); s.onJobFinished("a", 34_000, ok = true)
+        assertNull(s.offlineSince("a"))
+    }
+
+    @Test
+    fun `offlineSince falls back to the first failure time when there was never a success`() {
+        val s = SnapshotScheduler(refreshIntervalMs = 10_000)
+        s.setCameras(listOf(cam("a", position = 0, snapshotUrl = "http://x/a.jpg")), frameGrabAllowed = false)
+        s.onTick(0); s.onJobFinished("a", 500, ok = false)
+        assertEquals(500L, s.offlineSince("a"))
+    }
+
+    @Test
+    fun `a deadline write-off starts the offline run too`() {
+        val s = SnapshotScheduler(refreshIntervalMs = 10_000, jobDeadlineMs = 15_000)
+        s.setCameras(listOf(cam("a", position = 0, snapshotUrl = "http://x/a.jpg")), frameGrabAllowed = false)
+        s.onTick(0)
+        assertEquals("a", s.onJobDeadline(15_000))
+        assertEquals(15_000L, s.offlineSince("a"))
     }
 }
