@@ -81,6 +81,7 @@ class RemoteControlSettingsPanel(private val ctx: SettingsPanelContext) : Settin
             card.setContentView(root)
             card.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             card.followDisplaySize(activity)
+            card.matchHostSystemBars(activity)
 
             val input = root.findViewById<EditText>(R.id.etControlPassword)
             val error = root.findViewById<TextView>(R.id.tvControlPasswordError)

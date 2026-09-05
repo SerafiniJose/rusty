@@ -403,6 +403,7 @@ object SettingsSheet {
         // Rotating with the card open must re-size it: the shell absorbs configuration changes, so
         // nothing here is re-created and a landscape-width card would overflow a portrait screen.
         dialog.followDisplaySize(activity)
+        dialog.matchHostSystemBars(activity)
         return dialog
     }
 

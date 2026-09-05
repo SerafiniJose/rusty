@@ -720,6 +720,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         card.setContentView(root)
         card.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         card.followDisplaySize(activity)
+        card.matchHostSystemBars(activity)
 
         val title = root.findViewById<TextView>(R.id.tvCamEditTitle)
         val nameField = root.findViewById<EditText>(R.id.etCamEditName)
@@ -905,6 +906,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         card.setContentView(root)
         card.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         card.followDisplaySize(activity)
+        card.matchHostSystemBars(activity)
 
         root.findViewById<TextView>(R.id.tvCamCredTitle).text = cameraName ?: "Camera credentials"
         val userField = root.findViewById<EditText>(R.id.etCamCredUser)

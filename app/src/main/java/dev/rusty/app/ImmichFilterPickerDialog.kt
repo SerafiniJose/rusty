@@ -191,6 +191,7 @@ class ImmichFilterPickerDialog(
         }
         // Re-sizes on rotation too — this card outlives a configuration change (see followDisplaySize).
         d.followDisplaySize(activity, heightFraction = 0.80f)
+        d.matchHostSystemBars(activity)
 
         root.findViewById<TextView>(R.id.tvPickerTitle).text = "Choose ${kind.title.lowercase()}"
         val search = root.findViewById<EditText>(R.id.etPickerSearch)

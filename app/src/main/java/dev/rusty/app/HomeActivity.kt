@@ -1009,6 +1009,9 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             handler.removeCallbacks(autoHideBarsTick)
             showSystemBars()
         }
+        // The switch lives inside the Settings card, whose window is the focused one right now: the
+        // activity window's change is invisible until that card closes unless the card follows too.
+        for (d in shellDialogs) d.window?.applySystemBarsHidden(enabled)
     }
 
     /** Whether immersive fullscreen is currently enabled (for the settings switch's initial state). */

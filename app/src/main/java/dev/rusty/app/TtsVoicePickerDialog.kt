@@ -68,6 +68,7 @@ class TtsVoicePickerDialog(
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         // Re-sizes on rotation too, like the Immich picker card.
         dialog.followDisplaySize(activity, heightFraction = 0.80f)
+        dialog.matchHostSystemBars(activity)
 
         rowsBox = root.findViewById(R.id.llVoiceRows)
         catalogBox = root.findViewById(R.id.llVoiceCatalog)
@@ -336,6 +337,7 @@ class TtsVoicePickerDialog(
         card.setContentView(root)
         card.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         card.followDisplaySize(activity)
+        card.matchHostSystemBars(activity)
         root.findViewById<TextView>(R.id.tvConfirmTitle).text = title
         root.findViewById<TextView>(R.id.tvConfirmBody).text = body
         root.findViewById<MaterialButton>(R.id.btnConfirmCancel).setOnClickListener { card.dismiss() }

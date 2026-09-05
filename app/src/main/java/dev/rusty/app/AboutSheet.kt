@@ -176,6 +176,7 @@ object AboutSheet {
         dialog.setContentView(view)
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.followDisplaySize(activity)
+        dialog.matchHostSystemBars(activity)
         activity.trackShellDialog(dialog)
         dialog.setOnDismissListener {
             activity.untrackShellDialog(dialog)
