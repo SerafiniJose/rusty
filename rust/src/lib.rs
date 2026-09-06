@@ -735,6 +735,20 @@ async fn consume_player_events(session: Session, mut event_channel: PlayerEventC
                         idle_deadline = None;
                         publish_track_event(&session, "PLAYING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
                     }
+                    // Seeking should only be possible if PLAYING or PAUSED
+                    PlayerEvent::Seeked { track_id, position_ms, .. } => {
+                        match last_published.as_ref().map(|fp| fp.0.as_str()) {
+                            Some("PLAYING") => {
+                                idle_deadline = None;
+                                publish_track_event(&session, "PLAYING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
+                            }
+                            Some("PAUSED") => {
+                                idle_deadline = Some(Instant::now() + IDLE_SESSION_TIMEOUT);
+                                publish_track_event(&session, "PAUSED", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
+                            }
+                            _ => {}
+                        }
+                    }
                     PlayerEvent::Paused { track_id, position_ms, .. } => {
                         idle_deadline = Some(Instant::now() + IDLE_SESSION_TIMEOUT);
                         publish_track_event(&session, "PAUSED", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
