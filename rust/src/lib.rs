@@ -34,7 +34,7 @@ use android_logger::Config;
 
 /// Custom audio sink that reopens the output stream when Android's active audio
 /// route changes (e.g. Bluetooth connect/disconnect) — see the module docs.
-mod audio_sink;
+mod audio_track_sink;
 
 /// Duck-aware wrapper around librespot's soft mixer, used to lower the Spotify volume
 /// while a DLNA/TTS announcement plays through the app's own player — see the module docs.
@@ -628,15 +628,16 @@ async fn build_active_session(
         Arc::new(<DuckingMixer as Mixer>::open(MixerConfig::default()).expect("Failed to open mixer"));
 
     // 0.8: Player::new returns Arc<Player>; the sink closure now takes NO args.
-    // We supply our own route-following sink instead of librespot's stock rodio
-    // backend so playback survives Android audio-route changes (Bluetooth
-    // connect/disconnect, headset plug/unplug) — see audio_sink for the rationale.
+    // We supply an android.media.AudioTrack sink instead of librespot's stock rodio
+    // backend. AudioFlinger migrates a track across an Android audio-route change
+    // (Bluetooth connect/disconnect, headset plug/unplug) on its own, so unlike the
+    // AAudio path this needs no disconnect handling — see audio_track_sink.
     let player = Player::new(
         player_config,
         session.clone(),
         mixer.get_soft_volume(),
         move || -> Box<dyn librespot::playback::audio_backend::Sink> {
-            Box::new(audio_sink::RouteFollowingSink::new())
+            Box::new(audio_track_sink::AudioTrackSink::new())
         },
     );
 

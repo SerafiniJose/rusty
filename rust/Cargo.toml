@@ -25,16 +25,9 @@ android_logger = "0.13"
 # the pure-Rust libmdns zeroconf discovery backend.
 librespot = { version = "0.8", default-features = false, features = [
     "rustls-tls-webpki-roots",
-    "rodio-backend",
     "with-libmdns",
 ] }
 
-# We provide our own audio sink (see src/audio_sink.rs) instead of librespot's
-# stock rodio backend so we can reopen the output stream when Android changes the
-# active audio route (e.g. Bluetooth connect/disconnect). Pinned to the same rodio
-# (and therefore cpal) version librespot uses so the types unify into one crate.
-# cpal is reached via rodio's re-export (`rodio::cpal`), so no direct cpal dep.
-rodio = { version = "0.21", default-features = false, features = ["playback"] }
 
 # Crypto
 sha1 = "0.10"
