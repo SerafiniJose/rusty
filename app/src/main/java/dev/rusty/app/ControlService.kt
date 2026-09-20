@@ -24,10 +24,14 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import dev.rusty.app.renderer.AnnounceHost
+import dev.rusty.app.renderer.AnnouncementRouting
 import dev.rusty.app.renderer.LanAddress
 import dev.rusty.app.renderer.MediaRendererService
+import dev.rusty.app.renderer.RendererPlaybackCore
 import dev.rusty.app.renderer.RendererRuntimeHolder
 import dev.rusty.app.renderer.RendererTransport
+import dev.rusty.app.renderer.SharedPrefsRendererStore
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
@@ -1329,8 +1333,17 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
         PiperDownloads.addEngineInvalidator(engineInvalidator)
     }
 
+    /**
+     * The announcement pipeline this service owns, built the first time one is needed with no DLNA
+     * player running — announcements are a control-page capability, and the media renderer is only
+     * ONE of the two pipelines that can voice them (see [AnnouncementRouting]).
+     *
+     * Confined to [announceLock]: every read and write below happens inside [announceText] or
+     * [release], both of which hold it.
+     */
+    private var localCore: RendererPlaybackCore? = null
+
     override fun announceText(text: String): ControlAnnounceResult = synchronized(announceLock) {
-        val renderer = MediaRendererService.instance ?: return ControlAnnounceResult.RendererUnavailable
         val selector = TtsVoices.parse(selectedVoicePref()) ?: VoiceSelector.SystemDefault
         val file = newAnnouncementFile("tts", "wav")
         // The selector prefix routes synthesis. No silent cross-engine fallback in either
@@ -1347,15 +1360,39 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
             // synthesizeToFile writes WAV regardless of engine.
             if (!synthesizeBlocking(engine, text, file)) return ControlAnnounceResult.TtsUnavailable
         }
-        play(renderer, file, "audio/wav", "Announcement")
+        play(file, "audio/wav", "Announcement")
     }
 
-    private fun play(renderer: MediaRendererService, file: File, mime: String, title: String): ControlAnnounceResult =
-        // Same process, so a plain file:// URI is playable by the renderer's ExoPlayer with no
-        // FileProvider or loopback HTTP hop. playAnnouncement returns false only when the
-        // service tore down between the instance read above and now.
-        if (renderer.playAnnouncement(Uri.fromFile(file).toString(), mime, title)) ControlAnnounceResult.Ok
-        else ControlAnnounceResult.RendererUnavailable
+    /**
+     * Hands the clip to whichever pipeline [AnnouncementRouting] picks. Same process, so a plain
+     * `file://` URI is playable by ExoPlayer with no FileProvider or loopback HTTP hop.
+     *
+     * Called with [announceLock] held.
+     */
+    private fun play(file: File, mime: String, title: String): ControlAnnounceResult {
+        if (released) return ControlAnnounceResult.PlaybackUnavailable
+        val uri = Uri.fromFile(file).toString()
+        val renderer = MediaRendererService.instance
+        if (AnnouncementRouting.host(renderer != null, localCore?.state) == AnnounceHost.RENDERER) {
+            // The renderer can take over, so a local core that has finished its work is dropped
+            // here rather than lingering with an ExoPlayer and a receiver listener attached.
+            if (AnnouncementRouting.shouldReleaseLocal(rendererAlive = true, localState = localCore?.state)) {
+                releaseLocalCore()
+            }
+            // Returns false only when the renderer tore down between the read above and now; that
+            // is not the user's problem, so fall through and voice it locally instead of failing.
+            if (renderer != null && renderer.playAnnouncement(uri, mime, title)) return ControlAnnounceResult.Ok
+        }
+        val core = localCore ?: RendererPlaybackCore(context, SharedPrefsRendererStore(prefs)).also { localCore = it }
+        return if (core.playAnnouncement(uri, mime, title)) ControlAnnounceResult.Ok
+        else ControlAnnounceResult.PlaybackUnavailable
+    }
+
+    /** Called with [announceLock] held. Settles whatever the core owes Spotify before dropping it. */
+    private fun releaseLocalCore() {
+        localCore?.let { runCatching { it.release() } }
+        localCore = null
+    }
 
     /**
      * A FRESH file per announcement, never overwrite-in-place: ExoPlayer may still be reading the
@@ -1541,8 +1578,13 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
         }
         engine?.let { runCatching { it.shutdown() } }
         // Under the announce lock: a Piper synthesis that beat the server shutdown may still be
-        // inside the engine; unmapping the model out from under it is native code.
-        synchronized(announceLock) { piperEngine.release() }
+        // inside the engine; unmapping the model out from under it is native code. The local
+        // announcement pipeline goes with it — its ExoPlayer must not outlive this service, and
+        // its release is what hands Spotify back a pause or duck an announcement still owes.
+        synchronized(announceLock) {
+            piperEngine.release()
+            releaseLocalCore()
+        }
         // The download slot outlives this service (the settings picker shares it), so a fetch in
         // flight is left running — only this service's claim on the engine is dropped.
         PiperDownloads.removeEngineInvalidator(engineInvalidator)

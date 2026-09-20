@@ -137,9 +137,11 @@ class ControlAnnounceProtocolTest {
         assertEquals(202, res.status)
     }
 
-    @Test fun announceText_rendererDown_is409() {
-        val rt = FakeAnnounceRuntime().apply { announceTextResult = ControlAnnounceResult.RendererUnavailable }
-        assertEquals(409, route(req("POST", "/api/announce/text", body = """{"text":"hi"}"""), rt).status)
+    @Test fun announceText_noPlaybackPipeline_is503() {
+        // Was a 409 "the DLNA player is not running" — announcements no longer need it, so the
+        // only remaining failure is the device tearing down under the request.
+        val rt = FakeAnnounceRuntime().apply { announceTextResult = ControlAnnounceResult.PlaybackUnavailable }
+        assertEquals(503, route(req("POST", "/api/announce/text", body = """{"text":"hi"}"""), rt).status)
     }
 
     @Test fun announceText_ttsUnavailable_is503() {

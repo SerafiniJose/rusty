@@ -23,8 +23,6 @@ import androidx.core.app.NotificationCompat
 import dev.rusty.app.HomeActivity
 import dev.rusty.app.NativeBridge
 import dev.rusty.app.R
-import dev.rusty.app.ReceiverStateStore
-import dev.rusty.app.RustyApp
 import dev.rusty.app.ServiceNotifications
 import java.util.UUID
 import java.util.concurrent.ExecutorService
@@ -32,13 +30,15 @@ import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 /**
- * Composition root for the DLNA MediaRenderer feature. Wires the tested pure layer
- * ([RendererStore]/reducer, [GenaSubscriptions], [RendererHttpProtocol], [SsdpMessages],
- * [UpnpEventXml]) to Android: an [ExoPlayer]-backed [RendererPlayer], a raw-socket
- * [RendererHttpServer]/[SsdpEndpoint] pair, and the Spotify session via
- * [RendererSpotifyBridge] + [NativeBridge]. This class intentionally contains no
- * arbitration logic of its own — every `when` below is a mechanical effect/event
- * translation; the "what should happen" decisions were made by the reducer already.
+ * Composition root for the DLNA MediaRenderer feature: the UPnP network layer — a raw-socket
+ * [RendererHttpServer]/[SsdpEndpoint] pair, [GenaSubscriptions] eventing, the device description
+ * and its UDN/BootID/ConfigID identity — wrapped around a [RendererPlaybackCore] that owns the
+ * player, the reducer and the Spotify choreography.
+ *
+ * The split is deliberate: none of the machinery in this file is needed to make a sound, so
+ * announcements keep working with the media renderer switched off (the control service builds a
+ * core of its own — see [AnnouncementRouting]). This class contains no arbitration logic of its
+ * own; the "what should happen" decisions were made by the reducer already.
  */
 class MediaRendererService : Service(), RendererRuntime {
 
@@ -70,9 +70,10 @@ class MediaRendererService : Service(), RendererRuntime {
     private lateinit var connectivityManager: ConnectivityManager
     private var multicastLock: WifiManager.MulticastLock? = null
 
-    private lateinit var store: RendererStore
-    private lateinit var player: RendererPlayer
-    private lateinit var bridge: RendererSpotifyBridge
+    /** Player + reducer + Spotify choreography. Everything below is the UPnP network layer this
+     *  service wraps around it; the core itself knows nothing about DLNA, which is what lets the
+     *  control service run announcements through a private one when this service is off. */
+    private lateinit var core: RendererPlaybackCore
     private lateinit var genaSubscriptions: GenaSubscriptions
     private lateinit var httpServer: RendererHttpServer
     private lateinit var ssdp: SsdpEndpoint
@@ -110,17 +111,6 @@ class MediaRendererService : Service(), RendererRuntime {
         val transportStatus: String,
     )
 
-    private val resumeRunnable = Runnable {
-        val (playing, gen) = bridge.snapshot()
-        store.dispatch(RendererEvent.ResumeTimerFired(playing, gen))
-    }
-
-    /** The pending fade-timer runnable; replaced by every ScheduleFadeTimer (single-slot, like
-     *  the resume timer — the reducer's phases never need two fades pending at once).
-     *  Confined to the store-drain thread, like every other mutable field here (RendererStore's
-     *  single-drain serialization is what makes that safe without further synchronization). */
-    private var fadeRunnable: Runnable? = null
-
     private val storeListener = RendererStore.Listener { state, _ ->
         // Every reduced state — not just the subset that changes the GENA-evented fields below —
         // is a potential UI-visible transition (fade phase, resume-pending, etc.), so the runtime
@@ -136,33 +126,20 @@ class MediaRendererService : Service(), RendererRuntime {
     /**
      * Backend for [RendererRuntimeHolder]: lets the DLNA player fragment observe live state and
      * issue transport commands without binding to this service. [dispatch] MUST route through
-     * [dispatchViaTranslator] — the exact snapshot-Spotify-then-reduce path the network SOAP Play
-     * handler uses (see [RendererHttpProtocol.handleAvTransport]) — so a UI command preserves
-     * Spotify interruption arbitration, fade choreography, and GENA eventing rather than poking
-     * [player]/[NativeBridge] directly.
+     * [RendererPlaybackCore.dispatchCommand] — the exact snapshot-Spotify-then-reduce path the
+     * network SOAP Play handler uses (see [RendererHttpProtocol.handleAvTransport]) — so a UI
+     * command preserves Spotify interruption arbitration, fade choreography, and GENA eventing
+     * rather than poking the player/[NativeBridge] directly.
      */
     private val runtimeBackend = object : RendererRuntimeHolder.Backend {
-        override fun state(): RendererState? = store.state
-        override fun positionMs(): Long? = player.positionMs()
+        override fun state(): RendererState? = core.state
+        override fun positionMs(): Long? = core.positionMs()
         override fun deviceName(): String = nameSnapshot
         override fun dispatch(command: RendererCommand) {
-            dispatchViaTranslator(command)
+            core.dispatchCommand(command)
             RendererRuntimeHolder.publishChanged()
         }
     }
-
-    /** The ONE construction site (shared with the network Play handler) for turning a live
-     *  Spotify snapshot + prefs into a [RendererEvent] via [RendererCommandTranslator], then
-     *  handing it to the reducer. */
-    private fun dispatchViaTranslator(command: RendererCommand) {
-        val (playing, gen) = bridge.snapshot()
-        val event = RendererCommandTranslator.toEvent(
-            command, playing, gen, RendererPrefs.mixMode(prefsStore), RendererPrefs.fadeMs(prefsStore),
-        )
-        store.dispatch(event)
-    }
-
-    private lateinit var bridgeListener: ReceiverStateStore.Listener
 
     /** Every network transition re-resolves the address from scratch ([refreshAddress]); which
      *  network moved is irrelevant, only what the device is reachable at. */
@@ -204,9 +181,7 @@ class MediaRendererService : Service(), RendererRuntime {
             // stale state and subscriptions.
             bootId = RendererPrefs.bumpBootId(prefsStore)
 
-            store = RendererStore(::handleEffect)
-            player = RendererPlayer(this, store)
-            bridge = RendererSpotifyBridge(store)
+            core = RendererPlaybackCore(this, prefsStore)
             genaSubscriptions = GenaSubscriptions(
                 nowMs = { SystemClock.elapsedRealtime() },
                 newSid = { "uuid:" + UUID.randomUUID() },
@@ -227,9 +202,7 @@ class MediaRendererService : Service(), RendererRuntime {
                 Log.w(TAG, "No LAN address yet; SSDP deferred until one arrives")
             }
 
-            store.addListener(storeListener)
-            bridgeListener = ReceiverStateStore.Listener(bridge::onSnapshot)
-            RustyApp.from(this).addListener(bridgeListener)
+            core.store.addListener(storeListener)
 
             registerNetworkCallbacks()
 
@@ -287,20 +260,16 @@ class MediaRendererService : Service(), RendererRuntime {
 
     /** Reverse-order teardown used by BOTH the onCreate failure path and onDestroy. Stops external
      *  entry points FIRST (SSDP byebye + HTTP) so no new SOAP/GENA work arrives once Shutdown is
-     *  dispatched; NativeBridge is process-static and store.dispatch is synchronous, so
-     *  ResumeSpotify/RestoreSpotifyVolume still fire correctly from here. Every step is individually
+     *  dispatched; the core's own teardown settles whatever it owes Spotify. Every step is individually
      *  guarded: a half-constructed service must never throw out of teardown, and calling this
      *  twice must be a no-op. */
     private fun releaseEverything() {
         runCatching { if (::ssdp.isInitialized) ssdp.stop(sendByebye = true) }
         runCatching { if (::httpServer.isInitialized) httpServer.stop() }
         runCatching { RendererRuntimeHolder.detach(runtimeBackend) }
-        runCatching {
-            if (::store.isInitialized && ::bridge.isInitialized) {
-                val (playing, generation) = bridge.snapshot()
-                store.dispatch(RendererEvent.Shutdown(playing, generation))
-            }
-        }
+        // Releases the player and settles the Spotify debt; its Shutdown is dispatched while
+        // [storeListener] is still attached, so the final state still events out.
+        runCatching { if (::core.isInitialized) core.release() }
         runCatching {
             if (::connectivityManager.isInitialized) {
                 connectivityManager.unregisterNetworkCallback(defaultNetworkCallback)
@@ -311,9 +280,7 @@ class MediaRendererService : Service(), RendererRuntime {
                 connectivityManager.unregisterNetworkCallback(lanNetworkCallback)
             }
         }
-        runCatching { if (::bridgeListener.isInitialized) RustyApp.from(this).removeListener(bridgeListener) }
-        runCatching { if (::store.isInitialized) store.removeListener(storeListener) }
-        runCatching { if (::player.isInitialized) player.release() }
+        runCatching { if (::core.isInitialized) core.store.removeListener(storeListener) }
         runCatching { eventExecutor.shutdown() }
         runCatching { mainHandler.removeCallbacksAndMessages(null) }
         runCatching { multicastLock?.let { lock -> if (lock.isHeld) lock.release() } }
@@ -369,74 +336,17 @@ class MediaRendererService : Service(), RendererRuntime {
 
     /**
      * Plays a locally-stored announcement (a TTS clip synthesized on-device from text typed on
-     * the control page) through the SAME SetUri → Play chain a network control
-     * point sends, so it inherits the whole announcement choreography for free: Spotify
-     * pause/duck arbitration, fade timing, GENA eventing and the DLNA screen's now-playing UI.
-     * Reached via [instance], mirroring the rename path: a stopped renderer must answer "not
-     * running" rather than be started just to make noise.
+     * the control page) through this service's core, so it shows up on the DLNA player screen and
+     * events out to GENA subscribers like a Home Assistant one. Reached via [instance], mirroring
+     * the rename path — but no longer the ONLY way to make an announcement: with this service
+     * stopped the control service plays through a core of its own (see [AnnouncementRouting]).
      *
      * Safe from an HTTP pool thread — [RendererStore.dispatch] serializes from any thread, which
      * is exactly how the SOAP connection threads already drive it. Returns false when the service
      * is torn down (racing [onDestroy], the same window [applyRename] guards against).
      */
-    fun playAnnouncement(uri: String, mime: String?, title: String): Boolean {
-        if (!initialised) return false
-        store.dispatch(RendererEvent.SoapSetUri(uri, announcementDidl(title), mime))
-        dispatchViaTranslator(RendererCommand.Play)
-        return true
-    }
-
-    /** Minimal DIDL-Lite for a local announcement, so the DLNA player screen and GENA
-     *  subscribers see a real title instead of a bare file URI. */
-    private fun announcementDidl(title: String): String =
-        "<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" " +
-            "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" " +
-            "xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\">" +
-            "<item id=\"announcement\" parentID=\"0\" restricted=\"1\">" +
-            "<dc:title>${UpnpXml.escape(title)}</dc:title>" +
-            "<upnp:class>object.item.audioItem.musicTrack</upnp:class>" +
-            "</item></DIDL-Lite>"
-
-    // -- Effect handling (RendererStore.EffectHandler) --------------------------------------
-
-    private fun handleEffect(effect: RendererEffect) {
-        when (effect) {
-            is RendererEffect.PreparePlayer -> player.prepare(effect.uri, effect.mime, effect.generation)
-            RendererEffect.PlayPlayer -> player.play()
-            RendererEffect.PausePlayer -> player.pause()
-            RendererEffect.StopPlayer -> player.stop()
-            is RendererEffect.SeekPlayer -> player.seekTo(effect.positionMs)
-            RendererEffect.PauseSpotify -> NativeBridge.pause()
-            RendererEffect.ResumeSpotify -> NativeBridge.play()
-            is RendererEffect.DuckSpotify ->
-                NativeBridge.setSpotifyAttenuation(NativeBridge.DUCK_FACTOR, effect.fadeMs.toInt())
-            is RendererEffect.MuteSpotify ->
-                NativeBridge.setSpotifyAttenuation(0f, effect.fadeMs.toInt())
-            is RendererEffect.RestoreSpotifyVolume ->
-                NativeBridge.setSpotifyAttenuation(1f, effect.fadeMs.toInt())
-            is RendererEffect.ScheduleFadeTimer -> {
-                fadeRunnable?.let(mainHandler::removeCallbacks)
-                val generation = effect.mediaGeneration   // stamped at SCHEDULE time, on purpose
-                val r = Runnable {
-                    val (_, sessionGen) = bridge.snapshot()
-                    store.dispatch(RendererEvent.FadeTimerFired(generation, sessionGen))
-                }
-                fadeRunnable = r
-                mainHandler.postDelayed(r, effect.delayMs)
-            }
-            RendererEffect.CancelFadeTimer -> {
-                fadeRunnable?.let(mainHandler::removeCallbacks)
-                fadeRunnable = null
-            }
-            is RendererEffect.ScheduleResumeTimer -> {
-                // Re-arming (SoapSetUri while owning) must not stack two pending releases: the
-                // earlier one would fire on the old, longer deadline and release Spotify mid-chain.
-                mainHandler.removeCallbacks(resumeRunnable)
-                mainHandler.postDelayed(resumeRunnable, effect.delayMs)
-            }
-            RendererEffect.CancelResumeTimer -> mainHandler.removeCallbacks(resumeRunnable)
-        }
-    }
+    fun playAnnouncement(uri: String, mime: String?, title: String): Boolean =
+        initialised && core.playAnnouncement(uri, mime, title)
 
     // -- RendererRuntime (the seam RendererHttpProtocol drives) -----------------------------
 
@@ -448,13 +358,13 @@ class MediaRendererService : Service(), RendererRuntime {
 
     override val volumeFixed: Boolean get() = audioManager.isVolumeFixed
 
-    override val rendererState: RendererState get() = store.state
+    override val rendererState: RendererState get() = core.state
 
-    override fun dispatch(event: RendererEvent) = store.dispatch(event)
+    override fun dispatch(event: RendererEvent) = core.dispatch(event)
 
-    override fun positionMs(): Long = player.positionMs()
+    override fun positionMs(): Long = core.positionMs()
 
-    override fun spotifySnapshot(): Pair<Boolean, Long> = bridge.snapshot()
+    override fun spotifySnapshot(): Pair<Boolean, Long> = core.spotifySnapshot()
 
     override fun mixMode(): SpotifyInterruption = RendererPrefs.mixMode(prefsStore)
 
@@ -488,7 +398,7 @@ class MediaRendererService : Service(), RendererRuntime {
 
     override fun onSubscribed(sub: GenaSubscriptions.Sub) {
         val body = when (sub.service) {
-            UpnpService.AVTRANSPORT -> UpnpEventXml.avTransportLastChange(store.state)
+            UpnpService.AVTRANSPORT -> UpnpEventXml.avTransportLastChange(core.state)
             UpnpService.RENDERINGCONTROL -> UpnpEventXml.renderingControlLastChange(volumePercent(), muted())
             UpnpService.CONNECTIONMANAGER -> UpnpEventXml.connectionManagerInitial()
         }

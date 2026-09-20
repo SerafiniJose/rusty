@@ -63,9 +63,10 @@ interface ControlRuntime {
     fun controlPageHtml(): String
 
     /**
-     * Speaks [text] on the device (on-device TTS) through the DLNA playback pipeline, so the
-     * announcement inherits the same Spotify duck/pause-and-resume choreography a Home Assistant
-     * announcement gets. Blocks on synthesis — pool threads only, like [immichList].
+     * Speaks [text] on the device (on-device TTS), inheriting the same Spotify
+     * duck/pause-and-resume choreography a Home Assistant announcement gets — through the DLNA
+     * player when it is running, and through a pipeline the control service owns when it is not.
+     * Blocks on synthesis — pool threads only, like [immichList].
      */
     fun announceText(text: String): ControlAnnounceResult
 
@@ -563,14 +564,16 @@ object ControlProtocol {
         return announceResponse(rt.announceText(text))
     }
 
-    /** 202, not 200: playback is handed to the DLNA pipeline and proceeds (or fails, e.g. an
+    /** 202, not 200: playback is handed to the pipeline and proceeds (or fails, e.g. an
      *  undecodable clip) asynchronously — exactly the "accepted, confirm by observing state"
      *  contract the panel and foreground routes already teach the page. */
     private fun announceResponse(result: ControlAnnounceResult): HttpResponse = when (result) {
         ControlAnnounceResult.Ok ->
             HttpResponse(202, "Accepted", listOf("Content-Type" to JSON_CONTENT_TYPE), """{"status":"playing"}""")
-        ControlAnnounceResult.RendererUnavailable ->
-            errorResponse(409, "Conflict", "the DLNA player is not running on the device")
+        // 503, where a stopped DLNA player used to 409: there is no state the caller can fix any
+        // more, only a device that was shutting down as the request landed. Retrying is the fix.
+        ControlAnnounceResult.PlaybackUnavailable ->
+            errorResponse(503, "Service Unavailable", "the device is not able to play audio right now")
         ControlAnnounceResult.TtsUnavailable ->
             errorResponse(503, "Service Unavailable", "text-to-speech is not available on the device")
     }

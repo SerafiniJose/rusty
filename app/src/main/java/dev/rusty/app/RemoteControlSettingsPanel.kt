@@ -15,9 +15,6 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
 import com.google.android.material.button.MaterialButton
-import dev.rusty.app.renderer.RendererStatus
-import dev.rusty.app.renderer.RendererStatusPublisher
-import dev.rusty.app.renderer.RendererStatusSnapshot
 
 /**
  * Binder for the Remote Control settings tab — the control API's own surface, present exactly
@@ -31,9 +28,8 @@ import dev.rusty.app.renderer.RendererStatusSnapshot
  *    rather than pretend): enabling with no password detours through the set-password dialog,
  *    and cancelling that reverts the switch.
  *  - ANNOUNCEMENTS: the voice quality and the announcement voice (moved here from the DLNA tab
- *    — announcements are a control-page capability; the DLNA player is merely the pipeline that
- *    speaks them). Quality comes first because it decides which voices there are to pick from.
- *    The renderer hint keeps that dependency honest without re-gating anything on it.
+ *    — announcements are a control-page capability, and no longer need the DLNA player running
+ *    at all). Quality comes first because it decides which voices there are to pick from.
  */
 class RemoteControlSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanelProvider {
 
@@ -141,19 +137,13 @@ class RemoteControlSettingsPanel(private val ctx: SettingsPanelContext) : Settin
 
         val voiceValue = panel.findViewById<TextView>(R.id.tvTtsVoiceValue)
         val changeVoice = panel.findViewById<MaterialButton>(R.id.btnChangeTtsVoice)
-        val rendererHint = panel.findViewById<TextView>(R.id.tvAnnounceRendererHint)
         // Labelling and persistence live in the model, shared with the control routes.
         fun repaintVoice(model: TtsVoicePickerModel) { voiceValue.text = model.rowValue() }
         repaintVoice(TtsVoicePickerModel(activity, engine = null))
 
-        // Announcements only make sound through the running DLNA player; the row still works
-        // without it (the choice is a preference), so this is a hint, not a gate. Replays the
-        // current snapshot on registration, like the DLNA panel's status line.
-        val rendererListener: (RendererStatusSnapshot) -> Unit = { snap ->
-            val alive = snap.status == RendererStatus.RUNNING || snap.status == RendererStatus.STARTING
-            rendererHint.visibility = if (alive) View.GONE else View.VISIBLE
-        }
-        RendererStatusPublisher.addListener(rendererListener)
+        // No "start the DLNA player to hear these" hint any more: the control service voices
+        // announcements through a pipeline of its own when the media renderer is stopped, so the
+        // only thing that can silence them is having no voice, which the picker says itself.
 
         // The engine spun up for enumeration; alive only from a SUCCESSFUL init to picker
         // dismissal (or panel teardown, whichever comes first — the cleanup lambda below covers
@@ -214,10 +204,7 @@ class RemoteControlSettingsPanel(private val ctx: SettingsPanelContext) : Settin
             pendingStatus?.let { handleInit(it) }
         }
 
-        return {
-            RendererStatusPublisher.removeListener(rendererListener)
-            shutdownVoiceEngine()
-        }
+        return { shutdownVoiceEngine() }
     }
 
     private companion object {

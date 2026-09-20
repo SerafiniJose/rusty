@@ -177,18 +177,6 @@
             android:text="Manage" />
     </LinearLayout>
 
-    <!-- Only visible while the DLNA player is not running: announcements play through it. -->
-    <TextView
-        android:id="@+id/tvAnnounceRendererHint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:fontFamily="@font/hanken_regular"
-        android:text="Announcements play through the DLNA player, which isn't running — start it from DLNA Player settings to hear them."
-        android:textColor="@color/muted_dim"
-        android:textSize="12sp"
-        android:visibility="gone" />
-
     <TextView
         android:id="@+id/tvRemoteControlFeedback"
         android:layout_width="match_parent"

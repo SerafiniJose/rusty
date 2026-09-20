@@ -156,6 +156,10 @@ browser on the same network and you get a single page with:
   (or pressing any remote key) also wakes it.
 - **Volume** — the media volume slab. Hidden on devices whose volume is fixed (some TVs and
   docks).
+- **Announce** — type a message and the device says it out loud, in the voice picked from the
+  same list as **Settings → Remote control** (downloadable voices included). Spotify pauses or
+  fades while it speaks and resumes afterwards. Nothing else has to be running for this: no DLNA
+  player, no Home Assistant — Rusty does the speaking itself.
 - **Slideshow sources** — the same album / person / tag checklists as the in-app picker, so you
   can re-aim the photo frame from the sofa. Collapsed under **Service**, since it's a setup task
   rather than something you do daily.

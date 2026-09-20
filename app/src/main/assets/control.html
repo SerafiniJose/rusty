@@ -1674,9 +1674,9 @@
   // ---- announcements ----
 
   /**
-   * Both announce routes answer 202 the moment the clip is handed to the DLNA pipeline; actual
-   * playback (and any decode failure) happens asynchronously on the device, so the page shows a
-   * transient "playing" status rather than pretending to know the outcome — the same
+   * The announce route answers 202 the moment the clip is handed to the device's playback
+   * pipeline; actual playback (and any decode failure) happens asynchronously there, so the page
+   * shows a transient "playing" status rather than pretending to know the outcome — the same
    * accepted-not-confirmed posture as the panel switch.
    */
   var ANNOUNCE_STATUS_CLEAR_MS = 4000;

@@ -3,17 +3,22 @@ package dev.rusty.app
 /**
  * Outcome of a `POST /api/announce/text`.
  *
- * There is deliberately no "audio was undecodable" case: the runtime hands the clip to the DLNA
- * pipeline without probing it, so a corrupt clip surfaces exactly the way a bad Home Assistant
- * announcement does — the renderer's transport reports ERROR_OCCURRED asynchronously. The
+ * There is deliberately no "audio was undecodable" case: the runtime hands the clip to the
+ * playback pipeline without probing it, so a corrupt clip surfaces exactly the way a bad Home
+ * Assistant announcement does — the transport reports ERROR_OCCURRED asynchronously. The
  * synchronous failures are the two the runtime CAN know at request time.
  */
 sealed class ControlAnnounceResult {
-    /** Accepted and handed to the DLNA pipeline; playback proceeds asynchronously. */
+    /** Accepted and handed to a playback pipeline; playback proceeds asynchronously. */
     object Ok : ControlAnnounceResult()
 
-    /** The DLNA player service is not running, so there is no pipeline to play through. */
-    object RendererUnavailable : ControlAnnounceResult()
+    /**
+     * No pipeline could take the clip. NOT "the DLNA player is off" — announcements no longer need
+     * it; the control service builds a pipeline of its own when the media renderer is stopped.
+     * What is left is the teardown race: the service was released between accepting the request
+     * and playing it.
+     */
+    object PlaybackUnavailable : ControlAnnounceResult()
 
     /** Text route only: the device's TTS engine failed to initialise or to synthesize. */
     object TtsUnavailable : ControlAnnounceResult()
