@@ -1,14 +1,16 @@
 # Rusty
 
-A **Spotify Connect receiver for Android** with an ambient, lyrics-aware now-playing screen —
-now grown into a small, always-on **appliance**. Open the app and the device starts advertising
-itself on your local network, appearing as a speaker target in any Spotify client (phone,
-desktop, web) on the same Wi‑Fi. Pick it, and audio streams directly to the device. When nothing
-is playing it settles into a screensaver, and it can double as a full-screen **Home Assistant**
-dashboard.
+**Rusty turns a spare Android screen into an always-on appliance for the room it sits in.**
 
-Built on **[Rust](https://www.rust-lang.org/)** — and built to give new life to rusty devices.
-Runs great on always-on screens like the Amazon Echo Show, and on any Android 8.0+ device.
+It starts as a **Spotify Connect receiver**: open it and the device appears as a speaker in any
+Spotify client on your network — phone, desktop, web — with audio streamed and decoded on the
+device itself, under an ambient, lyrics-aware now-playing screen. Leave it alone and it becomes
+whatever else the room needs: a photo frame, a **Home Assistant** dashboard, a wall of camera
+feeds, or just a good clock.
+
+Built on **[Rust](https://www.rust-lang.org/)** and **[Kotlin](https://kotlinlang.org/)** — and
+built to give new life to rusty devices. Runs on any Android 8.0+ device, and is at home on
+always-on screens like the Amazon Echo Show.
 
 <!-- Replace the badge owner/repo if you rename the repository. -->
 [![Release](https://img.shields.io/github/v/release/SerafiniJose/rusty?sort=semver)](https://github.com/SerafiniJose/rusty/releases/latest)
@@ -51,198 +53,57 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 
 ## Features
 
-- **Spotify Connect target** — zero-config discovery; appears automatically in Spotify clients on the same network.
-- **Direct streaming playback** — high-bitrate audio decoded on-device via [librespot](https://github.com/librespot-org/librespot) (Rust), output through cpal's native **AAudio** backend.
-- **Follows the active audio route** — output reopens automatically when the route changes (e.g. connecting/disconnecting a Bluetooth speaker or headset mid-playback), so audio moves with it instead of going silent.
-- **Ambient now-playing UI** — album-art color wash, drifting mesh background, accent-aware theming, and a calm idle clock face when nothing is playing.
-- **Synced lyrics** — time-aligned lyrics that scroll with the track, the active line highlighted.
-- **Transport controls** — play / pause / next / previous from the device itself.
-- **Live device rename** — change the receiver's broadcast name from Settings; it re-advertises immediately, no restart.
-- **Tunable** — pick streaming bitrate (96 / 160 / 320 kbps), a fullscreen "hide system bars" mode, and 12/24-hour clock.
-- **Shows your Spotify display name** while connected.
-- **Screensaver** — after an idle timeout (or a tap on the clock) Rusty shows a full-screen idle face and gently wakes back to now-playing. Pick a clean **Clock** face, an **OLED**-burn-in-safe drifting face, a **Spotify Canvas** face that plays the track's looping Canvas video, or an **Immich Slideshow** face.
-- **Immich Slideshow** — turn the idle screen into your own photo frame: point Rusty at a self-hosted [Immich](https://immich.app) server and it shows your library, or just the albums, people or tags you pick, with slow Ken Burns motion, a blurred fill, an optional clock and photo info, and pause / next / previous from the screen or a remote. The key it needs is read-only — see [Immich API key permissions](#immich-api-key-permissions).
-- **Home Assistant dashboard** — an optional second screen: sign in from Rusty's settings (or through the dashboard's own login) and Rusty shows your Home Assistant dashboards full-screen in a kiosk-style view, with switcher chips to jump between them. It auto-discovers your dashboards and sidebar apps, and can tint its own chrome to match your dashboard theme.
-- **Home Assistant media renderer** — optionally expose Rusty as a DLNA media player that Home Assistant auto-discovers as a `media_player` entity (nothing to install on the HA side). Speak TTS announcements ("the wash is done", a doorbell chime, a morning briefing) or stream internet radio to it from automations, scripts, or a dashboard card — Rusty pauses or fades Spotify while the message plays and resumes it afterwards.
-- **Cameras** — a wall of your RTSP cameras: snapshot tiles that refresh on a timer, and a tap or OK away a full-screen live view with sound, a sub/main stream switch and a snapshot button that saves to Pictures/Rusty. Add cameras by scanning the network (ONVIF), by address, or by hand; drag to reorder; show them all at once or in pages of 4, 6 or 8 that can turn on their own. Off by default. See [Cameras](#cameras).
-- **Spotify Canvas in now-playing** — optionally fill the now-playing screen with the track's looping Canvas video instead of static album art.
-- **Remote control** — an optional, off-by-default web page and HTTP API the device serves itself: switch what Rusty is showing (Spotify, Home Assistant, DLNA or the lock screen), bring its window forward or send it away, pick the lock screen's theme, turn the screen on/off, set brightness and media volume, and edit the Slideshow's album/person/tag filters from your phone or laptop. While it's on, the device announces itself on the network so a Home Assistant integration can discover it. See [Remote control](#remote-control).
-- **Playback takeover** — optionally have Rusty react when a phone or laptop starts playing on this receiver: switch the app to the Spotify page, and wake the screen and bring Rusty to the front. Two toggles in **Settings → Spotify**, both off by default. See [Playback takeover](#playback-takeover).
-- **Services & status** — one page showing every service and feature at a glance, each with its state, name and address, reachable from the info button on any screen.
-- **Update from the device** — check for a new release and install it from **About & updates**, or from the control page in another room. Android always asks for confirmation on the device screen.
-- **On-screen launcher** — an expandable button jumps between Spotify, Home Assistant, and the screensaver.
-- **Start on boot & Keep screen on** — optional toggles to launch Rusty when the device powers on and to hold the display awake while it's in front.
-- **Tabbed settings** — each feature gets its own settings page.
+**Spotify**
 
-## Requirements
+- **Connect target** — zero-config discovery; appears automatically in any Spotify client on the
+  same network.
+- **Streamed straight to the device** — decoded on-device by
+  [librespot](https://github.com/librespot-org/librespot) (Rust) through cpal's native **AAudio**
+  backend, at up to 320 kbps. The output follows the active audio route, so sound moves with a
+  Bluetooth speaker connected or dropped mid-track.
+- **Ambient now-playing screen** — album-art colour wash, drifting mesh background, accent-aware
+  theming, and time-aligned **lyrics** that scroll with the track, active line highlighted.
+  Optionally the track's looping **Spotify Canvas** video in place of static art.
+- **Playback takeover** — when a phone or laptop starts playing on this receiver, Rusty can wake
+  the screen and bring itself to the front. Both toggles off by default. See
+  [Playback takeover](docs/remote-control.md#playback-takeover).
 
-- **Spotify Premium** — Spotify Connect requires a Premium account.
-- **Android 8.0 (API 26) or newer.**
-- A **64-bit (arm64-v8a)** or **32-bit ARM (armeabi-v7a)** device. (No x86 builds are shipped.)
-- The receiver and the controlling Spotify client must be on the **same local network**.
-- **Home Assistant mode (optional)** needs a Home Assistant instance reachable on the same local network.
-- **Immich Slideshow (optional)** needs a self-hosted [Immich](https://immich.app) server reachable on the same local network, plus an API key (see below).
-- **Remote control (optional)** is off by default and needs nothing but a browser on the same local network — read the [security note](#security--please-read-before-enabling) before enabling it.
+**When nothing is playing**
 
-> Tested on an Amazon Echo Show 8 running LineageOS 18.1 (Android 11) and on a Lenovo Tab M10 (TB-X606FA).
+- **Screensaver** — after an idle timeout, a clean **Clock** face, a burn-in-safe **OLED** face,
+  the track's **Canvas**, or your own photos. It wakes gently back to now-playing.
+- **Immich Slideshow** — point Rusty at a self-hosted [Immich](https://immich.app) server and the
+  idle screen becomes a photo frame: the whole library or just the albums, people and tags you
+  pick, with slow Ken Burns motion, a blurred fill and an optional clock. The key it needs is
+  read-only — see [Immich API key permissions](docs/requirements.md#immich-api-key-permissions).
 
-### Immich API key permissions
+**More than a speaker**
 
-Create the key in Immich under **Account settings → API keys**, and grant it these
-read permissions:
+- **Home Assistant dashboard** — sign in and Rusty shows your dashboards full-screen and
+  kiosk-style, with switcher chips to jump between them and chrome tinted to your theme. It
+  discovers your dashboards and sidebar apps itself.
+- **Home Assistant media renderer** — Rusty appears as a DLNA `media_player` entity with nothing
+  to install on the HA side. Stream internet radio to it, or drive it from automations, scripts
+  and dashboard cards.
+- **Spoken announcements** — type a message on the control page or send one from a Home Assistant
+  automation and the device says it out loud, in a downloadable neural voice.  Spotify pauses or fades while it speaks and resumes afterwards.
+- **Cameras** — a wall of your RTSP cameras as snapshot tiles that refresh on a timer, and a tap
+  or OK away a full-screen live view with sound, a sub/main switch and a snapshot button. Add
+  them by ONVIF scan, by address or by hand. A Rusty with its own camera can share it to the
+  others. See [Cameras](docs/cameras.md).
 
-```
-album.read
-album.statistics
-asset.view
-asset.read
-asset.statistics
-face.read
-memory.read
-person.read
-person.statistics
-tag.read
-user.read
-```
+**Living with it**
 
-## Cameras
-
-Turn the feature on in **Settings → General → Cameras**, then open **Settings → Cameras** to add
-them. **Scan this Wi-Fi network** finds ONVIF cameras and fills in their stream for you; a camera
-on another subnet can be added **by address** (ONVIF on port 8000 or 80); anything else takes an
-`rtsp://` URL **by hand**. **Test** probes each stream and names the codec, so you know the device
-can decode it before you save. Usernames and passwords are kept in Rusty's encrypted store, never
-in the stream URL.
-
-The wall shows a still per camera, taken from the camera's snapshot URL when it has one and
-otherwise grabbed from the stream. Pick **All in one view**, where tiles shrink to fit, or
-**Pages of 4, 6 or 8** with bigger tiles, flipped with ◀ ▶ or on a timer. The refresh runs one
-camera at a time and starts at 30 s: grabbing a frame from a stream costs a few seconds of
-decoding, so a faster setting would keep the device busy without showing you more. Tap a tile or
-press OK for the live view: sound if the camera has it, a **SUB | MAIN** switch when a
-high-resolution stream is set, and a snapshot button that saves to Pictures/Rusty.
-
-A live view with sound pauses Spotify while it is up and resumes it afterwards. Streams use RTSP
-over TCP by default; turn **Force TCP** off per camera only if yours needs UDP.
-
-## Remote control
-
-Rusty can serve a small control page — and the HTTP API behind it — from the device itself, so
-you can drive the screen from another room without walking over to it.
-
-**It is off by default.** Turn it on in **Settings → General → Remote control**. The same row
-then shows the address to open, something like `http://192.168.1.42:8765/`. Type that into any
-browser on the same network and you get a single page with:
-
-- **Source** — four lamps for the four things Rusty can be showing: Spotify, Home Assistant,
-  DLNA and the lock screen. Tap one and the device switches to it. A lamp only lights once the
-  device confirms the switch, so a command that didn't land never looks like it did; a feature
-  you've switched off in Settings stays in place, struck through, rather than disappearing.
-  Switching needs Rusty to be on screen — if it isn't, the row says so instead of pretending.
-- **Cameras** — when the Cameras feature is on, the Source row gains a Camera lamp and, while it
-  is lit, a strip of your cameras: tap one to show it full screen on the device, or **Grid** to
-  go back to the wall. With the password on, the API also serves each camera's latest still at
-  `/api/camera/<id>/snapshot`.
-- **On screen** — a switch that brings Rusty's window to the front, or sends it out of the way to
-  whatever's behind it. Bringing it forward wakes the display first, so it works on a sleeping
-  panel. Both directions need Rusty to hold Android's **"Display over other apps"** permission —
-  and the switch is deliberately dead in *both* directions without it, because sending Rusty away
-  when it can't come back would leave a touch-free screen with no way home.
-- **Lock screen theme** — pick Clock, OLED, Canvas or Slideshow. This one works even when Rusty
-  isn't in the foreground, because it's a saved preference: a lock screen that appears later
-  uses it, and one that's already up swaps instantly.
-- **Screen** — on/off and a brightness slab you can drag anywhere on. "Off" is a full-screen
-  black overlay that keeps the panel awake, so turning it back on is instant; touching the device
-  (or pressing any remote key) also wakes it.
-- **Volume** — the media volume slab. Hidden on devices whose volume is fixed (some TVs and
-  docks).
-- **Announce** — type a message and the device says it out loud, in the voice picked from the
-  same list as **Settings → Remote control** (downloadable voices included). Spotify pauses or
-  fades while it speaks and resumes afterwards. Nothing else has to be running for this: no DLNA
-  player, no Home Assistant — Rusty does the speaking itself.
-- **Slideshow sources** — the same album / person / tag checklists as the in-app picker, so you
-  can re-aim the photo frame from the sofa. Collapsed under **Service**, since it's a setup task
-  rather than something you do daily.
-- **Software** — see whether a newer Rusty release exists and start the download from your sofa,
-  also under **Service**. The device fetches the APK itself and hands it to Android's installer;
-  **Android always asks for confirmation on the device screen** (a sideloaded app can't update
-  itself silently), so the last step is one OK on the device — by touch or D-pad. The very first
-  time, Android also shows a one-time **"allow installs from this source"** screen for Rusty.
-
-The port is fixed at **8765**. Nothing needs to be installed on the other device — it's one
-self-contained page, no accounts, no cloud.
-
-### The "Allow system brightness" row
-
-Under the toggle you may see a row asking to allow system brightness. It opens Android's **Modify
-system settings** screen for Rusty. Granting it lets the brightness slider move the **device's
-real display brightness**; without it, Rusty can only dim its own window, which looks the same
-from across the room but doesn't affect anything else on screen. The control page tells you which
-mode is in effect. It is entirely optional, and Remote control works without it. While the grant is
-missing the Remote control switch itself shows **amber** rather than green — the service is running
-and everything else works; the amber only flags the unclaimed brightness permission.
-
-### Home Assistant
-
-While Remote control is on, Rusty advertises itself as `_rusty._tcp` over mDNS so a Home
-Assistant integration can discover it on the network and expose the screen, volume, playing
-state and the active panel as entities. That integration is a separate project; Rusty itself needs no configuration
-for it beyond the toggle.
-
-### Security — please read before enabling
-
-The API and control page are **open by default**: no password, PIN or token. That is a deliberate
-choice for a device that lives on a home network, and you can change it. **Settings → Remote
-Control → Require password** sets a password that every request must carry (the control page asks
-for it once and remembers it in that browser; scripts send it as
-`Authorization: Bearer <password>`). Camera stills over the API are only served
-at all while the password is on. With the password off, this is what "open" means:
-
-- **Any client on your local network can control this device**: switch the screen on or off,
-  change brightness and media volume, and change the Slideshow filters. It can also **read the
-  names of your Immich albums, people and tags** (names only — no photos are served through this
-  API, and your Immich API key never leaves the device). Camera names are visible too, though
-  stills are refused without the password. It can also start an app update —
-  the worst that does is pop the system's install prompt on the device screen, because the APK
-  always comes from Rusty's own GitHub Releases (the URL is pinned in the app, not taken from
-  the request) and nothing installs without the on-device confirmation.
-- **Any app already installed on the device** that holds the `INTERNET` permission can do the
-  same, because `localhost`/`127.0.0.1` are deliberately accepted as valid hosts (that is what
-  makes `adb forward` debugging work). This isn't a new class of exposure — a local app could
-  already reach any server on the LAN — but it is worth knowing.
-- Browser-based attacks are guarded against: Rusty validates the `Host` header (so a page on the
-  public internet can't use DNS rebinding to reach it), never emits CORS headers, requires
-  `Content-Type: application/json` on writes, and serves nothing but the one embedded page and
-  the fixed API routes.
-
-So: leave it off unless you want it, set the password if anyone you don't fully trust shares the
-network, and don't enable it at all on a network you don't trust — a guest Wi-Fi, a shared flat,
-a café. If you need it reachable from outside your home, put it behind your
-own VPN rather than forwarding port 8765.
-
-### Playback takeover
-
-**Settings → Spotify** has two toggles, both off by default: **Switch to Spotify on playback** and
-**Wake and show Rusty on playback**. Both react only to a genuine new play started from another
-device — renaming the receiver, changing bitrate, or a plain pause/resume won't trigger them.
-
-**Wake and show Rusty** is one gesture rather than a screen switch and an app switch, because the
-halves are not separately useful: an app launched while the display is off may never resume, so
-waking and coming forward only make sense together. It needs Android's **Display over other apps**
-permission (`SYSTEM_ALERT_WINDOW`), and it is all-or-nothing — without the grant it does nothing at
-all, not even the wake it could technically perform.
-
-Turning it on without the permission opens the system grant screen directly, and until the grant
-lands the switch shows **amber** rather than green, with the reason under it. On devices that ship
-no such screen — common on Android TV and Fire OS builds — the toggle disables itself with an
-explanation instead, since there is nothing to send you to.
-
-Holding that permission is a documented background-activity-launch exemption on Android 10–15, but
-Android 14–16 have progressively hardened background launches, and some OEM builds ignore the
-exemption regardless. A blocked launch is swallowed silently by the platform — there is no way for
-Rusty to detect it — so on an affected device the toggle quietly degrades to a wake plus a page
-switch: the screen still lights, and the Spotify page is ready and waiting the next time you open
-the app, with the existing media notification as the manual way to bring it forward.
+- **Remote control** — an optional, off-by-default web page and HTTP API the device serves
+  itself: switch what Rusty is showing, bring its window forward, set brightness, volume and
+  screen on/off, speak a message, and re-aim the Slideshow — from a phone in another room. Scan
+  a QR code to open it. See [Remote control](docs/remote-control.md).
+- **Services & status** — one page showing every service and feature at a glance, each with its
+  state, name and address, reachable from the info button on any screen.
+- **Made to sit on a shelf** — start on boot, keep the screen on, hide the system bars, rename
+  the receiver live without a restart, update itself from **About & updates** or from another
+  room, an on-screen launcher between Spotify, Home Assistant and the screensaver, and settings
+  tabbed per feature.
 
 ## Install
 
@@ -259,70 +120,41 @@ the app, with the existing media notification as the manual way to bring it forw
 > sideloading; if you later switch to a release-signed build, uninstall first to avoid a signature
 > conflict on upgrade.
 
-## Build from source
+## Remote control is open by default — read this first
 
-**Toolchain:** JDK 17, Android SDK (compileSdk 36), Gradle 8.13 (via the wrapper), AGP 8.13.2, Kotlin 2.0.21.
+Rusty's remote-control page and HTTP API are **off** until you switch them on, and once on they
+carry **no password unless you set one**: anyone on your local network can drive the device, and
+the camera share serves plain RTSP on port 8554. That is a reasonable default on a home network
+and a bad one anywhere else. Set a password, never port-forward 8765 or 8554, and reach it from
+outside over your own VPN instead. The full detail, threat by threat, is in
+[Remote control → Security](docs/remote-control.md#security--please-read-before-enabling).
 
-```bash
-git clone https://github.com/SerafiniJose/rusty.git
-cd rusty
-./gradlew assembleDebug          # → app/build/outputs/apk/debug/app-debug.apk
-```
+## Documentation
 
-The Android build consumes **prebuilt native libraries** committed under
-`app/src/main/jniLibs/{arm64-v8a,armeabi-v7a}/libspotify_receiver_core.so`, so you do **not**
-need the Rust toolchain to build the APK.
+The detail lives in [`docs/`](docs/), one page per area:
 
-### Rebuilding the native core (only when Rust changes)
+- [**Requirements**](docs/requirements.md) — what Rusty needs from your device and network, and
+  the exact read-only permissions for an Immich API key.
+- [**Cameras**](docs/cameras.md) — adding RTSP cameras, the snapshot wall and live view, and
+  sharing one Rusty device's own camera to the others.
+- [**Remote control**](docs/remote-control.md) — the control page and HTTP API end to end: every
+  card, the QR code, system brightness, Home Assistant, playback takeover, and the security note.
+- [**Build from source**](docs/build.md) — the Gradle build, and rebuilding the Rust native core.
+- [**How it works**](docs/how-it-works.md) — the architecture, from librespot up to the UI.
 
-The native core lives in [`rust/`](rust/). It cross-compiles with
-[`cargo-ndk`](https://github.com/bbqsrc/cargo-ndk), which writes the refreshed `.so`
-files straight into `jniLibs` for both ABIs:
+## Work in Progress
 
-```bash
-cargo install cargo-ndk                                    # one-time
-rustup target add aarch64-linux-android armv7-linux-androideabi
-export ANDROID_NDK_HOME=/path/to/ndk                       # NDK r27+
+- **One track, every room** — play in sync across several Rusty devices at once, so a shelf of
+  old screens becomes a multi-room system.
+- **Calls between Rusty devices** — turn a pair of Rusty screens into an intercom, room to room.
+- **Rusty as a microphone for your voice assistant** — speak to the device and let it feed
+  Hermes agents, or a self-hosted assistant over the
+  [Wyoming protocol](https://www.home-assistant.io/integrations/wyoming/), turning a screen on a
+  shelf into a voice satellite for Home Assistant's Assist.
+- **A Home Assistant integration on HACS** — install Rusty support from HACS instead of leaning
+  on auto-discovery, with the device's services and status as proper entities.
 
-cd rust
-cargo ndk -t armeabi-v7a -t arm64-v8a --platform 26 \
-  -o ../app/src/main/jniLibs build --release
-```
-
-> **`--platform 26` is required.** The audio path is cpal's AAudio backend, which
-> links `libaaudio.so` — and the NDK ships that library only for API ≥ 26 (which is
-> also the app's `minSdk`). Omitting it fails to link with `unable to find library -laaudio`.
-
-> The JNI symbol names (`Java_dev_rusty_app_NativeBridge_*`) are derived from the
-> app package. If you ever change the package, the native symbols must be regenerated to match.
-
-## How it works
-
-```mermaid
-flowchart TD
-    client["Spotify client<br/>phone · desktop · web — same Wi-Fi"]
-    client -- "Connect / zeroconf" --> shell
-
-    subgraph shell["Rusty · feature shell — Kotlin (HomeActivity)"]
-        direction LR
-        spotify["Spotify<br/>now playing · lyrics · idle"]
-        dlna["DLNA player<br/>TTS / radio from Home Assistant"]
-        screensaver["Screensaver<br/>Clock · OLED · Canvas · Immich Slideshow"]
-        homeassistant["Home Assistant<br/>kiosk WebView → your instance"]
-    end
-
-    spotify -- "JNI (Spotify feature only)" --> core["Rust core — librespot 0.8<br/>session · player · audio backend"]
-```
-
-- The app is a small **feature shell** (`HomeActivity`) that hosts switchable, full-screen
-  features — the **Spotify** receiver, the **screensaver**, and **Home Assistant** — under one
-  shared chrome (clock, settings, on-screen launcher).
-- **Kotlin** (`app/`) handles the UI, the foreground service, network advertising, and the
-  now-playing / lyrics / settings / screensaver screens. Home Assistant is a kiosk **WebView**
-  pointed at your own instance — no Rust involved.
-- **Rust** (`rust/`) wraps [librespot](https://github.com/librespot-org/librespot) 0.8 and exposes
-  a small JNI surface (`NativeBridge`) for session lifecycle, transport, token retrieval, and
-  rename — used only by the Spotify feature.
+Ideas and votes are welcome in the [issues](https://github.com/SerafiniJose/rusty/issues).
 
 ## Credits & attribution
 
