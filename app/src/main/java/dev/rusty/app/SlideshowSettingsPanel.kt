@@ -51,12 +51,11 @@ class SlideshowSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPa
         val cleartextWarning = panel.findViewById<TextView>(R.id.tvImmichCleartextWarning)
 
         // ---- Collapsible sections ------------------------------------------------
-        // Attention rule: an unconfigured server starts expanded so first-run setup is never
-        // hidden behind a collapsed row; otherwise every visit starts fully collapsed.
-        val configuredAtBind = SlideshowSettings.config(prefs, secrets) != null
+        // Every visit starts fully collapsed, configured or not — same as every other settings
+        // panel; the header summaries say what still needs setting up.
         val serverSection = CollapsibleSection(
             panel.findViewById(R.id.headSsServer), panel.findViewById(R.id.bodySsServer),
-            "Server", startExpanded = !configuredAtBind)
+            "Server", startExpanded = false)
         val filtersSection = CollapsibleSection(
             panel.findViewById(R.id.headSsFilters), panel.findViewById(R.id.bodySsFilters),
             "Filters", startExpanded = false)
