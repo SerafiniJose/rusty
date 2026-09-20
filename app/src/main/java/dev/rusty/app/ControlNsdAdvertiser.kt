@@ -41,16 +41,19 @@ class ControlNsdAdvertiser(private val context: Context) {
 
     /**
      * Registers `serviceName = `[deviceName]`, serviceType = `[ControlNsdPlan.SERVICE_TYPE]`,
-     * port = `[port]`, TXT = `[ControlNsdPlan.txtAttributes]. Any registration already in flight
-     * for this advertiser is unregistered first — [ControlNsdPlan.action] answers [ControlNsdPlan
-     * .Action.Register] for both "nothing was registered" and "a different URL is now current", so
-     * this method, not the caller, is where a stale registration gets dropped.
+     * port = `[port]`, TXT = `[txt]. The caller ([ControlService]) builds [txt] via
+     * [ControlNsdPlan.txtAttributes] — this class only converts an already-decided map into
+     * `NsdServiceInfo.setAttribute` calls, it does not decide what belongs in it. Any registration
+     * already in flight for this advertiser is unregistered first — [ControlNsdPlan.action]
+     * answers [ControlNsdPlan.Action.Register] for "nothing was registered", "a different URL is
+     * now current" AND "the URL is the same but the TXT record changed", so this method, not the
+     * caller, is where a stale registration gets dropped.
      *
      * `onRegistrationFailed` only logs: per the design doc, discovery failure must not present as
      * a broken feature — the API stays reachable by manual IP, and [ControlServerStatus] is left
      * exactly as [ControlService] already published it.
      */
-    fun register(deviceName: String, port: Int, deviceId: String) {
+    fun register(deviceName: String, port: Int, txt: Map<String, String>) {
         val manager = context.getSystemService(NsdManager::class.java)
         if (manager == null) {
             Log.w(TAG, "NsdManager unavailable; control API will only be reachable by manual IP")
@@ -61,9 +64,7 @@ class ControlNsdAdvertiser(private val context: Context) {
             serviceName = deviceName
             serviceType = ControlNsdPlan.SERVICE_TYPE
             this.port = port
-            ControlNsdPlan.txtAttributes(deviceId, deviceName).forEach { (key, value) ->
-                setAttribute(key, value)
-            }
+            txt.forEach { (key, value) -> setAttribute(key, value) }
         }
 
         val listener = object : NsdManager.RegistrationListener {

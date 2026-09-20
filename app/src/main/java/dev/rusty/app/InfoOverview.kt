@@ -5,7 +5,7 @@ import dev.rusty.app.renderer.RendererTransport
 
 /**
  * The "Services & status" page's whole decision layer, pulled out of the view for the same reason
- * [ControlStatusLine] and [SlideshowSummaries] were: turning five independent runtime publishers into
+ * [ControlStatusLine] and [SlideshowSummaries] were: turning six independent runtime publishers into
  * one page of rows is an ordinary decision with no `android.*` dependency, and it is the part most
  * likely to render a comforting lie — a service that is starting, failed, or bound-without-an-address
  * must never be counted as running, and a configured integration must never inflate the service count.
@@ -19,8 +19,8 @@ import dev.rusty.app.renderer.RendererTransport
  *  is never the only signal. */
 enum class InfoTone { POSITIVE, PENDING, NEGATIVE, NEUTRAL }
 
-/** The three foreground services the page always reports, in display order. */
-enum class InfoServiceId { SPOTIFY, DLNA, REMOTE_CONTROL }
+/** The four foreground services the page always reports, in display order. */
+enum class InfoServiceId { SPOTIFY, DLNA, REMOTE_CONTROL, CAMERA_SHARE }
 
 /** The integrations the page reports when they are enabled or configured. */
 enum class InfoFeatureId { HOME_ASSISTANT, IMMICH_SLIDESHOW }
@@ -95,6 +95,25 @@ data class InfoControlInput(
 )
 
 /**
+ * Camera-share runtime facts: [state] is what [CameraShareStatus] is actually publishing, [enabled]
+ * the persisted `camera_share_enabled` switch, [controlUrl] the Remote Control server's current
+ * address, and [controlOn] whether Remote Control — the share's prerequisite, see
+ * [CameraShareService.shouldRun] — is switched on at all. Turning Remote Control off does not clear
+ * `camera_share_enabled`, so [enabled] staying true while [controlOn] is false is a real, reachable
+ * state, not a network hiccup — and [controlUrl] is empty there too, for the unrelated reason that
+ * the control server Remote Control owns is not running. The share is only reachable at a `rtsp://`
+ * URL built from [controlUrl]'s host, so an empty [controlUrl] with [controlOn] true is "waiting for
+ * network", not a share problem. [CameraShareSettingsModel] already decides the wording for the
+ * settings panel; this row reuses it rather than inventing new copy.
+ */
+data class InfoCameraShareInput(
+    val state: CameraShareStatus.State,
+    val enabled: Boolean,
+    val controlUrl: String,
+    val controlOn: Boolean,
+)
+
+/**
  * Home Assistant connection facts. Connected means an origin-matched refresh token exists OR live
  * discovery is loaded — the token half is the only cold-start signal, because discovery only ever runs
  * from inside the HA fragment, so [HaDiscovery.Idle] with a valid token is a normal connected state.
@@ -160,6 +179,7 @@ object InfoOverviewReducer {
         spotify: InfoSpotifyInput,
         dlna: InfoDlnaInput,
         control: InfoControlInput,
+        cameraShare: InfoCameraShareInput,
         ha: InfoHaInput,
         immich: InfoImmichInput,
         availableTabs: Set<SettingsTabKey>,
@@ -168,6 +188,7 @@ object InfoOverviewReducer {
             spotifyRow(spotify, availableTabs),
             dlnaRow(dlna, availableTabs),
             controlRow(control, availableTabs),
+            cameraShareRow(cameraShare, availableTabs),
         )
         val features = listOfNotNull(
             haRow(ha, availableTabs),
@@ -337,6 +358,53 @@ object InfoOverviewReducer {
             tone = tone,
             // There is no Remote Control tab — the switch lives in the General panel.
             settingsTab = tabOr(SettingsTabKey.GENERAL, availableTabs),
+        )
+    }
+
+    /**
+     * The status label defaults to [CameraShareSettingsModel.statusText] — the same wording the
+     * settings panel shows — except for the two ways this share can be blocked outright: a hardware
+     * fact ([CameraShareStatus.State.Unavailable]/[CameraShareStatus.State.Unsupported]) or Remote
+     * Control itself being off ([InfoCameraShareInput.controlOn]). Both get this row's own
+     * [InfoTone.NEGATIVE] "Needs attention" short word with a distinct explanatory sentence as
+     * [InfoServiceRow.detail] — this row has no switch to disable and no warning line of its own to
+     * carry the nuance, so folding them together is deliberate. Hardware is checked first: it is the
+     * one reason the user cannot fix by turning Remote Control back on, mirroring
+     * [CameraShareSettingsModel.row]'s own precedence.
+     */
+    fun cameraShareRow(input: InfoCameraShareInput, availableTabs: Set<SettingsTabKey>): InfoServiceRow {
+        val (status, detail, tone) = when {
+            !input.enabled ->
+                Triple(CameraShareSettingsModel.statusText(false, input.state), "Enable it in Cameras settings", InfoTone.NEUTRAL)
+            input.state is CameraShareStatus.State.Unavailable || input.state is CameraShareStatus.State.Unsupported ->
+                Triple(NEEDS_ATTENTION, CameraShareSettingsModel.statusText(true, input.state), InfoTone.NEGATIVE)
+            // Checked BEFORE controlUrl below: Remote Control off leaves controlUrl empty too (see
+            // [InfoCameraShareInput]), and that emptiness must not be misread as a transient network
+            // wait — the pref does not track Remote Control's switch, so this is a real, stable state.
+            !input.controlOn ->
+                Triple(NEEDS_ATTENTION, CameraShareSettingsModel.CONTROL_OFF_HINT, InfoTone.NEGATIVE)
+            input.controlUrl.isEmpty() ->
+                Triple(CameraShareSettingsModel.statusText(true, input.state), "Waiting for network", InfoTone.PENDING)
+            input.state is CameraShareStatus.State.Streaming || input.state is CameraShareStatus.State.Ready ->
+                Triple(
+                    CameraShareSettingsModel.statusText(true, input.state),
+                    CameraShareSettingsModel.urlText(true, input.controlUrl),
+                    InfoTone.POSITIVE,
+                )
+            // Enabled, controlOn, controlUrl known, but not yet Ready/Streaming: on its way up.
+            // `status` is already the short "Starting" word from statusText (State.Off is the only
+            // state left here); `detail` must say something distinct, the same way controlRow says
+            // "Starting the server" beside its own "Starting…" status.
+            else -> Triple(CameraShareSettingsModel.statusText(true, input.state), "Starting the camera share", InfoTone.PENDING)
+        }
+        return InfoServiceRow(
+            id = InfoServiceId.CAMERA_SHARE,
+            title = "Camera share",
+            status = status,
+            identity = "This device's camera",
+            detail = detail,
+            tone = tone,
+            settingsTab = tabOr(SettingsTabKey.CAMERA, availableTabs),
         )
     }
 

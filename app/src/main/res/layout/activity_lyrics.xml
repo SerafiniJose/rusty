@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/lyricsRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -108,4 +109,23 @@
         android:textColor="@color/white"
         android:textSize="18sp"
         android:visibility="gone" />
+
+    <!-- "Someone is watching this camera": visible only while a camera-share viewer is attached.
+         Declared last so it draws above the rest of this screen. Mirrors activity_home.xml's copy
+         of this glyph exactly (see CameraShareGlyph) — this screen is a separate, opaque, full-screen
+         Activity, so Home's own copy is not drawn at all while this one is up. Never focusable. -->
+    <ImageView
+        android:id="@+id/ivCameraShareGlyph"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="14dp"
+        android:layout_marginEnd="14dp"
+        android:alpha="0.85"
+        android:contentDescription="Camera is being viewed"
+        android:focusable="false"
+        android:importantForAccessibility="yes"
+        android:src="@drawable/ic_mdi_cctv"
+        android:visibility="gone"
+        app:tint="@color/dot_amber" />
 </FrameLayout>

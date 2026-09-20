@@ -12,6 +12,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
+import androidx.media3.exoplayer.video.VideoFrameMetadataListener
 import androidx.media3.ui.PlayerView
 
 /** What the live view is doing right now; the only thing the UI needs to render. */
@@ -248,14 +249,50 @@ class CameraPlayback(
     /** Keep-screen-on hook: true while a live view is open, false once released. The fragment owns
      *  the actual window flag. */
     private val onKeepScreenOn: (Boolean) -> Unit = {},
+    /** The live view's info chip (resolution · measured fps · codec), on the main looper: once a
+     *  second while a player is up, and null on teardown. */
+    private val onVideoStats: (VideoStats?) -> Unit = {},
     private val clock: () -> Long = { SystemClock.elapsedRealtime() },
 ) {
 
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
 
+    /**
+     * The stats ticker's own handler. [PlaybackEffect.CancelTimers] wipes [handler] wholesale on
+     * every transient error and manual retry, which would silently kill the ticker; keeping it on
+     * a second main-looper handler makes the chip independent of the watchdog timers.
+     */
+    private val statsHandler = Handler(Looper.getMainLooper())
+
+    /** Frames per second measured from rendered frames. Written on the main looper only (the
+     *  frame listener posts its sample here), read by the ticker. */
+    private var measuredFps: Int? = null
+
+    /** When the last frame-rate sample landed, on the same clock the meter uses. A stream that
+     *  freezes stops closing windows, so without this the chip would keep showing the rate the
+     *  video had before it stopped moving. */
+    private var lastSampleAtMs = 0L
+
+    private val statsTick = object : Runnable {
+        override fun run() {
+            if (released || player == null) return
+            // Two ticks without a closed window means the video has stopped: drop the rate rather
+            // than show a frozen picture's last one. The chip falls back to a placeholder.
+            if (measuredFps != null && clock() - lastSampleAtMs > STALE_FPS_MS) {
+                measuredFps = null
+                lastSampleAtMs = 0L
+            }
+            onVideoStats(VideoStats(lastVideoFormat, measuredFps))
+            statsHandler.postDelayed(this, STATS_TICK_MS)
+        }
+    }
+
     private var plan = CameraPlaybackPlan(clock)
     private var player: ExoPlayer? = null
+
+    /** The current player's frame-rate probe, kept so [tearDownPlayer] can clear it again. */
+    private var frameMetadataListener: VideoFrameMetadataListener? = null
     private var view: PlayerView? = null
 
     private var camera: CameraRecord? = null
@@ -412,7 +449,9 @@ class CameraPlayback(
         released = true
         plan.onReleased()
         handler.removeCallbacksAndMessages(null)
+        statsHandler.removeCallbacksAndMessages(null)
         tearDownPlayer()
+        onVideoStats(null)
         view?.player = null
         view = null
         camera = null
@@ -467,6 +506,22 @@ class CameraPlayback(
         // Audible only once arbitration says so; a fresh player is always silent.
         p.volume = playbackVolume()
         p.addListener(listener)
+        // One meter per PLAYER, not per session: retries and reconnects rebuild the player without
+        // going through startSession, and a shared meter would carry a stale window across the
+        // outage. The listener runs on media3's playback thread and touches only `meter`, which
+        // that closure owns; the sample is applied on the main looper, and only while this player
+        // is still the current one.
+        val meter = StreamMeter()
+        val frameListener = VideoFrameMetadataListener { _, _, _, _ ->
+            val sample = meter.onFrame(0, clock())
+            // statsHandler, not `handler`: PlaybackEffect.CancelTimers wipes the latter, and a
+            // sample posted there could be dropped with the watchdog timers.
+            if (sample != null) statsHandler.post {
+                if (player === p) { measuredFps = sample.fps; lastSampleAtMs = clock() }
+            }
+        }
+        p.setVideoFrameMetadataListener(frameListener)
+        frameMetadataListener = frameListener
         p.setMediaSource(
             RtspMediaSource.Factory()
                 .setForceUseRtpTcp(cam.forceTcp)
@@ -476,14 +531,26 @@ class CameraPlayback(
         view?.player = p
         p.prepare()
         p.playWhenReady = true
+        statsHandler.removeCallbacks(statsTick)
+        statsHandler.postDelayed(statsTick, STATS_TICK_MS)
         Log.i(TAG, "live open ${CameraUri.redact(rawUrl)} tcp=${cam.forceTcp} stream=$stream")
     }
 
     private fun tearDownPlayer() {
+        // Before the early return: an ordinary teardown must clear the chip even when there is no
+        // player left to tear down.
+        statsHandler.removeCallbacks(statsTick)
+        measuredFps = null
+        lastSampleAtMs = 0L
+        onVideoStats(null)
         val p = player ?: return
         player = null
         view?.player = null
         p.removeListener(listener)
+        // Symmetric with addListener/removeListener above: the frame listener holds this player,
+        // and clearing it stops any late frame from posting a sample for a player being released.
+        frameMetadataListener?.let { p.clearVideoFrameMetadataListener(it) }
+        frameMetadataListener = null
         p.setVideoSurface(null)
         p.release()
     }
@@ -527,5 +594,10 @@ class CameraPlayback(
 
     private companion object {
         const val TAG = "CameraPlayback"
+        const val STATS_TICK_MS = 1_000L
+
+        /** How long a rendered-frame drought is tolerated before the chip stops claiming a rate.
+         *  Two ticks, so an ordinary late window never blanks it. */
+        const val STALE_FPS_MS = 2_000L
     }
 }

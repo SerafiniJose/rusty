@@ -236,6 +236,39 @@ sealed class ControlCameraSnapshotResult {
     object NoFrame : ControlCameraSnapshotResult()
 }
 
+/**
+ * Outcome of `GET /api/camera/local/snapshot.jpg` — a still from THIS device's OWN shared camera,
+ * fetched by another Rusty device to draw its camera-grid thumbnail (see the camera-share design
+ * doc). Unlike [ControlCameraSnapshotResult] there is no per-id lookup (there is only ever the one
+ * shared camera) and no password-required gate of its own — the route's protection is whatever
+ * [ControlAuth] already enforces for the whole `/api/...` surface, Basic included.
+ */
+sealed class ControlLocalSnapshotResult {
+    data class Ok(val jpeg: ByteArray) : ControlLocalSnapshotResult() {
+        override fun equals(other: Any?) = this === other || (other is Ok && jpeg.contentEquals(other.jpeg))
+        override fun hashCode() = jpeg.contentHashCode()
+    }
+
+    /** The `camera_share_enabled` switch is off (or Remote Control is, which forces sharing off
+     *  too) — this device is not sharing a camera at all. A 404: the honest reading of "there is
+     *  no such resource on this device right now". */
+    object SharingOff : ControlLocalSnapshotResult()
+
+    /** Sharing is switched on but no still could be produced right now — [reason] says why
+     *  (unsupported hardware, the camera busy/gated, a grab already in flight, ...). A 503: the
+     *  caller should retry rather than treat this as a permanent absence.
+     *
+     *  [reason] is for the local settings row, the foreground notification, and logs ONLY — it can
+     *  carry a raw exception message or reveal the camera/mic privacy-switch state, so
+     *  [ControlProtocol]'s HTTP handler must never forward it verbatim; see that handler's
+     *  `Unavailable` branch for the generic text it answers with instead. */
+    data class Unavailable(val reason: String) : ControlLocalSnapshotResult()
+
+    /** Sharing is on and the camera is otherwise fine, but no frame has landed yet (a cold grab
+     *  is still in flight with nothing to fall back to). Also a 503. */
+    object NoFrame : ControlLocalSnapshotResult()
+}
+
 /** Router-level outcome of a remote install request; maps 1:1 to an HTTP status. */
 enum class ControlInstallStart { STARTED, NO_UPDATE, BUSY, NO_APK }
 

@@ -122,4 +122,14 @@ class ControlAuthProtocolTest {
         val rt = FakeAuthRuntime().apply { password = "hunter2" }
         assertEquals(200, route(req("GET", "/"), rt).status)
     }
+
+    @Test fun withAPassword_basicIsRejectedOnOrdinaryRoutes() {
+        // Basic is scoped to exactly the local-snapshot route (see ControlAuth's class doc). Every
+        // other /api/... path must reject it even when it names the exactly-right user/password —
+        // otherwise a browser's cached Basic credential for this origin could be auto-replayed by a
+        // hostile page into a route Basic was never meant to reach.
+        val rt = FakeAuthRuntime().apply { password = "hunter2" }
+        val basic = "Basic " + java.util.Base64.getEncoder().encodeToString("rusty:hunter2".toByteArray())
+        assertEquals(401, route(req("GET", "/api/state", authorization = basic), rt).status)
+    }
 }

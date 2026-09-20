@@ -165,6 +165,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
     private var playerView: PlayerView? = null
     private var liveChrome: View? = null
     private var liveName: TextView? = null
+    private var liveInfo: TextView? = null
     private var audioButton: ImageButton? = null
     private var liveHint: TextView? = null
     private var liveBottomBar: View? = null
@@ -273,6 +274,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         playerView = view.findViewById(R.id.cameraPlayerView)
         liveChrome = view.findViewById(R.id.cameraLiveChrome)
         liveName = view.findViewById(R.id.cameraLiveName)
+        liveInfo = view.findViewById(R.id.cameraLiveInfo)
         audioButton = view.findViewById(R.id.cameraAudioButton)
         liveHint = view.findViewById(R.id.cameraLiveHint)
         liveBottomBar = view.findViewById(R.id.cameraLiveBottomBar)
@@ -481,6 +483,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         playerView = null
         liveChrome = null
         liveName = null
+        liveInfo = null
         audioButton = null
         liveHint = null
         liveBottomBar = null
@@ -530,6 +533,11 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
             return
         }
         val (user, pass) = secretsFor(cam.id)
+        // The camera on screen is really changing (a summon of the one already showing returned
+        // above): drop the chip so the new picture never wears the previous camera's numbers.
+        // Only here — repainting the identity alone, as that early return does, must leave the
+        // chip of the running stream exactly as it is.
+        renderLiveInfo(null)
         setMode(Mode.LIVE)
         if (wasLive) {
             // Same live session, different camera: reuse the existing (non-terminal-yet)
@@ -566,6 +574,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
             onState = ::onLiveStateChanged,
             onClosed = ::onPlaybackClosed,
             onKeepScreenOn = { keepScreenOnBase = it; applyKeepScreenOn() },
+            onVideoStats = ::renderLiveInfo,
         )
     }
 
@@ -775,6 +784,13 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         StreamErrorKind.FATAL_NOT_FOUND -> R.string.camera_fatal_not_found
         StreamErrorKind.FATAL_UNSUPPORTED -> R.string.camera_fatal_unsupported
         StreamErrorKind.TRANSIENT -> R.string.camera_fatal_generic
+    }
+
+    /** The chip after the name: size, measured fps and codec. GONE until the player knows a size. */
+    private fun renderLiveInfo(stats: VideoStats?) {
+        val text = stats?.chipText()
+        liveInfo?.text = text.orEmpty()
+        liveInfo?.isVisible = text != null
     }
 
     private fun renderLiveIdentity(cam: CameraRecord) {

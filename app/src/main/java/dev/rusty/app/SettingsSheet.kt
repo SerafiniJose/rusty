@@ -297,6 +297,12 @@ object SettingsSheet {
         remoteControlSwitch.setOnCheckedChangeListener { _, isChecked ->
             ControlSettings.setEnabled(prefs, isChecked)
             ControlService.syncFromPrefs(activity)
+            // Camera share is Remote Control's dependent — mDNS advertising and the snapshot
+            // endpoint both live in ControlService — so it follows this switch in BOTH directions.
+            // Off is already covered by the share service's own prefs listener; this is what
+            // brings a still-switched-on share back when Remote Control returns, without waiting
+            // for the app to be backgrounded and reopened.
+            CameraShareService.syncFromPrefs(activity)
             refreshBrightnessPermissionUi()
             // The Remote Control settings tab exists exactly while the API does.
             onFeatureTabsChanged()

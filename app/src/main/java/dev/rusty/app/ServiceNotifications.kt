@@ -8,7 +8,7 @@ import androidx.core.app.NotificationCompat
 
 /**
  * Process-wide, synchronized bookkeeping for the foreground-service notifications (Spotify
- * receiver, DLNA player, remote control) and their shared group summary.
+ * receiver, DLNA player, remote control, camera share) and their shared group summary.
  *
  * Why a coordinator: Android auto-bundles only at 4+ notifications, so a smaller group needs
  * an explicitly posted summary — and posting/cancelling it from each service's own lifecycle
@@ -24,7 +24,7 @@ object ServiceNotifications {
     private const val SUMMARY_ID = 3
     private const val SUMMARY_CHANNEL_ID = "rusty_services_group"
 
-    enum class Kind { SPOTIFY, DLNA, CONTROL }
+    enum class Kind { SPOTIFY, DLNA, CONTROL, CAMERA_SHARE }
 
     private val active = mutableSetOf<Kind>()
 

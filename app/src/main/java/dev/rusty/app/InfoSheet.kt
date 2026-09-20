@@ -72,7 +72,7 @@ object InfoSheet {
             host.openSettings(tab)
         }
 
-        // Service rows are a fixed set of three in a fixed order, so they are inflated once and
+        // Service rows are a fixed set of four in a fixed order, so they are inflated once and
         // re-bound in place — rebuilding them on every snapshot would drop D-pad focus mid-playback.
         val serviceViews = InfoServiceId.entries.associateWith { _ ->
             activity.layoutInflater.inflate(R.layout.item_info_service, servicesContainer, false)
@@ -117,6 +117,7 @@ object InfoSheet {
         // dismiss time would not match, and the listener would outlive the card.
         val storeListener = ReceiverStateStore.Listener { runCatching { render() } }
         val controlListener: (ControlServerStatus.State) -> Unit = { runCatching { render() } }
+        val cameraShareListener: (CameraShareStatus.State) -> Unit = { runCatching { render() } }
         val rendererStatusListener: (RendererStatusSnapshot) -> Unit = { runCatching { render() } }
         val rendererUiListener: (RendererUiSnapshot) -> Unit = { runCatching { render() } }
         val haListener = HomeAssistantDashboardRepository.Listener { runCatching { render() } }
@@ -124,6 +125,7 @@ object InfoSheet {
 
         store.addListener(storeListener)
         ControlServerStatus.addListener(controlListener)
+        CameraShareStatus.addListener(cameraShareListener)
         // BOTH renderer publishers: the holder only forwards status changes after the service has
         // attached once in this process, so a start the system refused (FAILED, service never created)
         // would never reach a holder-only listener.
@@ -149,6 +151,7 @@ object InfoSheet {
         cleanup = {
             store.removeListener(storeListener)
             ControlServerStatus.removeListener(controlListener)
+            CameraShareStatus.removeListener(cameraShareListener)
             RendererStatusPublisher.removeListener(rendererStatusListener)
             RendererRuntimeHolder.removeListener(rendererUiListener)
             haRepo.removeListener(haListener)
@@ -206,6 +209,13 @@ object InfoSheet {
             enabled = ControlSettings.isEnabled(prefs),
         )
 
+        val cameraShare = InfoCameraShareInput(
+            state = CameraShareStatus.current(),
+            enabled = CameraShareSettings.isEnabled(prefs),
+            controlUrl = (control.state as? ControlServerStatus.State.Running)?.url.orEmpty(),
+            controlOn = control.enabled,
+        )
+
         val haUrl = HomeAssistantUrl.normalize(prefs.getString(HomeAssistantFeature.KEY_URL, null))
         val haOrigin = HomeAssistantUrl.origin(haUrl)
         val cacheJson =
@@ -248,7 +258,7 @@ object InfoSheet {
         val featureTabs = FeatureRegistry.enabledIds(prefs).map { FeatureRegistry.byId(it).settingsTab }
         val availableTabs = settingsTabsFor(featureTabs, SlideshowSettings.isEnabled(prefs), ControlSettings.isEnabled(prefs)).toSet()
 
-        return InfoOverviewReducer.reduce(spotify, dlna, control, ha, immich, availableTabs)
+        return InfoOverviewReducer.reduce(spotify, dlna, control, cameraShare, ha, immich, availableTabs)
     }
 
     // ---- Row binding --------------------------------------------------------
@@ -325,6 +335,7 @@ object InfoSheet {
         InfoServiceId.SPOTIFY -> R.drawable.ic_music_note
         InfoServiceId.DLNA -> R.drawable.ic_mdi_dlna
         InfoServiceId.REMOTE_CONTROL -> R.drawable.ic_mdi_remote
+        InfoServiceId.CAMERA_SHARE -> R.drawable.ic_mdi_cctv
     }
 
     private fun iconFor(id: InfoFeatureId): Int = when (id) {

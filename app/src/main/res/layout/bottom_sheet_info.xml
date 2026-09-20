@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Services & status: the app-wide info page. Header + aggregate summary, then three runtime
-     service rows (Spotify Connect, DLNA Player, Remote Control) inflated into llInfoServices, then
-     the configured integrations inflated into llInfoFeatures, then the About & updates row.
+<!-- Services & status: the app-wide info page. Header + aggregate summary, then four runtime
+     service rows (Spotify Connect, DLNA Player, Remote Control, Camera share) inflated into
+     llInfoServices, then the configured integrations inflated into llInfoFeatures, then the About
+     & updates row.
      The features divider + header are hidden together when there is no connected feature.
      Height is capped at ~82% of the display by MaxHeightNestedScrollView so the card stays
      dismissible in every orientation. -->

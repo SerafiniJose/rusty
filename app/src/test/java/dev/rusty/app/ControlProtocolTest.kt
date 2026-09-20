@@ -173,6 +173,9 @@ private class FakeControlRuntime : ControlRuntime {
         cameraSnapshotCalls.add(cameraId)
         return cameraSnapshotResult ?: ControlCameraSnapshotResult.Ok(snapshotJpeg)
     }
+
+    var localSnapshot: ControlLocalSnapshotResult = ControlLocalSnapshotResult.SharingOff
+    override fun localCameraSnapshot() = localSnapshot
 }
 
 class ControlProtocolTest {
@@ -1177,5 +1180,64 @@ class ControlProtocolTest {
             assertTrue(res.headers.none { it.first.startsWith("Access-Control-", ignoreCase = true) })
         }
         assertEquals(listOf(200, 200, 200, 200, 200), responses.map { it.status })
+    }
+
+    // -- GET /api/camera/local/snapshot.jpg --------------------------------------
+    //
+    // Thumbnail fetch for another Rusty device's camera grid. Unlike /api/camera/{id}/snapshot
+    // this one works with NO password configured (it is gated by whatever the RTSP stream itself
+    // is gated by, which may be nothing), so most of these tests deliberately leave the fake's
+    // password unset.
+
+    @Test fun getLocalSnapshot_sharingOff_404() {
+        assertEquals(404, route(req("GET", "/api/camera/local/snapshot.jpg", contentType = null)).status)
+    }
+
+    @Test fun getLocalSnapshot_unavailable_503() {
+        val rt = FakeControlRuntime().apply { localSnapshot = ControlLocalSnapshotResult.Unavailable("camera gated") }
+        val res = route(req("GET", "/api/camera/local/snapshot.jpg", contentType = null), rt)
+        assertEquals(503, res.status)
+        // The internal reason ("camera gated") must NOT reach the wire (see ControlProtocol's
+        // handleLocalSnapshot, Unavailable branch) — only the generic text may appear here, which
+        // also pins that the raw pipeline/privacy-switch text is never what gets sent.
+        assertEquals("camera unavailable", JSONObject(res.body).getString("error"))
+    }
+
+    @Test fun getLocalSnapshot_ok_jpegBytes_noPasswordNeeded() {
+        val rt = FakeControlRuntime().apply { localSnapshot = ControlLocalSnapshotResult.Ok(byteArrayOf(0xFF.toByte(), 0xD8.toByte())) }
+        val res = route(req("GET", "/api/camera/local/snapshot.jpg", contentType = null), rt)
+        assertEquals(200, res.status)
+        assertTrue(res.headers.any { it.first == "Content-Type" && it.second == "image/jpeg" })
+        assertTrue(res.headers.any { it.first == "Cache-Control" && it.second == "no-store" })
+        assertTrue(res.binaryBody!!.contentEquals(byteArrayOf(0xFF.toByte(), 0xD8.toByte())))
+    }
+
+    @Test fun getLocalSnapshot_withPassword_acceptsBasic() {
+        val rt = FakeControlRuntime().apply { password = "s3cret"; localSnapshot = ControlLocalSnapshotResult.Ok(byteArrayOf(1)) }
+        val basic = "Basic " + java.util.Base64.getEncoder().encodeToString("rusty:s3cret".toByteArray())
+        assertEquals(401, route(req("GET", "/api/camera/local/snapshot.jpg", contentType = null), rt).status)
+        assertEquals(200, route(req("GET", "/api/camera/local/snapshot.jpg", contentType = null, authorization = basic), rt).status)
+    }
+
+    @Test fun getLocalSnapshot_withPassword_bearerStillWorks() {
+        // Widening this one route to Basic must not cost it Bearer support: Bearer keeps working
+        // here exactly like on every other /api/... route.
+        val rt = FakeControlRuntime().apply { password = "s3cret"; localSnapshot = ControlLocalSnapshotResult.Ok(byteArrayOf(1)) }
+        assertEquals(
+            200,
+            route(req("GET", "/api/camera/local/snapshot.jpg", contentType = null, authorization = "Bearer s3cret"), rt).status,
+        )
+        assertEquals(
+            401,
+            route(req("GET", "/api/camera/local/snapshot.jpg", contentType = null, authorization = "Bearer wrong"), rt).status,
+        )
+    }
+
+    @Test fun getLocalSnapshot_isNotMistakenForACameraId_andNearMissesAre404() {
+        val rt = FakeControlRuntime().apply { localSnapshot = ControlLocalSnapshotResult.NoFrame }
+        route(req("GET", "/api/camera/local/snapshot.jpg", contentType = null), rt)
+        assertTrue(rt.cameraSnapshotCalls.isEmpty())
+        assertEquals(404, route(req("GET", "/api/camera/local/snapshot.jpeg", contentType = null), rt).status)
+        assertEquals(404, route(req("GET", "/api/camera/local/snapshot.jpg/", contentType = null), rt).status)
     }
 }

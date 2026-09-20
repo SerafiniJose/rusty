@@ -35,6 +35,9 @@
          the floating cluster's 44dp pills sit, so the snapshot button shares the cluster's row and
          left/right margin. On-device tunable. -->
     <dimen name="camera_live_bar_inset">34dp</dimen>
+    <!-- Space kept free at the end of the live view's top chrome for the shell's parked corner
+         clock (≈0.22 × shell_clock_text_size, five digits). -->
+    <dimen name="camera_live_clock_reserve">112dp</dimen>
 
     <!-- Corner radius for inner settings cards (account row + dashboard cards) — rounder than the
          old 12dp so they sit closer to the app's other surfaces. -->

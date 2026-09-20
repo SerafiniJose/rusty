@@ -177,18 +177,54 @@
                 android:tint="@color/ink"
                 android:visibility="gone" />
 
-            <TextView
-                android:id="@+id/cameraLiveName"
+            <!-- Name + info chip, packed to the START. The chip is a fact, not a control: not
+                 focusable, fades with the chrome. The end margin keeps the pair clear of the
+                 shell's parked corner clock; in a chain with bias 0 and constrainedWidth the NAME
+                 is what ellipsizes first, so the chip is always whole or absent. -->
+            <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="10dp"
-                android:textColor="@color/ink"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:maxLines="1"
-                android:ellipsize="end"
-                tools:text="Front Door" />
+                android:layout_marginEnd="@dimen/camera_live_clock_reserve">
+
+                <TextView
+                    android:id="@+id/cameraLiveName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/ink"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    app:layout_constrainedWidth="true"
+                    app:layout_constraintEnd_toStartOf="@id/cameraLiveInfo"
+                    app:layout_constraintHorizontal_bias="0"
+                    app:layout_constraintHorizontal_chainStyle="packed"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    tools:text="Front Door" />
+
+                <TextView
+                    android:id="@+id/cameraLiveInfo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:background="@drawable/bg_camera_chip"
+                    android:focusable="false"
+                    android:fontFamily="@font/hanken_medium"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="3dp"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp"
+                    android:visibility="gone"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toEndOf="@id/cameraLiveName"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    tools:text="1280×720 · 30 fps · H.264" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
         </LinearLayout>
 
         <!-- Edge chevrons: the touch equivalent of D-pad LEFT/RIGHT. GONE with fewer than two

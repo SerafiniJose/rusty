@@ -133,6 +133,12 @@ interface ControlRuntime {
      *  see the route's own gate in [ControlProtocol.dispatch]. */
     fun cameraSnapshot(cameraId: String): ControlCameraSnapshotResult =
         ControlCameraSnapshotResult.FeatureDisabled
+
+    /** A still from THIS device's OWN shared camera (`GET /api/camera/local/snapshot.jpg`), for
+     *  another Rusty device's grid thumbnail — see [ControlLocalSnapshotResult]. Defaulted to
+     *  [ControlLocalSnapshotResult.SharingOff] for the same reason every other camera default
+     *  above is: the honest reading of "this runtime shares no camera". */
+    fun localCameraSnapshot(): ControlLocalSnapshotResult = ControlLocalSnapshotResult.SharingOff
 }
 
 sealed class ControlImmichResult {
@@ -249,10 +255,20 @@ object ControlProtocol {
             // reaches the write guards, let alone a handler. The page itself ("/") stays open: it
             // holds no secrets and is where the login overlay lives. Inside the try because
             // requiredPassword() may touch the runtime's secret store.
-            if (req.path.startsWith("/api/") &&
-                !ControlAuth.authorized(rt.requiredPassword(), req.headers["AUTHORIZATION"])
-            ) {
-                return errorResponse(401, "Unauthorized", "password required")
+            //
+            // Basic is accepted ONLY for the local-snapshot route (ControlAuth.authorizedAllowingBasic); every
+            // other /api/... path is Bearer-only (ControlAuth.authorized) — see ControlAuth's
+            // class doc for why that split matters (cached Basic credentials auto-replay per-origin
+            // from any tab; Bearer never does).
+            if (req.path.startsWith("/api/")) {
+                val header = req.headers["AUTHORIZATION"]
+                val password = rt.requiredPassword()
+                val authed = if (req.path == CameraShareSettings.SNAPSHOT_PATH) {
+                    ControlAuth.authorizedAllowingBasic(password, header)
+                } else {
+                    ControlAuth.authorized(password, header)
+                }
+                if (!authed) return errorResponse(401, "Unauthorized", "password required")
             }
             dispatch(req, rt)
         } catch (t: Throwable) {
@@ -338,6 +354,12 @@ object ControlProtocol {
 
             req.method == "POST" && path == "/api/camera/grid" ->
                 writeGuarded(req) { handleCameraGrid(rt) }
+
+            // Exact match, checked first: CAMERA_PATH_PREFIX/SNAPSHOT_PATH_SUFFIX below needs a
+            // "/snapshot" suffix, and this path ends in "/snapshot.jpg", so the two can never
+            // actually collide — exact-match-first is just this file's convention.
+            req.method == "GET" && path == CameraShareSettings.SNAPSHOT_PATH ->
+                handleLocalSnapshot(rt)
 
             req.method == "GET" && path.startsWith(CAMERA_PATH_PREFIX) && path.endsWith(SNAPSHOT_PATH_SUFFIX) ->
                 handleCameraSnapshot(req, path, rt)
@@ -727,6 +749,36 @@ object ControlProtocol {
             ControlCameraSnapshotResult.NoFrame ->
                 errorResponse(404, "Not Found", "no frame for that camera yet")
         }
+    }
+
+    /**
+     * `GET /api/camera/local/snapshot.jpg` — a still from THIS device's OWN shared camera, so
+     * another Rusty device can draw a grid thumbnail for it without opening the RTSP stream just
+     * to paint one tile.
+     *
+     * Deliberately NOT gated on the API password being enabled the way [handleCameraSnapshot] is:
+     * an unshared device answers 404 regardless of the password switch, and a shared device is
+     * already handing this same picture to anyone who can open the RTSP stream (no password is a
+     * valid, if open, configuration for that). The [route] password gate — Bearer or, for this
+     * route only, Basic (see [ControlAuth.authorizedAllowingBasic]) — is the only auth this route needs.
+     */
+    private fun handleLocalSnapshot(rt: ControlRuntime): HttpResponse = when (val r = rt.localCameraSnapshot()) {
+        is ControlLocalSnapshotResult.Ok -> HttpResponse(
+            200, "OK", listOf("Content-Type" to JPEG_CONTENT_TYPE, "Cache-Control" to "no-store"),
+            body = "", binaryBody = r.jpeg,
+        )
+        ControlLocalSnapshotResult.SharingOff -> errorResponse(404, "Not Found", "camera sharing is off")
+        // r.reason is deliberately NOT forwarded: it is generated deep in the capture pipeline and
+        // can be a raw exception message ("encoder: ${e.message}", "camera open: ${e.message}",
+        // "session: ${e.message}", ...) or spell out the physical camera/mic privacy-switch state
+        // ("camera did not open (check the camera/mic switch)") — and with no Remote Control
+        // password set, this response is readable by anyone on the LAN. RtspProtocol answers a bare
+        // 503 for the identical DescribeResult.Unavailable(reason) for the same reason; this route
+        // keeps its JSON error shape but generalises the detail the same way. The full text still
+        // reaches CameraShareStatus (the settings row, the foreground notification) and logs
+        // unchanged — only this HTTP response is generalised.
+        is ControlLocalSnapshotResult.Unavailable -> errorResponse(503, "Service Unavailable", "camera unavailable")
+        ControlLocalSnapshotResult.NoFrame -> errorResponse(503, "Service Unavailable", "no frame")
     }
 
     // -------------------------------------------------------------------

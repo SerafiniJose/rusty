@@ -121,6 +121,52 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             dev.rusty.app.renderer.MediaRendererController.setEnabled(this, true)
         }
 
+    /** Set for the duration of one [requestCameraShare]; cleared before the result is delivered so
+     *  a callback that asks again is not overwritten by its own request. */
+    private var cameraPermissionCallback: ((Boolean) -> Unit)? = null
+
+    /**
+     * Camera-share gate. Registered as a property initializer because
+     * [registerForActivityResult] must be called before `onCreate` returns.
+     */
+    private val cameraPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            // Written here — not only inside the panel's transient requestCameraShare lambda below
+            // — because this launcher is a property initializer and survives Activity recreation,
+            // but cameraPermissionCallback does not. Rotation is NOT the trigger: HomeActivity
+            // declares android:configChanges for orientation/screenSize, so the system delivers a
+            // config change in place instead of recreating it. The real trigger is process death
+            // while backgrounded — the system permission dialog is a separate foreground Activity,
+            // and Android can reclaim this one from underneath it; the result then lands on a FRESH
+            // HomeActivity instance whose cameraPermissionCallback field is null again, so
+            // callback?.invoke(granted) is a silent no-op and a pref write living only inside the
+            // lost lambda would never run. The OS grant would then be durable but sharing would
+            // never start until the user noticed and retried the switch. Writing the same value
+            // here when there was no recreation (the panel's lambda also writes it) is harmless —
+            // SharedPreferences writes are idempotent, the same "duplicate is fine" contract as the
+            // syncFromPrefs call below. A denial writes nothing, leaving the pref exactly as it was.
+            if (granted) CameraShareSettings.setEnabled(prefs, true)
+            val callback = cameraPermissionCallback
+            cameraPermissionCallback = null
+            callback?.invoke(granted)
+            // Then re-sync regardless of who asked: a grant that arrives while the share pref is
+            // already on (the permission was revoked underneath it, or Android auto-revoked it
+            // while the app went unused) has nothing else to start the service until the next
+            // return to the foreground. A duplicate start is ignored by onStartCommand, and a
+            // refusal re-publishes the "camera permission needed" reason for the settings row.
+            CameraShareService.syncFromPrefs(this)
+        }
+
+    /**
+     * Entry point for the Cameras settings tab's "Share this device's camera" switch: a camera
+     * foreground service cannot start without the runtime CAMERA grant, and a Service has no
+     * window to ask for it.
+     */
+    fun requestCameraShare(onResult: (Boolean) -> Unit) {
+        cameraPermissionCallback = onResult
+        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+    }
+
     /** Entry point for the DLNA Player settings tab's Start button. */
     fun startDlnaPlayer() {
         val needsAsk = android.os.Build.VERSION.SDK_INT >= 33 &&
@@ -136,6 +182,9 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_home)
+        // Registered here (not lazily) so the glyph reflects reality the instant a viewer attaches,
+        // even before the first Info card open. Removed first thing in onDestroy — see there.
+        CameraShareStatus.addListener(cameraShareGlyphListener)
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         takeover = (application as RustyApp).takeoverCoordinator
@@ -268,6 +317,15 @@ class HomeActivity : AppCompatActivity(), ShellHost {
      *  match). Fires on the main thread — the relay's caller posts there. */
     private val slideshowConfigListener: () -> Unit = { onSlideshowConfigChanged() }
 
+    /**
+     * The on-screen "someone is watching" glyph, over every panel and the screensaver alike. See
+     * [CameraShareGlyph] for what it tracks and why [LyricsActivity] carries the identical wiring.
+     * Held as a field for the same reason [slideshowConfigListener] is — onDestroy removes this
+     * exact instance.
+     */
+    private val cameraShareGlyphListener: (CameraShareStatus.State) -> Unit =
+        CameraShareGlyph.listener { findViewById(R.id.ivCameraShareGlyph) }
+
     override fun onStart() {
         super.onStart()
         // `screen.available` is about whether a screen command can take effect NOW, which is a
@@ -280,6 +338,11 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         updateSharedClock()
         RustyApp.haRepository(this).addListener(shellChrome.chipListener)
         receiverController.ensureStarted()
+        // Camera share is a camera-type foreground service, and Android 14+ only lets one start
+        // while the app is VISIBLE — so onStart is its start path, never BootReceiver and never
+        // RustyApp.onCreate. Idempotent: a duplicate start is ignored by onStartCommand, so
+        // running it on every return to the foreground also heals a start the system once refused.
+        CameraShareService.syncFromPrefs(this)
     }
 
     override fun onStop() {
@@ -319,7 +382,10 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     }
 
     override fun onDestroy() {
-        // First: a showing card holds runtime listeners that only its dismiss callback removes.
+        // Unregistered first: this Activity's root view is the listener's only reference back to it,
+        // and a leaked listener on a destroyed Activity's view leaks the Activity.
+        CameraShareStatus.removeListener(cameraShareGlyphListener)
+        // A showing card holds runtime listeners that only its dismiss callback removes.
         dismissShellDialogs()
         SlideshowConfigRelay.removeListener(slideshowConfigListener)
         // Detach FIRST: an HTTP thread mid-set must not queue a delivery onto a dying window, and
@@ -990,6 +1056,12 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             val base = (CHROME_BASE_PAD_DP * resources.displayMetrics.density).toInt()
             findViewById<View>(R.id.shellChrome)
                 ?.setPadding(base + bars.left, base + bars.top, base + bars.right, base + bars.bottom)
+            // ivCameraShareGlyph is declared OUTSIDE shellChrome (it must draw above the screensaver
+            // overlay, which is declared after shellChrome), so shellChrome's padding never reaches
+            // it — it needs the same top/end clearance applied directly. See CameraShareGlyph for
+            // the margin-vs-padding rationale (shared verbatim with LyricsActivity's own copy).
+            findViewById<View>(R.id.ivCameraShareGlyph)
+                ?.let { CameraShareGlyph.applyInsetMargin(it, bars, resources.displayMetrics.density) }
             insets
         }
         insetsController = WindowCompat.getInsetsController(window, homeRoot).apply {

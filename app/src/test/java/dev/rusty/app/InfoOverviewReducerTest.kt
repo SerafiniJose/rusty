@@ -25,6 +25,7 @@ class InfoOverviewReducerTest {
         SettingsTabKey.DLNA_PLAYER,
         SettingsTabKey.SPOTIFY,
         SettingsTabKey.HOME_ASSISTANT,
+        SettingsTabKey.CAMERA,
     )
     private val minimalTabs = setOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER, SettingsTabKey.SPOTIFY)
 
@@ -52,6 +53,13 @@ class InfoOverviewReducerTest {
         state: ControlServerStatus.State = ControlServerStatus.State.Stopped,
         enabled: Boolean = false,
     ) = InfoControlInput(state, enabled)
+
+    private fun cameraShare(
+        state: CameraShareStatus.State = CameraShareStatus.State.Off,
+        enabled: Boolean = false,
+        controlUrl: String = "",
+        controlOn: Boolean = true,
+    ) = InfoCameraShareInput(state, enabled, controlUrl, controlOn)
 
     private fun ha(
         enabled: Boolean = false,
@@ -389,6 +397,106 @@ class InfoOverviewReducerTest {
         )
     }
 
+    // ---- Camera share row -----------------------------------------------------
+
+    @Test fun cameraShareStreamingShowsViewersAndUrl() {
+        val row = InfoOverviewReducer.cameraShareRow(
+            InfoCameraShareInput(CameraShareStatus.State.Streaming(2), enabled = true, controlUrl = "http://192.168.1.40:8765", controlOn = true),
+            allTabs,
+        )
+        assertEquals(InfoServiceId.CAMERA_SHARE, row.id)
+        assertEquals("Streaming to 2 viewers", row.status)
+        assertEquals("rtsp://192.168.1.40:8554/live", row.detail)
+        assertEquals(InfoTone.POSITIVE, row.tone)
+        assertEquals(SettingsTabKey.CAMERA, row.settingsTab)
+    }
+
+    @Test fun cameraShareOffAndUnavailableTones() {
+        assertEquals(InfoTone.NEUTRAL, InfoOverviewReducer.cameraShareRow(InfoCameraShareInput(CameraShareStatus.State.Off, false, "", controlOn = true), allTabs).tone)
+        assertEquals("Enable it in Cameras settings", InfoOverviewReducer.cameraShareRow(InfoCameraShareInput(CameraShareStatus.State.Off, false, "", controlOn = true), allTabs).detail)
+
+        val unavailableRow = InfoOverviewReducer.cameraShareRow(
+            InfoCameraShareInput(CameraShareStatus.State.Unavailable("gated"), true, "http://h:8765", controlOn = true), allTabs,
+        )
+        assertEquals(InfoTone.NEGATIVE, unavailableRow.tone)
+        assertEquals("Needs attention", unavailableRow.status)
+        assertEquals("Camera unavailable — gated", unavailableRow.detail)
+
+        assertEquals(InfoTone.PENDING, InfoOverviewReducer.cameraShareRow(InfoCameraShareInput(CameraShareStatus.State.Ready, true, "", controlOn = true), allTabs).tone)
+    }
+
+    /**
+     * [InfoOverviewReducer] is the FIRST caller ever to reach this branch: the settings row
+     * ([CameraShareSettingsModel.row]) answers "unsupported" from its own hardware probe
+     * ([CameraShareSettingsModel.unsupportedReason]) before the service ever publishes this state,
+     * so nothing exercised [CameraShareStatus.State.Unsupported] here before this page existed.
+     */
+    @Test fun cameraShareUnsupportedIsNeedsAttention() {
+        val row = InfoOverviewReducer.cameraShareRow(
+            InfoCameraShareInput(
+                CameraShareStatus.State.Unsupported("no H.264 encoder on this device"),
+                enabled = true, controlUrl = "http://h:8765", controlOn = true,
+            ),
+            allTabs,
+        )
+        assertEquals(InfoTone.NEGATIVE, row.tone)
+        assertEquals("Needs attention", row.status)
+        assertEquals("Encoder unsupported on this device", row.detail)
+    }
+
+    /**
+     * The exact repro from the review: Camera share stays enabled (its own switch does not track
+     * Remote Control's — see [CameraShareService]'s `prefsListener`), Remote Control goes off,
+     * [CameraShareService] stops itself and republishes [CameraShareStatus.State.Off] — and the row
+     * must say so plainly rather than "Waiting for network", which implies a transient problem that
+     * will resolve on its own with no action.
+     */
+    @Test fun cameraShareRemoteControlOffIsNeedsAttentionNotWaitingForNetwork() {
+        val row = InfoOverviewReducer.cameraShareRow(
+            InfoCameraShareInput(CameraShareStatus.State.Off, enabled = true, controlUrl = "", controlOn = false),
+            allTabs,
+        )
+        assertEquals(InfoTone.NEGATIVE, row.tone)
+        assertEquals("Needs attention", row.status)
+        assertEquals("Turn on Remote Control in General settings first", row.detail)
+    }
+
+    /**
+     * Both facts can be true at once — reachable because [CameraShareStatus.State.Unsupported] can
+     * be stale from before Remote Control was switched off (a service that never started because the
+     * hardware can't run it is not listening for that pref change). Hardware wins, matching
+     * [CameraShareSettingsModel.row]'s own "hardware first: it is the only one the user cannot do
+     * anything about" — turning Remote Control back on would not fix this device having no encoder.
+     */
+    @Test fun cameraShareHardwareReasonOutranksRemoteControlOff() {
+        val row = InfoOverviewReducer.cameraShareRow(
+            InfoCameraShareInput(CameraShareStatus.State.Unsupported("no camera"), enabled = true, controlUrl = "", controlOn = false),
+            allTabs,
+        )
+        assertEquals(InfoTone.NEGATIVE, row.tone)
+        assertEquals("Needs attention", row.status)
+        assertEquals("Encoder unsupported on this device", row.detail)
+    }
+
+    /**
+     * The only branch left once every earlier one is ruled out (state not
+     * Unavailable/Unsupported, Remote Control on, controlUrl known, state not yet
+     * Streaming/Ready) is [CameraShareStatus.State.Off] on its way back up. `detail` used to repeat
+     * the exact same "Starting" word `status` already carries, so a screen reader read "Camera
+     * share, Starting. This device's camera. Starting." with nothing new in the second sentence.
+     */
+    @Test fun cameraShareStartingUpHasADistinctDetailFromStatus() {
+        val row = InfoOverviewReducer.cameraShareRow(
+            InfoCameraShareInput(
+                CameraShareStatus.State.Off, enabled = true, controlUrl = "http://192.168.1.40:8765", controlOn = true,
+            ),
+            allTabs,
+        )
+        assertEquals("Starting", row.status)
+        assertEquals("Starting the camera share", row.detail)
+        assertEquals(InfoTone.PENDING, row.tone)
+    }
+
     // ---- Header summary ------------------------------------------------------
 
     @Test fun summaryUsesTheSimpleFormWhenNothingIsTransitional() {
@@ -396,11 +504,12 @@ class InfoOverviewReducerTest {
             spotify(),
             dlna(status = RendererStatus.RUNNING, descriptionUrl = "http://192.168.1.40:49152/upnp/device.xml"),
             control(),
+            cameraShare(),
             ha(),
             immich(),
             allTabs,
         )
-        assertEquals("2 services running · 1 off", overview.summary)
+        assertEquals("2 services running · 2 off", overview.summary)
     }
 
     @Test fun summaryNamesEveryBucketOnceSomethingIsStarting() {
@@ -408,11 +517,12 @@ class InfoOverviewReducerTest {
             spotify(),
             dlna(status = RendererStatus.RUNNING, descriptionUrl = "http://192.168.1.40:49152/upnp/device.xml"),
             control(ControlServerStatus.State.Starting, enabled = true),
+            cameraShare(),
             ha(),
             immich(),
             allTabs,
         )
-        assertEquals("2 running · 1 starting", overview.summary)
+        assertEquals("2 running · 1 off · 1 starting", overview.summary)
     }
 
     @Test fun summaryNamesAFailureRatherThanHidingItInTheOffCount() {
@@ -420,11 +530,12 @@ class InfoOverviewReducerTest {
             spotify(),
             dlna(status = RendererStatus.STOPPED),
             control(ControlServerStatus.State.Failed("could not bind port 8765"), enabled = true),
+            cameraShare(),
             ha(),
             immich(),
             allTabs,
         )
-        assertEquals("1 running · 1 off · 1 needs attention", overview.summary)
+        assertEquals("1 running · 2 off · 1 needs attention", overview.summary)
     }
 
     @Test fun summarySingularizesOneService() {
@@ -432,11 +543,12 @@ class InfoOverviewReducerTest {
             spotify(service = ReceiverServiceState.STOPPED, status = "Off"),
             dlna(status = RendererStatus.STOPPED),
             control(ControlServerStatus.State.Running("http://192.168.1.40:8765"), enabled = true),
+            cameraShare(),
             ha(),
             immich(),
             allTabs,
         )
-        assertEquals("1 service running · 2 off", overview.summary)
+        assertEquals("1 service running · 3 off", overview.summary)
     }
 
     @Test fun summaryWithEverythingOffOmitsAZeroRunningSegment() {
@@ -444,33 +556,35 @@ class InfoOverviewReducerTest {
             spotify(service = ReceiverServiceState.STOPPED, status = "Off"),
             dlna(status = RendererStatus.STOPPED),
             control(),
+            cameraShare(),
             ha(),
             immich(),
             allTabs,
         )
-        assertEquals("3 services off", overview.summary)
+        assertEquals("4 services off", overview.summary)
     }
 
     /** A connected integration is not a running service; it must not move the header count. */
     @Test fun connectedFeaturesNeverChangeTheServiceCount() {
-        val bare = InfoOverviewReducer.reduce(spotify(), dlna(), control(), ha(), immich(), allTabs)
+        val bare = InfoOverviewReducer.reduce(spotify(), dlna(), control(), cameraShare(), ha(), immich(), allTabs)
         val wired = InfoOverviewReducer.reduce(
             spotify(),
             dlna(),
             control(),
+            cameraShare(),
             ha(enabled = true, configuredUrl = "http://homeassistant.local:8123", hasOriginToken = true),
             immich(enabled = true, configured = true, verified = true, serverUrl = "https://photos.example.com"),
             allTabs,
         )
         assertEquals(bare.summary, wired.summary)
-        assertEquals(3, wired.services.size)
+        assertEquals(4, wired.services.size)
         assertEquals(2, wired.features.size)
     }
 
     @Test fun servicesAlwaysAppearInSpecOrder() {
-        val overview = InfoOverviewReducer.reduce(spotify(), dlna(), control(), ha(), immich(), allTabs)
+        val overview = InfoOverviewReducer.reduce(spotify(), dlna(), control(), cameraShare(), ha(), immich(), allTabs)
         assertEquals(
-            listOf(InfoServiceId.SPOTIFY, InfoServiceId.DLNA, InfoServiceId.REMOTE_CONTROL),
+            listOf(InfoServiceId.SPOTIFY, InfoServiceId.DLNA, InfoServiceId.REMOTE_CONTROL, InfoServiceId.CAMERA_SHARE),
             overview.services.map { it.id },
         )
     }

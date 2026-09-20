@@ -21,6 +21,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
+    <!-- Camera share: this device's own camera offered to other Rusty devices as an RTSP
+         stream on the LAN. The stream carries a password only when Remote Control's password is
+         switched on — with it off the API is open to the LAN and so is this, which is the same
+         posture as every other endpoint. The camera foreground-service type is the one Android
+         14+ refuses to start from the background, which is why HomeActivity.onStart — never
+         BootReceiver — is its start path. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- In-app update install (About sheet + remote-control page). Never silent: this only
@@ -39,6 +48,23 @@
         android:required="false" />
     <uses-feature
         android:name="android.hardware.faketouch"
+        android:required="false" />
+
+    <!-- Camera share is optional, and it takes BOTH lines to say so. `android.permission.CAMERA`
+         implicitly adds `<uses-feature android:name="android.hardware.camera"
+         android:required="true">` — a BACK-facing camera — and declaring `camera.any` does not
+         cancel that, because it is a different feature name. Only the explicit not-required
+         `android.hardware.camera` below keeps the app installable on the camera-less and
+         front-camera-only hardware it mostly runs on (Shield, tablets, Echo Shows). Verify after
+         any change to this block with
+         `aapt2 dump badging app-debug.apk | grep camera`: BOTH names must come back as
+         `uses-feature-not-required`. The service checks for a real front/back lens at start and
+         reports the share as unsupported when there is none. -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera"
         android:required="false" />
 
     <queries>
@@ -92,6 +118,11 @@
         <service
             android:name=".ControlService"
             android:foregroundServiceType="connectedDevice"
+            android:exported="false" />
+
+        <service
+            android:name=".CameraShareService"
+            android:foregroundServiceType="camera"
             android:exported="false" />
 
         <!-- PackageInstaller status callbacks for in-app updates. Manifest-declared because

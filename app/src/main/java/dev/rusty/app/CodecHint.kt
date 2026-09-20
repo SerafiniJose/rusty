@@ -24,6 +24,20 @@ object CodecNames {
     }
 }
 
+/**
+ * What the live view's info chip shows: the format the player reported, plus the frame rate
+ * MEASURED from rendered frames ([StreamMeter]); [fps] is null until the first second closes.
+ * The SDP frame rate in [VideoFormatInfo.frameRate] is ignored — most cameras leave it at -1.
+ */
+data class VideoStats(val format: VideoFormatInfo?, val fps: Int?) {
+    fun chipText(): String? {
+        val f = format ?: return null
+        if (f.width <= 0 || f.height <= 0) return null
+        val rate = fps?.toString() ?: "…"
+        return "${f.width}×${f.height} · $rate fps · ${CodecNames.label(f.mime)}"
+    }
+}
+
 /** The one sentence the app says about a stream this device cannot decode, with the fix in it. */
 object CodecHint {
     fun describe(f: VideoFormatInfo): String {

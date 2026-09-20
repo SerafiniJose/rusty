@@ -1,6 +1,8 @@
 package dev.rusty.app
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.view.View
@@ -277,6 +279,10 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             panel.findViewById(R.id.headCamBehavior), panel.findViewById(R.id.bodyCamBehavior),
             "Grid", startExpanded = false,
         )
+        val shareSection = CollapsibleSection(
+            panel.findViewById(R.id.headCamShare), panel.findViewById(R.id.bodyCamShare),
+            "Share this camera", startExpanded = false,
+        )
 
         val cameraListContainer = panel.findViewById<LinearLayout>(R.id.camCameraList)
         val cameraListEmpty = panel.findViewById<TextView>(R.id.tvCamCameraListEmpty)
@@ -425,6 +431,9 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
                 activity = activity,
                 scope = scope,
                 cameras = { cameras },
+                // The scan also lists other Rusty devices sharing a camera; this device's own
+                // advertisement is filtered out by its Remote Control identity.
+                ownDeviceId = ControlSettings.deviceId(prefs),
                 askCredentials = ::openDiscoveryCredentialsDialog,
                 onManual = { openAddForm(null) },
                 onResolved = { openAddForm(it) },
@@ -540,8 +549,194 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         })
         renderBehaviorSummary()
 
+        // ---- Share this camera --------------------------------------------------------------
+        // This device's own camera, offered to other Rusty devices as an RTSP stream. Every string
+        // the section shows is decided by CameraShareSettingsModel; the code here only probes the
+        // Android-side facts and moves the result onto views.
+
+        val shareSwitch = panel.findViewById<SwitchMaterial>(R.id.switchCamShare)
+        val shareStatus = panel.findViewById<TextView>(R.id.tvCamShareStatus)
+        val shareWarning = panel.findViewById<TextView>(R.id.tvCamShareWarning)
+        val shareUrlRow = panel.findViewById<View>(R.id.rowCamShareUrl)
+        val shareUrl = panel.findViewById<TextView>(R.id.tvCamShareUrl)
+        val lensRow = panel.findViewById<View>(R.id.rowCamShareLens)
+        val lensFront = panel.findViewById<RadioButton>(R.id.rbCamShareFront)
+        val lensBack = panel.findViewById<RadioButton>(R.id.rbCamShareBack)
+        val encodingHint = panel.findViewById<TextView>(R.id.tvCamShareEncodingHint)
+        val advice = panel.findViewById<TextView>(R.id.tvCamShareAdvice)
+        val adviceDetail = panel.findViewById<TextView>(R.id.tvCamShareAdviceDetail)
+        val resolutionButtons = mapOf(
+            CameraShareSettings.Resolution.LOW to panel.findViewById<RadioButton>(R.id.rbCamShareLow),
+            CameraShareSettings.Resolution.MEDIUM to panel.findViewById<RadioButton>(R.id.rbCamShareMedium),
+            CameraShareSettings.Resolution.HIGH to panel.findViewById<RadioButton>(R.id.rbCamShareHigh),
+        )
+        val tierButtons = mapOf(
+            CameraShareSettings.Tier.BASIC to panel.findViewById<RadioButton>(R.id.rbCamShareBasic),
+            CameraShareSettings.Tier.GOOD to panel.findViewById<RadioButton>(R.id.rbCamShareGood),
+            CameraShareSettings.Tier.BEST to panel.findViewById<RadioButton>(R.id.rbCamShareBest),
+        )
+        val fpsButtons = mapOf(
+            CameraShareSettings.FrameRate.FPS_10 to panel.findViewById<RadioButton>(R.id.rbCamShareFps10),
+            CameraShareSettings.FrameRate.FPS_15 to panel.findViewById<RadioButton>(R.id.rbCamShareFps15),
+            CameraShareSettings.FrameRate.FPS_30 to panel.findViewById<RadioButton>(R.id.rbCamShareFps30),
+        )
+
+        // Probed once per bind: both answers enumerate system codecs / cameras, and neither can
+        // change while the sheet is open.
+        val lensCount = CameraCapturePipeline.lensCount(activity)
+        val shareUnsupported = CameraShareSettingsModel.unsupportedReason(
+            hasEncoder = CameraCapturePipeline.hasH264Encoder(),
+            lensCount = lensCount,
+        )
+        // Also probed once per bind, not re-read on every paintShare() as it used to be. The old
+        // comment there justified re-reading with "the password lives in another tab", but that is
+        // not true: SettingsSheet.showPanel() runs the OUTGOING tab's cleanup before binding the
+        // incoming one, so only one settings panel is ever bound at a time and the Remote Control
+        // tab cannot mutate the password while this panel's paintShare closure is alive — reopening
+        // this tab re-probes fresh anyway. Re-reading on every paint was also pure waste: paintShare
+        // runs on every CameraShareStatus tick, i.e. every viewer attach/detach, which would
+        // re-decrypt the stored password on the UI thread each time — the exact cost
+        // ControlService.refreshAdvertisement's KDoc calls out for the same secret. Worse than waste:
+        // requiredPassword reads an EncryptedSharedPreferences entry, and a single undecryptable one
+        // throws SecurityException/GeneralSecurityException (SecretStore's own KDoc calls this "a
+        // field-reported crash rather than theoretical"). paintShare is invoked from shareListener/
+        // controlListener, both dispatched via a main-looper Handler.post, so an uncaught throw there
+        // reaches the default handler and kills the process. runCatching keeps that failure from ever
+        // escaping — the same shape as ControlService.reconcileNsd.
+        val passwordSet = runCatching { ControlSettings.requiredPassword(prefs, secrets) != null }
+            .getOrDefault(false)
+
+        lensRow.isVisible = CameraShareSettingsModel.showLensPicker(lensCount)
+        (if (CameraShareSettings.lens(prefs) == CameraShareSettings.Lens.BACK) lensBack else lensFront).isChecked = true
+        // The RadioGroup owns exclusivity; the service watches KEY_LENS and restarts a live camera.
+        lensFront.setOnClickListener { CameraShareSettings.setLens(prefs, CameraShareSettings.Lens.FRONT) }
+        lensBack.setOnClickListener { CameraShareSettings.setLens(prefs, CameraShareSettings.Lens.BACK) }
+
+        // Fixed caveat under the advice line: bound once from the constant the model test pins, so
+        // the wording lives in exactly one place (the layout carries it only as a tools: preview).
+        adviceDetail.text = CameraShareSettingsModel.ADVICE_DETAIL
+
+        // Advice is repainted from every status tick (below) AND from every picker tap: the
+        // encoding is an input to it. `showAdvice` is what the last paintShare decided.
+        var showAdvice = false
+        fun paintEncoding() {
+            val e = CameraShareSettings.encoding(prefs)
+            encodingHint.text = CameraShareSettingsModel.encodingHint(e)
+            val a = if (showAdvice) CameraShareSettingsModel.networkAdvice(WifiLinkProbe.read(activity), e) else null
+            advice.isVisible = a != null
+            adviceDetail.isVisible = a != null
+            if (a != null) {
+                val dot = when (a.level) {
+                    CameraShareSettingsModel.AdviceLevel.GOOD -> R.color.dot_green
+                    CameraShareSettingsModel.AdviceLevel.WARN -> R.color.dot_amber
+                    CameraShareSettingsModel.AdviceLevel.BAD -> R.color.dot_red
+                }
+                val text = android.text.SpannableString("\u25cf " + a.text)
+                text.setSpan(
+                    android.text.style.ForegroundColorSpan(ContextCompat.getColor(activity, dot)),
+                    0, 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                advice.text = text
+                advice.setTextColor(ContextCompat.getColor(activity, if (a.level == CameraShareSettingsModel.AdviceLevel.GOOD) R.color.muted else dot))
+            }
+        }
+
+        // Same shape as the lens picker: each RadioGroup owns exclusivity, and the service watches
+        // KEY_RESOLUTION / KEY_TIER / KEY_FPS, restarting a live camera on the background thread a
+        // reopen needs.
+        resolutionButtons[CameraShareSettings.resolution(prefs)]?.isChecked = true
+        tierButtons[CameraShareSettings.tier(prefs)]?.isChecked = true
+        fpsButtons[CameraShareSettings.frameRate(prefs)]?.isChecked = true
+        resolutionButtons.forEach { (r, b) -> b.setOnClickListener { CameraShareSettings.setResolution(prefs, r); paintEncoding() } }
+        tierButtons.forEach { (t, b) -> b.setOnClickListener { CameraShareSettings.setTier(prefs, t); paintEncoding() } }
+        fpsButtons.forEach { (f, b) -> b.setOnClickListener { CameraShareSettings.setFrameRate(prefs, f); paintEncoding() } }
+
+        // Guards the programmatic revert (a refused CAMERA grant) from re-entering the listener —
+        // the RemoteControlSettingsPanel idiom.
+        var suppressShareSwitch = false
+        var cameraPermissionDenied = false
+
+        fun paintShare(state: CameraShareStatus.State) {
+            val row = CameraShareSettingsModel.row(
+                enabled = CameraShareSettings.isEnabled(prefs),
+                state = state,
+                // Remote Control is a prerequisite: its service owns the mDNS advertisement and
+                // the snapshot endpoint, so sharing without it is a port nothing can discover.
+                controlOn = ControlSettings.isEnabled(prefs),
+                unsupportedReason = shareUnsupported,
+                // Exactly the gate the RTSP server applies per challenge: the switch AND a stored
+                // password. Probed once per bind — see `passwordSet` above — not re-read here.
+                passwordSet = passwordSet,
+                controlUrl = (ControlServerStatus.current() as? ControlServerStatus.State.Running)?.url.orEmpty(),
+                permissionDenied = cameraPermissionDenied,
+            )
+            suppressShareSwitch = true
+            shareSwitch.isChecked = row.switchChecked
+            suppressShareSwitch = false
+            shareSwitch.isEnabled = row.switchEnabled
+            shareStatus.text = row.status
+            shareWarning.text = row.warning.orEmpty()
+            shareWarning.isVisible = row.warning != null
+            shareUrl.text = row.url
+            shareUrlRow.isVisible = row.url.isNotEmpty()
+            shareSection.setSummary(row.summary)
+            // The advice only means something while a share is on and could actually run.
+            showAdvice = row.switchChecked && row.switchEnabled
+            paintEncoding()
+        }
+        // Inline first, so the collapsed header and the switch are right on the first frame: both
+        // publishers replay through a main-thread post, which lands a frame later.
+        paintShare(CameraShareStatus.current())
+
+        val shareListener: (CameraShareStatus.State) -> Unit = { paintShare(it) }
+        CameraShareStatus.addListener(shareListener)
+        // The address follows the control server (DHCP and Wi-Fi moves it), and the whole row
+        // follows Remote Control being switched on or off — from its own tab or from the control
+        // page — so this section listens to BOTH publishers.
+        val controlListener: (ControlServerStatus.State) -> Unit = { paintShare(CameraShareStatus.current()) }
+        ControlServerStatus.addListener(controlListener)
+
+        shareSwitch.setOnCheckedChangeListener { _, checked ->
+            if (suppressShareSwitch) return@setOnCheckedChangeListener
+            if (!checked) {
+                CameraShareSettings.setEnabled(prefs, false)
+                CameraShareService.syncFromPrefs(activity)
+                paintShare(CameraShareStatus.current())
+                return@setOnCheckedChangeListener
+            }
+            cameraPermissionDenied = false
+            // A camera foreground service needs the runtime grant (API 34+ refuses to start one
+            // without it) and a Service has no window to ask from — so the ask lives here, and the
+            // pref is only written once it is answered.
+            if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                activity.requestCameraShare { granted ->
+                    if (granted) {
+                        CameraShareSettings.setEnabled(prefs, true)
+                        CameraShareService.syncFromPrefs(activity)
+                    } else {
+                        // Say why, and leave the switch as the user will find it. The reason is
+                        // held in a flag rather than written straight onto the label, so the next
+                        // status publish repaints it instead of erasing it.
+                        cameraPermissionDenied = true
+                        suppressShareSwitch = true
+                        shareSwitch.isChecked = false
+                        suppressShareSwitch = false
+                    }
+                    paintShare(CameraShareStatus.current())
+                }
+                return@setOnCheckedChangeListener
+            }
+            CameraShareSettings.setEnabled(prefs, true)
+            CameraShareService.syncFromPrefs(activity)
+            paintShare(CameraShareStatus.current())
+        }
+
         return {
             CameraStatusRelay.removeListener(statusListener)
+            CameraShareStatus.removeListener(shareListener)
+            ControlServerStatus.removeListener(controlListener)
             rowTicker.removeCallbacks(rowTick)
             scope.cancel()
         }
@@ -720,8 +915,12 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             RtspProbe.run(context, rtspUriWithCreds, forceTcp)
         }
 
+    /** Login prompt for a discovered camera. [fixedUsername] non-null (a Rusty share, which always
+     *  authenticates as [RtspAuth.USER]) shows that name in a disabled field and starts on the
+     *  password, so the only thing asked for is the only thing that varies. */
     private fun openDiscoveryCredentialsDialog(
         cameraName: String?,
+        fixedUsername: String?,
         onSubmit: (username: String, password: String) -> Unit,
     ) {
         val activity = ctx.activity
@@ -736,6 +935,14 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         root.findViewById<TextView>(R.id.tvCamCredTitle).text = cameraName ?: "Camera credentials"
         val userField = root.findViewById<EditText>(R.id.etCamCredUser)
         val passField = root.findViewById<EditText>(R.id.etCamCredPass)
+        if (fixedUsername != null) {
+            userField.setText(fixedUsername)
+            userField.isEnabled = false
+            // Disabled is already skipped by focus search; cleared explicitly as well so the D-pad
+            // can never stop on a field that cannot be typed into (same belt-and-braces as the
+            // already-added discovery rows).
+            userField.isFocusable = false
+        }
 
         root.findViewById<MaterialButton>(R.id.btnCamCredCancel).setOnClickListener { card.dismiss() }
         root.findViewById<MaterialButton>(R.id.btnCamCredSave).setOnClickListener {
@@ -745,7 +952,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
             onSubmit(user, pass)
         }
         card.show()
-        userField.requestFocus()
+        (if (fixedUsername != null) passField else userField).requestFocus()
     }
 
     private companion object {

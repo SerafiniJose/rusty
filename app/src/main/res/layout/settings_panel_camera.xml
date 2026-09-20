@@ -4,6 +4,7 @@
      container already scrolls (bottom_sheet_settings.xml). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical">
@@ -311,6 +312,365 @@
                 app:tickColorInactive="@color/muted_dim"
                 app:trackColorActive="@color/accent_fallback"
                 app:trackColorInactive="@color/surface_border" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/surface_border" />
+
+    <!-- SHARE: stream this device's own camera to other Rusty devices / HA / VLC. Remote Control
+         is a prerequisite (its service owns the mDNS advertisement and the snapshot endpoint), so
+         the switch disables itself and says so while that is off — see CameraShareSettingsModel. -->
+    <include
+        android:id="@+id/headCamShare"
+        layout="@layout/view_settings_section_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    <LinearLayout
+        android:id="@+id/bodyCamShare"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingBottom="14dp">
+
+        <!-- Label column weighted, switch wrap_content: the status line is a whole sentence
+             ("Turn on Remote Control in General settings first") and must wrap, not push the
+             switch off a portrait sheet. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_medium"
+                    android:text="Share this device's camera"
+                    android:textColor="@color/ink"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tvCamShareStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_regular"
+                    android:text="Off"
+                    android:textColor="@color/muted_dim"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchCamShare"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:background="@null"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:minHeight="0dp"
+                android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+                app:switchMinWidth="0dp"
+                app:thumbTint="@color/switch_thumb_tint"
+                app:trackTint="@color/switch_track_tint" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:fontFamily="@font/hanken_regular"
+            android:text="Other Rusty devices find it in their camera scan. Protected by the Remote Control password when one is set. The camera only turns on while someone is watching."
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp" />
+
+        <!-- Shown while sharing is on with no API password: the stream and the snapshot endpoint
+             are then open to anyone on the LAN. Not a block — the same posture as the rest of the
+             control API — but never a silent one. -->
+        <TextView
+            android:id="@+id/tvCamShareWarning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:fontFamily="@font/hanken_regular"
+            android:textColor="@color/dot_amber"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <!-- Only on hardware with both facings (CameraShareSettingsModel.showLensPicker). -->
+        <LinearLayout
+            android:id="@+id/rowCamShareLens"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Lens"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <RadioGroup
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rbCamShareFront"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="@color/accent_fallback"
+                    android:fontFamily="@font/hanken_regular"
+                    android:foreground="@drawable/bg_tv_focus_switch"
+                    android:text="Front"
+                    android:textColor="@color/ink" />
+
+                <RadioButton
+                    android:id="@+id/rbCamShareBack"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="20dp"
+                    android:buttonTint="@color/accent_fallback"
+                    android:fontFamily="@font/hanken_regular"
+                    android:foreground="@drawable/bg_tv_focus_switch"
+                    android:text="Back"
+                    android:textColor="@color/ink" />
+            </RadioGroup>
+        </LinearLayout>
+
+        <!-- A ceiling, not a promise: a camera that does not offer the chosen size streams the
+             largest one it does offer below it (CameraCapturePipeline.pickSize). Label above the
+             control, never beside it, so a narrow card in portrait cannot push the two together. -->
+        <LinearLayout
+            android:id="@+id/rowCamShareQuality"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Resolution"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <RadioGroup
+                android:id="@+id/rgCamShareQuality"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rbCamShareLow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="@color/accent_fallback"
+                    android:fontFamily="@font/hanken_regular"
+                    android:foreground="@drawable/bg_tv_focus_switch"
+                    android:text="480p"
+                    android:textColor="@color/ink" />
+
+                <RadioButton
+                    android:id="@+id/rbCamShareMedium"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="20dp"
+                    android:buttonTint="@color/accent_fallback"
+                    android:fontFamily="@font/hanken_regular"
+                    android:foreground="@drawable/bg_tv_focus_switch"
+                    android:text="720p"
+                    android:textColor="@color/ink" />
+
+                <RadioButton
+                    android:id="@+id/rbCamShareHigh"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="20dp"
+                    android:buttonTint="@color/accent_fallback"
+                    android:fontFamily="@font/hanken_regular"
+                    android:foreground="@drawable/bg_tv_focus_switch"
+                    android:text="1080p"
+                    android:textColor="@color/ink" />
+            </RadioGroup>
+
+            <!-- Quality is the bitrate in the user's words; Frame rate is enforced at the encoder's
+                 input surface (CameraCapturePipeline.encoderFormat). Both rows follow the
+                 Resolution row's pattern: label above, radios below, so a portrait card never
+                 pushes label and control together. -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Quality"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <RadioGroup
+                android:id="@+id/rgCamShareTier"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rbCamShareBasic"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="@color/accent_fallback"
+                    android:fontFamily="@font/hanken_regular"
+                    android:foreground="@drawable/bg_tv_focus_switch"
+                    android:text="Basic"
+                    android:textColor="@color/ink" />
+
+                <RadioButton
+                    android:id="@+id/rbCamShareGood"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="20dp"
+                    android:buttonTint="@color/accent_fallback"
+                    android:fontFamily="@font/hanken_regular"
+                    android:foreground="@drawable/bg_tv_focus_switch"
+                    android:text="Good"
+                    android:textColor="@color/ink" />
+
+                <RadioButton
+                    android:id="@+id/rbCamShareBest"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="20dp"
+                    android:buttonTint="@color/accent_fallback"
+                    android:fontFamily="@font/hanken_regular"
+                    android:foreground="@drawable/bg_tv_focus_switch"
+                    android:text="Best"
+                    android:textColor="@color/ink" />
+            </RadioGroup>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Frame rate"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <RadioGroup
+                android:id="@+id/rgCamShareFps"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rbCamShareFps10"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="@color/accent_fallback"
+                    android:fontFamily="@font/hanken_regular"
+                    android:foreground="@drawable/bg_tv_focus_switch"
+                    android:text="10 fps"
+                    android:textColor="@color/ink" />
+
+                <RadioButton
+                    android:id="@+id/rbCamShareFps15"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="20dp"
+                    android:buttonTint="@color/accent_fallback"
+                    android:fontFamily="@font/hanken_regular"
+                    android:foreground="@drawable/bg_tv_focus_switch"
+                    android:text="15 fps"
+                    android:textColor="@color/ink" />
+
+                <RadioButton
+                    android:id="@+id/rbCamShareFps30"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="20dp"
+                    android:buttonTint="@color/accent_fallback"
+                    android:fontFamily="@font/hanken_regular"
+                    android:foreground="@drawable/bg_tv_focus_switch"
+                    android:text="30 fps"
+                    android:textColor="@color/ink" />
+            </RadioGroup>
+
+            <!-- The words chosen and the honest number behind them (CameraShareSettingsModel.encodingHint). -->
+            <TextView
+                android:id="@+id/tvCamShareEncodingHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:fontFamily="@font/hanken_regular"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+
+            <!-- Wi-Fi headroom, measured on THIS device (WifiLinkProbe -> networkAdvice). Shown only
+                 while the share is on and can run, and only on Wi-Fi. Colour carries the level. -->
+            <TextView
+                android:id="@+id/tvCamShareAdvice"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:fontFamily="@font/hanken_regular"
+                android:textColor="@color/muted"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvCamShareAdviceDetail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:fontFamily="@font/hanken_regular"
+                tools:text="Checks this device's Wi-Fi only. A viewer on weak Wi-Fi still stutters."
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Address label + value hide together: with nothing listening there is no address to
+             show. Deliberately NOT textIsSelectable — that makes a TextView focusable and drops a
+             D-pad dead end into the section (the sheet has to stay walkable on a touchless TV). -->
+        <LinearLayout
+            android:id="@+id/rowCamShareUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Stream address"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvCamShareUrl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

@@ -120,6 +120,14 @@ class LyricsActivity : AppCompatActivity() {
     // logic the old ACTION_PLAYBACK receiver ran, decided by the pure LyricsPlaybackReaction.
     private val storeListener = ReceiverStateStore.Listener { snapshot -> onSnapshot(snapshot) }
 
+    /**
+     * The same "someone is watching" glyph [HomeActivity] shows — see [CameraShareGlyph] for what
+     * it tracks and why this separate, opaque, full-screen Activity needs its own copy rather than
+     * relying on Home's. Held as a field so [onDestroy] removes this exact instance.
+     */
+    private val cameraShareGlyphListener: (CameraShareStatus.State) -> Unit =
+        CameraShareGlyph.listener { findViewById(R.id.ivCameraShareGlyph) }
+
     // The token signal is unrelated to playback state, so it stays a broadcast (Task 12 only
     // migrates status/playback consumption to the store).
     private val tokenReceiver = object : BroadcastReceiver() {
@@ -135,6 +143,9 @@ class LyricsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_lyrics)
+        // Registered here (not lazily) so the glyph reflects reality the instant a viewer attaches,
+        // for as long as this screen can be in front. Removed first thing in onDestroy — see there.
+        CameraShareStatus.addListener(cameraShareGlyphListener)
         root = findViewById(R.id.lyricsRoot)
         scroll = findViewById(R.id.lyricsScroll)
         container = findViewById(R.id.lyricsContainer)
@@ -445,6 +456,9 @@ class LyricsActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // Unregistered first: this Activity's root view is the listener's only reference back to
+        // it, and a leaked listener on a destroyed Activity's view leaks the Activity.
+        CameraShareStatus.removeListener(cameraShareGlyphListener)
         coverProbe.dispose()
         artworkRequestId++   // invalidate any in-flight Palette callback
         super.onDestroy()
@@ -453,11 +467,15 @@ class LyricsActivity : AppCompatActivity() {
     private fun setupFullscreen() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val content = findViewById<View>(R.id.lyricsContent)
+        val cameraShareGlyph = findViewById<View>(R.id.ivCameraShareGlyph)
         val basePadV = dp(20f)
         val basePadH = dp(28f)
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             content.setPadding(basePadH + bars.left, basePadV + bars.top, basePadH + bars.right, basePadV + bars.bottom)
+            // See CameraShareGlyph for the margin-vs-padding rationale (shared verbatim with
+            // HomeActivity's own copy).
+            CameraShareGlyph.applyInsetMargin(cameraShareGlyph, bars, resources.displayMetrics.density)
             insets
         }
         val fullscreen = getSharedPreferences("spotify_receiver_prefs", MODE_PRIVATE)

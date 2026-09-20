@@ -61,7 +61,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:fontFamily="@font/hanken_regular"
-                        android:text="Finds ONVIF cameras and fills in their stream for you"
+                        android:text="Finds cameras and other Rusty devices sharing one, then fills in the details for you"
                         android:textColor="@color/muted_dim"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -193,13 +193,34 @@
                 android:layout_marginTop="4dp"
                 android:orientation="vertical" />
 
+            <!-- Second section: other Rusty devices sharing their own camera, found over mDNS in
+                 the same scan. Heading and list appear together, only when at least one answered,
+                 so a network without any looks exactly as it did before. -->
+            <TextView
+                android:id="@+id/tvCamAddRustyHeading"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Rusty devices"
+                android:textColor="@color/muted_dim"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/camAddRustyResults"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/tvCamAddEmpty"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:fontFamily="@font/hanken_regular"
-                android:text="No ONVIF cameras responded on this network."
+                android:text="No cameras responded on this network."
                 android:textColor="@color/muted_dim"
                 android:textSize="13sp"
                 android:visibility="gone" />

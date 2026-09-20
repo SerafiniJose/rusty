@@ -160,14 +160,39 @@ class ControlService : Service() {
      *  under [lifecycleLock] at bind time; 0 until then. */
     private var boundPort = 0
 
-    /** For [deviceName], the device id [reconcileNsd] hands to [nsdAdvertiser], and the shade
-     *  Stop's toggle write. `by lazy` is fine here: first touched from [onStartCommand] or
-     *  [bindServer], well after the Service is attached. */
+    /** Guarded by [lifecycleLock], like [boundPort]. The [ControlNsdPlan.advertKey] most recently
+     *  handed to [ControlNsdAdvertiser.register] — or `""` after an unregister, or before the first
+     *  register this instance ever makes. [reconcileNsd] diffs the freshly-computed key against
+     *  this, so a change on ANY axis that feeds the advertisement (address, camera-share status,
+     *  the auth pref) triggers a re-register, not only an address change. */
+    private var advertisedKey: String = ""
+
+    /** For [deviceName], the device id [currentTxt] reads for [reconcileNsd], the auth pref
+     *  [authPrefListener] watches, and the shade Stop's toggle write. `by lazy` is fine here: first
+     *  touched from [onCreate] (to register [authPrefListener]), well after the Service is
+     *  attached. */
     private val prefs: SharedPreferences by lazy { getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
 
     /** Owns the NSD registration for this service instance. See [reconcileNsd] for when it is
      *  driven and why. */
     private val nsdAdvertiser: ControlNsdAdvertiser by lazy { ControlNsdAdvertiser(applicationContext) }
+
+    /** Registered on [CameraShareStatus] in [onCreate], removed in [onDestroy]. The camera-share
+     *  state is one of the two non-network inputs to the TXT record (see [currentTxt]); this
+     *  listener's only job is calling [refreshAdvertisement] whenever that state changes, including
+     *  the initial replay [CameraShareStatus.addListener] delivers on registration. */
+    private val shareListener: (CameraShareStatus.State) -> Unit = { refreshAdvertisement() }
+
+    /** Registered on [prefs] in [onCreate], removed in [onDestroy]. The other non-network TXT
+     *  input: whether a Remote Control password is actually enforced. Filters on
+     *  [ControlSettings.KEY_AUTH_REQUIRED] so writes to unrelated keys (device name, camera-share
+     *  prefs, …) do not churn the advertisement — those already have their own paths to
+     *  [reconcileNsd] ([deviceName] is re-read fresh on every registration; camera-share prefs feed
+     *  [CameraShareStatus], not this listener). */
+    private val authPrefListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == ControlSettings.KEY_AUTH_REQUIRED) refreshAdvertisement()
+        }
 
     override fun onCreate() {
         super.onCreate()
@@ -178,6 +203,15 @@ class ControlService : Service() {
         ControlProtocol.onInternalError = { t, req ->
             Log.w(TAG, "control API failed on ${req.method} ${req.path}", t)
         }
+        // Both feed [refreshAdvertisement]: the TXT record depends on the camera-share status and
+        // the auth pref, neither of which is a network event, so neither goes through
+        // [refreshUrl]'s ConnectivityManager callbacks. Registered here — not lazily at bind time —
+        // so a status/pref change arriving before the server ever binds still reconciles (to a
+        // no-op, since [currentUrl] is "" until [publishRunningLocked] runs) rather than being
+        // silently missed. Removed in [onDestroy]; leaving either registered would leak this
+        // Service instance via the process-wide static listener sets it is held in.
+        CameraShareStatus.addListener(shareListener)
+        prefs.registerOnSharedPreferenceChangeListener(authPrefListener)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -224,6 +258,15 @@ class ControlService : Service() {
         // socket instead of announcing a server that is being torn down. Blocks only for as long as
         // a concurrent publish takes (a status post + a notification call).
         synchronized(lifecycleLock) { destroyed = true }
+
+        // Mirrors onCreate's registration, in reverse: stop reacting to camera-share/auth-pref
+        // changes before tearing the advertisement down, so neither listener can fire against a
+        // Service instance that is on its way out. Not itself what makes the unregister-after-
+        // destroyed race safe (destroyed, checked under lifecycleLock in refreshAdvertisement,
+        // already does that) — this is about not leaking this Service instance via the
+        // process-wide CameraShareStatus listener set and the SharedPreferences listener map.
+        CameraShareStatus.removeListener(shareListener)
+        prefs.unregisterOnSharedPreferenceChangeListener(authPrefListener)
 
         // Design ordering: "Stop advertising -> close server." Unconditional and safe to call even
         // when nothing was ever registered (boot-before-Wi-Fi, or a bind that never succeeded) —
@@ -293,12 +336,12 @@ class ControlService : Service() {
                     // `destroyed` under it, so registering outside could land after that
                     // unregister and leave two callbacks holding this Service forever.
                     registerNetworkCallbacks()
-                    // Design order: "bind server -> advertise." Previous URL is always "" here —
+                    // Design order: "bind server -> advertise." advertisedKey is always "" here —
                     // this is the first Running this service instance ever publishes — so
                     // ControlNsdPlan.action resolves to Register only when a site-local IPv4 is
                     // already available (the usual case) and NoOp when it is not yet (boot before
                     // Wi-Fi; refreshUrl's own call to reconcileNsd registers once one arrives).
-                    reconcileNsd(previousUrl = "", newUrl = url)
+                    reconcileNsd(url)
                     true
                 }
             }
@@ -413,22 +456,34 @@ class ControlService : Service() {
             publishRunningLocked(url)
             // Task 10's NSD re-registration hangs off this same signal, per the controller's
             // resolution — a second ConnectivityManager callback would be duplicated machinery
-            // watching the exact event this method already reacts to. current.url is the URL that
-            // was (or was not) advertised up to this point; the invariant "the NSD advertisement
-            // always mirrors what ControlServerStatus just published" means no separate tracking
-            // field is needed here — see reconcileNsd's KDoc for the full argument.
-            reconcileNsd(previousUrl = current.url, newUrl = url)
+            // watching the exact event this method already reacts to. reconcileNsd diffs against
+            // advertisedKey itself now, so this call needs nothing from `current` beyond having
+            // already used it for the "did the URL actually change" check above.
+            //
+            // Called inline, unlike refreshAdvertisement's: ConnectivityManager delivers these
+            // callbacks on its own ConnectivityThread, never the main thread, so currentTxt()'s
+            // blocking secret read costs no UI responsiveness here — and this method is already
+            // doing comparable work on that thread (urlFor -> LanAddress walks every network
+            // interface). Deferring it would also split the "publish the status, then advertise it"
+            // pair this whole method holds lifecycleLock to keep atomic. The crash half of the
+            // problem is handled where it belongs, inside reconcileNsd, which never throws.
+            reconcileNsd(url)
             Log.i(TAG, "network changed; control URL is now ${url.ifEmpty { "(no LAN address)" }}")
         }
     }
 
     /**
-     * Applies [ControlNsdPlan.action] for the transition from [previousUrl] to [newUrl] — register,
-     * unregister, or leave the advertisement alone. Callers are [bindServer] (`previousUrl = ""`,
-     * the first-ever publish for this service instance) and [refreshUrl] (`previousUrl` is the URL
-     * [ControlServerStatus] held immediately before this call, which — because this method and
-     * every status publish always run together inside [lifecycleLock] — IS what is currently
-     * advertised; no separate "what did we last register" field is needed).
+     * Builds the TXT record for [newUrl] and applies [ControlNsdPlan.action] for the move from
+     * [advertisedKey] to that record's [ControlNsdPlan.advertKey] — register, unregister, or leave
+     * the advertisement alone. Callers are [bindServer] (the first-ever publish for this service
+     * instance, [advertisedKey] still `""`), [refreshUrl] (a network transition moved the address)
+     * and [refreshAdvertisement] (the camera-share status or the auth pref moved instead — [newUrl]
+     * may be identical to what is already advertised; the TXT half of the key is what changed).
+     *
+     * [currentTxt] is called exactly once here, so the key just computed and the record
+     * [ControlNsdAdvertiser.register] is handed (on [ControlNsdPlan.Action.Register]) are always
+     * the same snapshot of camera-share/auth state — never a key built from one read racing a
+     * record built from a second, later read that could disagree with it.
      *
      * MUST be called holding [lifecycleLock] with [destroyed] false, exactly like
      * [registerNetworkCallbacks]. This is not because `NsdManager.registerService`/
@@ -444,15 +499,128 @@ class ControlService : Service() {
      * lands after `onDestroy` has already unregistered would leave a live advertisement for a
      * service instance that no longer exists — the exact notification/network-callback race Task 9
      * hit and fixed the same way [registerNetworkCallbacks] is fixed.
+     *
+     * ## Never throws
+     * [ControlNsdPlan.action] is pure and [ControlNsdAdvertiser]'s calls are already `runCatching`-
+     * wrapped, but [currentTxt] reads an encrypted secret, which can throw (see its KDoc). All three
+     * call sites would take that badly:
+     *
+     *  - [refreshUrl] runs on a `ConnectivityManager` callback thread with no `catch` of its own,
+     *    and [refreshAdvertisement]'s task runs on [serverExecutor] — on either, an escape reaches
+     *    the thread's default uncaught handler, which on Android kills the whole process, for the
+     *    same reason [bindServer]'s own catch is a [Throwable].
+     *  - [bindServer]'s call IS inside a `try`, but the wrong one: its catch means "the port could
+     *    not be bound", so a throw from here — after the server has bound and published `Running` —
+     *    would report a healthy server as a bind failure and tear it down.
+     *
+     * So a failure is logged and the cycle simply skipped, leaving the previous advertisement in
+     * place until the next reconcile (a network tick, a camera-share change, a pref write) retries.
+     * Wrapping the whole body rather than just [currentTxt] also keeps [advertisedKey] and the live
+     * registration consistent: the bookkeeping write and the call it records are inside together.
      */
-    private fun reconcileNsd(previousUrl: String, newUrl: String) {
-        when (ControlNsdPlan.action(previousUrl, newUrl)) {
-            ControlNsdPlan.Action.NoOp -> Unit
-            ControlNsdPlan.Action.Unregister -> nsdAdvertiser.unregister()
-            ControlNsdPlan.Action.Register ->
-                nsdAdvertiser.register(deviceName(), boundPort, ControlSettings.deviceId(prefs))
+    private fun reconcileNsd(newUrl: String) {
+        runCatching {
+            val txt = currentTxt()
+            val newKey = ControlNsdPlan.advertKey(newUrl, txt)
+            when (ControlNsdPlan.action(advertisedKey, newKey)) {
+                ControlNsdPlan.Action.NoOp -> Unit
+                ControlNsdPlan.Action.Unregister -> {
+                    nsdAdvertiser.unregister()
+                    advertisedKey = ""
+                }
+                ControlNsdPlan.Action.Register -> {
+                    nsdAdvertiser.register(deviceName(), boundPort, txt)
+                    advertisedKey = newKey
+                }
+            }
+        }.onFailure { t ->
+            Log.w(TAG, "could not reconcile the NSD advertisement; leaving it as it is", t)
         }
     }
+
+    /**
+     * The TXT record [reconcileNsd] should advertise right now. [CameraShareStatus.current] is read
+     * exactly once, into a local — reading it a second time (say, once for the "is this shared at
+     * all" flag and again for something else) could observe a state change in between and produce a
+     * record that is internally inconsistent, describing two different moments at once.
+     *
+     * WHICH states are worth advertising a camera for is [ControlNsdPlan.advertisesCamera]'s
+     * decision, not this method's: it is pure logic over a sealed class, so it belongs in the
+     * tested layer, and expressing it as an exhaustive `when` there makes a future
+     * [CameraShareStatus.State] a compile error rather than a silent "advertise". See that function
+     * for why [CameraShareStatus.State.Unavailable] joins [CameraShareStatus.State.Off] and
+     * [CameraShareStatus.State.Unsupported] in omitting `cam`/`rtsp`.
+     *
+     * `auth` reflects whether a password is actually ENFORCED —
+     * [ControlSettings.requiredPassword] returning non-null, i.e. the switch is on AND a secret is
+     * actually stored — not merely whether the switch is on; see that function's KDoc for why those
+     * can disagree (a restored backup with the switch on but no secret).
+     *
+     * ## This blocks, and it can throw
+     * [SecretStore.of] builds a KeyStore-backed `EncryptedSharedPreferences` on first use (master-key
+     * generation, Tink setup, a file read), and the per-value read behind
+     * [ControlSettings.requiredPassword] is NOT guarded the way that construction is: a single
+     * undecryptable entry raises `SecurityException`/`GeneralSecurityException` straight out of
+     * `getString`, a failure mode distinct from the whole-file corruption [SecretStore] recovers
+     * from at open time. That is why [reconcileNsd] — the only caller — never lets a throw escape,
+     * and why [refreshAdvertisement] hops onto [serverExecutor] before getting here.
+     */
+    private fun currentTxt(): Map<String, String> {
+        val share = CameraShareStatus.current()
+        return ControlNsdPlan.txtAttributes(
+            deviceId = ControlSettings.deviceId(prefs),
+            deviceName = deviceName(),
+            cameraShared = ControlNsdPlan.advertisesCamera(share),
+            authRequired = ControlSettings.requiredPassword(prefs, SecretStore.of(applicationContext)) != null,
+        )
+    }
+
+    /**
+     * Reconciles the advertisement when something OTHER than the network moved: [shareListener] (a
+     * [CameraShareStatus] change) or [authPrefListener] (the auth pref) firing. Unlike [refreshUrl],
+     * the URL itself has usually NOT changed here — [currentUrl] just re-reads whatever is currently
+     * live so [reconcileNsd] has a URL to fold the freshly-read TXT record against; it is
+     * [ControlNsdPlan.advertKey]/[ControlNsdPlan.action] that notice the TXT half moved even though
+     * the URL half did not.
+     *
+     * ## Why this hops onto [serverExecutor]
+     * Both callers arrive on the MAIN thread — [CameraShareStatus] dispatches through a main-looper
+     * `Handler` (including the replay [CameraShareStatus.addListener] delivers from [onCreate]), and
+     * `SharedPreferences` listener callbacks are always delivered there too — while [currentTxt]
+     * does KeyStore/Tink construction and a file read (see its KDoc). Left inline, EVERY
+     * [ControlService] start would do that on the UI thread, and usually as the process's first such
+     * construction, since [RustyApp]'s warm-up only runs when there is a legacy plaintext key to
+     * migrate. It also recurs: [shareListener] fires on every viewer attach and detach, so each
+     * [CameraShareStatus.State.Streaming] tick would re-decrypt the stored password on the UI thread
+     * — pure waste, since the viewer count is not in the TXT record and the re-registration itself
+     * is already suppressed by an unchanged [advertisedKey].
+     *
+     * [serverExecutor] is the machinery this file already has for exactly this, and needs no new
+     * state to be teardown-safe: a task queued before [onDestroy] still drains (the executor is
+     * `shutdown()`, not `shutdownNow()`) and then no-ops on [destroyed] under [lifecycleLock], like
+     * every other publisher; the [reconcileNsd] contract of being called under that lock with
+     * [destroyed] false is preserved verbatim. A submission that loses the race with `shutdown()`
+     * raises `RejectedExecutionException` — caught here for the same reason [onStartCommand] and
+     * [onDestroy] catch it around their own `execute` calls, and doubly so on this path, which runs
+     * on the main thread where an escape would be fatal.
+     */
+    private fun refreshAdvertisement() {
+        runCatching {
+            serverExecutor.execute {
+                synchronized(lifecycleLock) {
+                    if (destroyed) return@execute
+                    reconcileNsd(currentUrl())
+                }
+            }
+        }.onFailure { e -> Log.w(TAG, "advertisement refresh dropped: the service is stopping", e) }
+    }
+
+    /** The URL currently live in [ControlServerStatus]: a running server's url, or `""` when it is
+     *  not (yet, or no longer) running — the same "nothing to advertise" reading [refreshUrl] does
+     *  of its own `current`, pulled out so [refreshAdvertisement] can ask the same question without
+     *  a network transition to hang it off. */
+    private fun currentUrl(): String =
+        (ControlServerStatus.current() as? ControlServerStatus.State.Running)?.url ?: ""
 
     /** Same key/default HomeActivity's rename dialog writes to; read fresh (not cached) so a
      *  rename that lands while the server is up is reflected on the next network-driven
@@ -920,6 +1088,54 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
         val jpeg = CameraControlRelay.host()?.snapshotJpeg(cameraId)
             ?: return ControlCameraSnapshotResult.NoFrame
         return ControlCameraSnapshotResult.Ok(jpeg)
+    }
+
+    /**
+     * Single-flight guard for [localCameraSnapshot] below — see that function's KDoc for the
+     * thread-budget reason a second concurrent grab must fail fast rather than queue.
+     */
+    private val localSnapshotInFlight = AtomicBoolean(false)
+
+    /**
+     * Pool thread. [CameraShareService.hub] opens the camera if it is idle and its linger closes
+     * it again.
+     *
+     * ## Thread budget
+     * [CameraShareHub.snapshotJpeg] already serializes concurrent grabs against ITSELF (the
+     * pipeline holds one still slot, one image deep) — but it does that by BLOCKING the loser
+     * until the winner's grab returns, which the hub's own doc says can take seconds and longer
+     * still on a cold start that has to open the camera first. This method runs on a worker from
+     * [ControlHttpServer]'s bounded 8-thread pool, the SAME pool `/api/state` draws from — the one
+     * endpoint Home Assistant polls to decide this device is even alive. If several other Rusty
+     * devices thumbnail this one's grid at once, letting them queue on the hub's internal lock
+     * would tie up one pool worker per waiter for as long as the grabs ahead of it take (not a
+     * single bounded wait, but N of them stacked in series), which is exactly the kind of burst
+     * that could starve `/api/state` of every worker.
+     *
+     * [localSnapshotInFlight] keeps that risk to AT MOST one worker ever blocked inside a real
+     * grab at a time: a request that finds one already running fails fast with
+     * [ControlLocalSnapshotResult.Unavailable] (503) instead of queuing behind it. A thumbnail
+     * poller retrying a 503 shortly is a perfectly normal outcome; eight blocked workers turning
+     * `/api/state` into a false "device offline" for Home Assistant is not.
+     */
+    override fun localCameraSnapshot(): ControlLocalSnapshotResult {
+        if (!CameraShareSettings.isEnabled(prefs)) return ControlLocalSnapshotResult.SharingOff
+        val hub = CameraShareService.hub()
+            ?: return ControlLocalSnapshotResult.Unavailable("camera share is starting")
+        (CameraShareStatus.current() as? CameraShareStatus.State.Unsupported)?.let {
+            return ControlLocalSnapshotResult.Unavailable(it.reason)
+        }
+        if (!localSnapshotInFlight.compareAndSet(false, true)) {
+            return ControlLocalSnapshotResult.Unavailable("a snapshot is already being captured, try again shortly")
+        }
+        return try {
+            hub.snapshotJpeg()?.let { ControlLocalSnapshotResult.Ok(it) }
+                ?: ControlLocalSnapshotResult.Unavailable(
+                    (CameraShareStatus.current() as? CameraShareStatus.State.Unavailable)?.reason ?: "no frame"
+                )
+        } finally {
+            localSnapshotInFlight.set(false)
+        }
     }
 
     /** Runs the plan's commands. Main thread: every one of them touches windows or fragments. */
