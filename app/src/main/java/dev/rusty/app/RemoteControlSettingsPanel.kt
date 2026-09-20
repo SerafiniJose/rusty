@@ -9,6 +9,7 @@ import android.speech.tts.TextToSpeech
 import android.view.View
 import android.view.Window
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.TextView
@@ -21,7 +22,10 @@ import com.google.android.material.button.MaterialButton
  * while the API toggle in General is on. Not a [Feature]: like the Slideshow tab, it has no
  * launcher entry; the tab is threaded through `settingsTabsFor` explicitly.
  *
- * Two sections:
+ * Three sections:
+ *  - CONTROL PAGE: the server's address and a Show QR button, so a phone can reach the page by
+ *    scanning instead of typing. Follows [ControlServerStatus] live; the code encodes the plain
+ *    URL only, never the password (the page asks for that itself).
  *  - ACCESS: the API password. The switch and the secret are separate — the password survives
  *    turning the requirement off — but the switch can never be left on without a stored password
  *    ([ControlSettings.requiredPassword] would enforce nothing, so the UI refuses the state
@@ -47,6 +51,47 @@ class RemoteControlSettingsPanel(private val ctx: SettingsPanelContext) : Settin
         val passwordValue = panel.findViewById<TextView>(R.id.tvControlPasswordValue)
         val changePassword = panel.findViewById<MaterialButton>(R.id.btnChangeControlPassword)
         val feedback = panel.findViewById<TextView>(R.id.tvRemoteControlFeedback)
+
+        // -- control page: address + QR ----------------------------------------------------------
+
+        val pageAddress = panel.findViewById<TextView>(R.id.tvControlPageAddress)
+        val showQr = panel.findViewById<MaterialButton>(R.id.btnShowControlQr)
+        var pageUrl: String? = null
+
+        fun repaintPage(state: ControlServerStatus.State) {
+            val row = ControlPageQrModel.row(state)
+            pageAddress.text = row.address
+            showQr.isEnabled = row.qrEnabled
+            pageUrl = row.url
+        }
+        // Replays the current state on registration, so this is also the initial paint.
+        val serverListener: (ControlServerStatus.State) -> Unit = { repaintPage(it) }
+        ControlServerStatus.addListener(serverListener)
+
+        showQr.setOnClickListener {
+            val url = pageUrl ?: return@setOnClickListener
+            val root = activity.layoutInflater.inflate(R.layout.dialog_control_qr, null)
+            val card = Dialog(activity)
+            card.requestWindowFeature(Window.FEATURE_NO_TITLE)
+            card.setContentView(root)
+            card.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            // Not followDisplaySize: that sizes a CARD to the display, and this is only the
+            // code — the window wraps the tile so "outside" starts right at its edge.
+            card.window?.setLayout(
+                android.view.WindowManager.LayoutParams.WRAP_CONTENT,
+                android.view.WindowManager.LayoutParams.WRAP_CONTENT,
+            )
+            card.matchHostSystemBars(activity)
+            // The code is the whole dialog: nothing to press, so a tap outside it (touch) or
+            // Back (D-pad) is how it closes.
+            card.setCanceledOnTouchOutside(true)
+            val image = root as ImageView
+            // Rendered at the view's own size so each module lands on whole pixels — a blurry
+            // upscale is the one thing that makes a code hard to read.
+            val px = (300 * activity.resources.displayMetrics.density).toInt()
+            image.setImageBitmap(QrBitmap.render(QrCode.encode(url), px))
+            card.show()
+        }
 
         fun hasPassword() = !secrets.get(ControlSettings.SECRET_PASSWORD).isNullOrBlank()
 
@@ -204,7 +249,10 @@ class RemoteControlSettingsPanel(private val ctx: SettingsPanelContext) : Settin
             pendingStatus?.let { handleInit(it) }
         }
 
-        return { shutdownVoiceEngine() }
+        return {
+            ControlServerStatus.removeListener(serverListener)
+            shutdownVoiceEngine()
+        }
     }
 
     private companion object {

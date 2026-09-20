@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The control page's address as a QR code, for a phone to scan — nothing else. The white tile
+     IS the dialog; a tap anywhere outside it (or Back) closes it. No text: the row that opens it
+     already says what it is for, and a phone camera needs only the code. -->
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ivControlQr"
+    android:layout_width="300dp"
+    android:layout_height="300dp"
+    android:background="@android:color/white"
+    android:contentDescription="QR code of the control page address. Press Back to close."
+    android:scaleType="fitCenter" />

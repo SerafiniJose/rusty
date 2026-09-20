@@ -7,10 +7,78 @@
     android:layout_height="wrap_content"
     android:orientation="vertical">
 
+    <!-- Control page: where the remote lives, and a QR code so a phone can get there. -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/hanken_regular"
+        android:letterSpacing="0.12"
+        android:text="CONTROL PAGE"
+        android:textAllCaps="true"
+        android:textColor="@color/muted_dim"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Address"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvControlPageAddress"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:text="Waiting for network"
+                android:textColor="@color/muted_dim"
+                android:textIsSelectable="true"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnShowControlQr"
+            style="@style/Widget.Rusty.Button.Secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:foreground="@drawable/bg_tv_focus"
+            android:text="Show QR" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:fontFamily="@font/hanken_regular"
+        android:text="Open it in a browser on the same Wi-Fi, or scan the code with a phone."
+        android:textColor="@color/muted_dim"
+        android:textSize="12sp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="14dp"
+        android:background="@color/surface_border" />
+
     <!-- Access -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
         android:fontFamily="@font/hanken_regular"
         android:letterSpacing="0.12"
         android:text="ACCESS"
