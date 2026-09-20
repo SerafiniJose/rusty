@@ -113,6 +113,11 @@ class CanvasTheme : ScreensaverTheme {
 
     override fun onShown() { controller?.start() }
 
+    // Stop resolving, but leave the player alone: the loop stays on screen for the exit crossfade
+    // and onHidden() (teardown) releases the codec a moment later. This only prevents a NEW decoder
+    // being opened during the fade.
+    override fun onExitStarted() { controller?.stop() }
+
     override fun onHidden() {
         controller?.stop()
         canvasPlayer.animate().cancel()

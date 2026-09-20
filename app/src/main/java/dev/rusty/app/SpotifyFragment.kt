@@ -79,6 +79,9 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     private lateinit var canvasPlayer: CanvasPlayerView
     private var canvasController: CanvasController? = null
     private var canvasActive = false
+    // True while the screensaver overlay covers us. The fragment stays RESUMED underneath it, so
+    // without this both this view and the saver's CanvasTheme would hold a video codec at once.
+    private var canvasCovered = false
 
     // Transport
     private lateinit var prevButton: ImageButton
@@ -191,7 +194,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         requireContext().registerReceiver(clockTickReceiver, IntentFilter(Intent.ACTION_TIME_TICK))
         updateClock()
         bloom.onVisible()   // starts the mesh only if currently idle
-        canvasController?.start()
+        if (!canvasCovered) canvasController?.start()
     }
 
     override fun onStop() {
@@ -232,6 +235,37 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     /** Instrumentation: is the Canvas video layer currently shown over the art? */
     @VisibleForTesting
     fun canvasIsActiveForTest(): Boolean = canvasActive
+
+    /** Instrumentation: does this fragment currently hold a Canvas video codec? */
+    @VisibleForTesting
+    fun canvasHasPlayerForTest(): Boolean =
+        ::canvasPlayer.isInitialized && canvasPlayer.hasPlayerForTest
+
+    /**
+     * The screensaver started (or stopped) covering us. While covered we give up the Canvas codec
+     * entirely rather than decode video nobody can see behind an opaque overlay — the saver's own
+     * Canvas theme is the one on screen. Uncovering restarts the controller only if our view is at
+     * least STARTED; otherwise [onStart] does it.
+     */
+    fun setCanvasCovered(covered: Boolean) {
+        if (canvasCovered == covered) return
+        canvasCovered = covered
+        if (covered) {
+            canvasController?.stop()
+            if (::canvasPlayer.isInitialized) {
+                canvasPlayer.animate().cancel()
+                canvasPlayer.alpha = 0f
+                canvasPlayer.visibility = View.GONE
+                canvasPlayer.release()
+            }
+            canvasActive = false
+        } else if (
+            viewLifecycleOwnerLiveData.value?.lifecycle?.currentState
+                ?.isAtLeast(Lifecycle.State.STARTED) == true
+        ) {
+            canvasController?.start()
+        }
+    }
 
     private fun renderCanvas(state: CanvasState) {
         if (view == null) return

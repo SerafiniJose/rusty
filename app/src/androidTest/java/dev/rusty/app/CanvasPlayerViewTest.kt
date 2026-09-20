@@ -2,6 +2,7 @@ package dev.rusty.app
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,7 +19,9 @@ class CanvasPlayerViewTest {
             view.play("file:///android_asset/none.mp4")
             assertTrue("Canvas audio must be muted (librespot is the real audio)", view.isMutedForTest)
             assertTrue("Canvas must loop", view.isLoopingForTest)
+            assertTrue("Canvas owns a codec while playing", view.hasPlayerForTest)
             view.release()
+            assertFalse("release() must free the codec", view.hasPlayerForTest)
         }
     }
 }

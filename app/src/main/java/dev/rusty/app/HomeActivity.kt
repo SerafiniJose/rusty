@@ -225,6 +225,12 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             // Keeps the remote-control API's `panel.active` truthful across every saver edge,
             // including the ones nothing else observes (idle timer, wake gesture, track bloom).
             onShowingChanged = { publishCurrentPanel() },
+            // One Canvas codec at a time: the saver's Canvas theme and the now-playing fragment
+            // each own a CanvasPlayerView, and the fragment stays RESUMED under the overlay.
+            onCoveringChanged = { covered ->
+                (featureNavigator.fragmentFor(FeatureId.SPOTIFY) as? SpotifyFragment)
+                    ?.setCanvasCovered(covered)
+            },
         )
 
         shellChrome = ShellChromeController(

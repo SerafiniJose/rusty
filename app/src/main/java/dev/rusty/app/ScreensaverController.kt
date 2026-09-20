@@ -44,6 +44,17 @@ class ScreensaverController(
      * of a window that no longer exists.
      */
     private val onShowingChanged: (Boolean) -> Unit = {},
+    /**
+     * Fired when the saver starts covering the foreground feature, and again when it uncovers.
+     *
+     * Unlike [onShowingChanged] (an observer of saver state) this one is load-bearing: the saver's
+     * Canvas theme and the now-playing Spotify fragment each own a [CanvasPlayerView], and the
+     * fragment stays RESUMED underneath the overlay. Without this, both can hold an AVC decoder and
+     * its ~14 MB of ION output buffers at once on a device with two online cores — which is what
+     * starves the librespot stream. Fired BEFORE [mountTheme] so the foreground player is gone
+     * before a theme can build its own.
+     */
+    private val onCoveringChanged: (Boolean) -> Unit = {},
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var resumed = false
@@ -154,6 +165,9 @@ class ScreensaverController(
         if (isShowing || !resumed) return
         handler.removeCallbacks(idleRunnable)
         exiting = false
+        // Before mountTheme(): release the foreground feature's Canvas codec so the theme's player
+        // is the only one alive while we cover it.
+        onCoveringChanged(true)
         mountTheme()
         overlay.alpha = 0f
         overlay.visibility = View.VISIBLE
@@ -257,6 +271,9 @@ class ScreensaverController(
         if (!isShowing || exiting) return
         exiting = true
         handler.removeCallbacks(tickRunnable)
+        // Cancel any debounced work the theme would otherwise land DURING the crossfade, while the
+        // revealed dashboard is already rebuilding its own Canvas player.
+        activeTheme?.onExitStarted()
         // fragment snaps to idle + replays the bloom; a mesh-less theme (OLED) suppresses the
         // dashboard's mesh so its colors don't flash in over the dark exit.
         exitTarget()?.onReturnFromScreensaver(activeTheme?.rendersAmbientMesh ?: true)
@@ -278,6 +295,7 @@ class ScreensaverController(
         exiting = false
         reassertImmersive()
         resetIdleTimer()
+        onCoveringChanged(false)
         onShowingChanged(false)
     }
 
@@ -330,6 +348,6 @@ class ScreensaverController(
         const val KEY_THEME = "screensaver_theme"
         const val KEY_TIMEOUT_SECONDS = "screensaver_timeout_seconds"
         private const val KEY_TIME_FORMAT_24H = "time_format_24h"
-        private const val CROSSFADE_MS = 250L
+        internal const val CROSSFADE_MS = 250L
     }
 }

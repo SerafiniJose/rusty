@@ -82,6 +82,15 @@ interface ScreensaverTheme {
     fun refreshLauncher() {}
 
     /**
+     * The saver has begun its exit crossfade; the theme is still mounted and visible for
+     * [ScreensaverController.CROSSFADE_MS] more. A theme that can START expensive work off a
+     * debounced async result — CanvasTheme, whose resolve debounce is the same 250 ms as the fade —
+     * must cancel it here, or it opens a video codec it is about to throw away, on top of the one
+     * the revealed dashboard is simultaneously building. Default: no-op.
+     */
+    fun onExitStarted() {}
+
+    /**
      * The remote-control API faked the screen off (or back on) while this theme is mounted. A theme
      * that keeps doing work nobody can see — the Slideshow's fetch/decode loop — must park for the
      * duration. Deliberately NOT the theme's own pause: a wake must not resume a slideshow the user
