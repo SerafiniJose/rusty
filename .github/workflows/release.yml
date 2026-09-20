@@ -25,8 +25,13 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      # The action's default package list includes the long-deprecated "tools"
+      # package, which newer cmdline-tools refuse to install. Only platform-tools
+      # is needed; Gradle fetches the platform and build-tools it wants.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       # Decode the persistent release keystore (stored as a base64 repo secret) so the
       # APK is signed with the same certificate on every build. Without this, Android
