@@ -1,5 +1,6 @@
 package dev.rusty.app
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,6 +9,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.LinkProperties
@@ -24,6 +26,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import dev.rusty.app.renderer.AnnounceHost
 import dev.rusty.app.renderer.AnnouncementRouting
 import dev.rusty.app.renderer.LanAddress
@@ -873,7 +876,66 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
                 foreground = PanelControlRelay.hasHost(),
                 canBringForward = AppForeground.canBringForward(context),
             ),
+            cameraShare = ControlCameraShareModel.snapshot(cameraShareFacts()),
         )
+    }
+
+    // -- camera share: this device's own camera ------------------------------------------------
+
+    /**
+     * Hardware answers, probed once per runtime like [CameraSettingsPanel] probes them once per
+     * bind: both enumerate system codecs / cameras and neither changes while the process lives.
+     */
+    private val cameraShareLenses: Int by lazy { CameraCapturePipeline.lensCount(context) }
+    private val cameraShareSupported: Boolean by lazy {
+        CameraShareSettingsModel.unsupportedReason(
+            hasEncoder = CameraCapturePipeline.hasH264Encoder(),
+            lensCount = cameraShareLenses,
+        ) == null
+    }
+
+    private fun cameraShareFacts() = ControlCameraShareModel.Facts(
+        supported = cameraShareSupported,
+        enabled = CameraShareSettings.isEnabled(prefs),
+        state = CameraShareStatus.current(),
+        controlUrl = (ControlServerStatus.current() as? ControlServerStatus.State.Running)?.url.orEmpty(),
+        lens = CameraShareSettings.lens(prefs),
+        lenses = cameraShareLenses,
+        appForeground = PanelControlRelay.hasHost(),
+    )
+
+    /**
+     * [ControlCameraShareModel.decide] owns the rules; this only gathers the facts and carries
+     * the decision out. Two start paths, on purpose:
+     *  - Rusty already on screen: write the pref and sync the service right here, as the in-app
+     *    switch does.
+     *  - Rusty hidden: write the pref and bring the window forward ONLY. [HomeActivity]'s own
+     *    onStart syncs the share service once it is actually visible — which is also the only
+     *    moment Android will let a camera foreground service start. Syncing from here would race
+     *    the activity start and be refused as a background start.
+     */
+    override fun setCameraShare(command: ControlCameraShareCommand): ControlCameraShareResult = synchronized(commandLock) {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        val decision = ControlCameraShareModel.decide(
+            command,
+            supported = cameraShareSupported,
+            permissionGranted = granted,
+            appForeground = PanelControlRelay.hasHost(),
+            canBringForward = AppForeground.canBringForward(context),
+        )
+        when (decision) {
+            is ControlCameraShareModel.Decision.Refuse -> return decision.result
+            is ControlCameraShareModel.Decision.Apply -> {
+                decision.lens?.let { CameraShareSettings.setLens(prefs, it) }
+                decision.on?.let { CameraShareSettings.setEnabled(prefs, it) }
+                mainHandler.post {
+                    if (decision.bringForward) AppForeground.bringToFront(context)
+                    else if (decision.on != null) CameraShareService.syncFromPrefs(context)
+                }
+                // Pre-command snapshot by design (see setForeground): the page confirms by polling.
+                return ControlCameraShareResult.Ok(snapshot())
+            }
+        }
     }
 
     /**

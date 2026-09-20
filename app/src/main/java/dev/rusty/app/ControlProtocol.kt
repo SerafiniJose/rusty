@@ -140,6 +140,17 @@ interface ControlRuntime {
      *  [ControlLocalSnapshotResult.SharingOff] for the same reason every other camera default
      *  above is: the honest reading of "this runtime shares no camera". */
     fun localCameraSnapshot(): ControlLocalSnapshotResult = ControlLocalSnapshotResult.SharingOff
+
+    /**
+     * Flips THIS device's own camera share and/or selects its lens (`POST /api/camera/share`).
+     * Turning on first brings Rusty's window to the front when it is not there — Android only
+     * lets a camera foreground service open the camera while the app is on screen — and refuses
+     * with [ControlCameraShareResult.NeedsForeground] when it cannot. Applied asynchronously like
+     * [setForeground]; the page confirms through `GET /api/state`. Defaulted to
+     * [ControlCameraShareResult.Unsupported] for the same reason the other camera defaults are.
+     */
+    fun setCameraShare(command: ControlCameraShareCommand): ControlCameraShareResult =
+        ControlCameraShareResult.Unsupported
 }
 
 sealed class ControlImmichResult {
@@ -355,6 +366,9 @@ object ControlProtocol {
 
             req.method == "POST" && path == "/api/camera/grid" ->
                 writeGuarded(req) { handleCameraGrid(rt) }
+
+            req.method == "POST" && path == "/api/camera/share" ->
+                writeGuarded(req) { handleCameraShare(req, rt) }
 
             // Exact match, checked first: CAMERA_PATH_PREFIX/SNAPSHOT_PATH_SUFFIX below needs a
             // "/snapshot" suffix, and this path ends in "/snapshot.jpg", so the two can never
@@ -718,6 +732,46 @@ object ControlProtocol {
             ControlCameraGridResult.NoWindow ->
                 errorResponse(409, "Conflict", "Rusty isn't on screen right now")
         }
+
+    /**
+     * `POST /api/camera/share` — `{"on": bool}` and/or `{"lens": "front"|"back"}`. An empty
+     * object is a 400 rather than a no-op success, so a client with a typo'd key finds out.
+     */
+    private fun handleCameraShare(req: HttpRequest, rt: ControlRuntime): HttpResponse {
+        val obj = parseJsonObject(req.body) ?: return errorResponse(400, "Bad Request", "malformed JSON")
+        val onValue = obj.opt("on")
+        if (onValue != null && onValue !is Boolean) return errorResponse(400, "Bad Request", "'on' must be a boolean")
+        val lensValue = obj.opt("lens")
+        val lens = when (lensValue) {
+            null -> null
+            is String -> CameraShareSettings.Lens.entries.firstOrNull { it.pref == lensValue }
+                ?: return errorResponse(400, "Bad Request", "'lens' must be \"front\" or \"back\"")
+            else -> return errorResponse(400, "Bad Request", "'lens' must be a string")
+        }
+        if (onValue == null && lens == null) return errorResponse(400, "Bad Request", "nothing to do: send 'on' and/or 'lens'")
+
+        return when (val result = rt.setCameraShare(ControlCameraShareCommand(onValue as Boolean?, lens))) {
+            is ControlCameraShareResult.Ok -> jsonOk(result.snapshot.toJson())
+            ControlCameraShareResult.Unsupported ->
+                errorResponse(404, "Not Found", "this device cannot share its camera")
+            ControlCameraShareResult.NeedsForeground -> reasonedError(
+                409, "needs_foreground",
+                "Rusty has to be on screen to start its camera, and it could not be brought to the front. Open Rusty on the device, then try again.",
+            )
+            ControlCameraShareResult.PermissionNeeded -> reasonedError(
+                409, "permission_needed",
+                "Camera access was never granted on the device. Turn the share on once in Rusty's Cameras settings first.",
+            )
+        }
+    }
+
+    /** An error body with a machine-readable `reason` beside the message, for a page that has
+     *  to react differently to two refusals of the same status. */
+    private fun reasonedError(status: Int, reason: String, message: String): HttpResponse =
+        HttpResponse(
+            status, "Conflict", listOf("Content-Type" to JSON_CONTENT_TYPE),
+            JSONObject().put("error", message).put("reason", reason).toString(),
+        )
 
     /**
      * `GET /api/camera/{id}/snapshot` → the camera's latest JPEG.

@@ -2,12 +2,14 @@ package dev.rusty.app
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ControlModelsTest {
     private fun snap(
         panel: ControlPanel = panel(),
         app: ControlApp = ControlApp(foreground = true, canBringForward = true),
+        cameraShare: ControlCameraShare? = null,
     ) = ControlSnapshot(
         deviceId = "abc", deviceName = "Rusty Speaker", version = "2.3.0",
         screen = ControlScreen(on = true, brightness = 80, mode = "system", writable = true, available = true),
@@ -16,6 +18,7 @@ class ControlModelsTest {
         slideshowEnabled = true,
         panel = panel,
         app = app,
+        cameraShare = cameraShare,
     )
 
     private fun panel(
@@ -194,6 +197,57 @@ class ControlModelsTest {
         assertEquals(
             "awaiting_confirm",
             JSONObject(check.toJson()).getJSONObject("install").getString("phase")
+        )
+    }
+
+    // ---- cameraShare block ----------------------------------------------------
+
+    /** A runtime that reports no share (the default for every fake) must still emit the block,
+     *  so a client can tell "this device cannot share" from "this build predates the field". */
+    @Test fun cameraShareJson_absentReportsUnsupported() {
+        val o = JSONObject(snap().toJson()).getJSONObject("cameraShare")
+        assertEquals(false, o.getBoolean("supported"))
+        assertEquals(false, o.getBoolean("enabled"))
+        assertEquals("off", o.getString("status"))
+        assertTrue(o.isNull("url"))
+    }
+
+    @Test fun cameraShareJson_streamingCarriesViewersDetailUrlAndLens() {
+        val share = ControlCameraShare(
+            supported = true, enabled = true, status = ControlCameraShareStatus.STREAMING,
+            viewers = 2, detail = "1280×720 at 15 fps", url = "rtsp://192.168.7.251:8554/live",
+            lens = CameraShareSettings.Lens.BACK, lenses = 2, appForeground = true,
+        )
+        val o = JSONObject(snap(cameraShare = share).toJson()).getJSONObject("cameraShare")
+        assertEquals(true, o.getBoolean("supported"))
+        assertEquals(true, o.getBoolean("enabled"))
+        assertEquals("streaming", o.getString("status"))
+        assertEquals(2, o.getInt("viewers"))
+        assertEquals("1280×720 at 15 fps", o.getString("detail"))
+        assertEquals("rtsp://192.168.7.251:8554/live", o.getString("url"))
+        assertEquals("back", o.getString("lens"))
+        assertEquals(2, o.getInt("lenses"))
+        assertEquals(true, o.getBoolean("appForeground"))
+    }
+
+    @Test fun cameraShareJson_unavailableWritesReasonAndNullUrl() {
+        val share = ControlCameraShare(
+            supported = true, enabled = true, status = ControlCameraShareStatus.UNAVAILABLE,
+            viewers = 0, detail = "camera permission needed", url = null,
+            lens = CameraShareSettings.Lens.FRONT, lenses = 1, appForeground = false,
+        )
+        val o = JSONObject(snap(cameraShare = share).toJson()).getJSONObject("cameraShare")
+        assertEquals("unavailable", o.getString("status"))
+        assertEquals("camera permission needed", o.getString("detail"))
+        assertTrue(o.isNull("url"))
+        assertEquals("front", o.getString("lens"))
+    }
+
+    /** Every wire word the page switches on, pinned so a renamed enum cannot silently change the API. */
+    @Test fun cameraShareStatus_wireWords() {
+        assertEquals(
+            listOf("off", "starting", "ready", "streaming", "unavailable"),
+            ControlCameraShareStatus.entries.map { it.wire },
         )
     }
 }

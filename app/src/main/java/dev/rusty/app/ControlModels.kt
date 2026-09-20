@@ -76,6 +76,74 @@ data class ControlApp(
     val canBringForward: Boolean,
 )
 
+/** Wire words for `cameraShare.status`; the control page switches on these literally. */
+enum class ControlCameraShareStatus(val wire: String) {
+    OFF("off"), STARTING("starting"), READY("ready"), STREAMING("streaming"), UNAVAILABLE("unavailable");
+}
+
+/**
+ * Immutable snapshot of THIS device's own camera share, as the control page shows it.
+ *
+ * [supported] is the hardware answer (an H.264 encoder and at least one lens); the page hides
+ * the whole card when it is false. [enabled] is the persisted switch, [status] what the share is
+ * actually doing, [detail] the human line under the switch (resolution/fps while streaming, the
+ * reason while unavailable), [url] the rtsp address once the share is up and null otherwise.
+ * [lens]/[lenses] feed the Front/Back chips, shown only when [lenses] is 2. [appForeground] is
+ * repeated here (it is also `app.foreground`) because the card's "Rusty has to be on screen"
+ * notice is a function of the share AND the window, and the page reads one block per card.
+ */
+data class ControlCameraShare(
+    val supported: Boolean,
+    val enabled: Boolean,
+    val status: ControlCameraShareStatus,
+    val viewers: Int,
+    val detail: String,
+    val url: String?,
+    val lens: CameraShareSettings.Lens,
+    val lenses: Int,
+    val appForeground: Boolean,
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("supported", supported)
+        put("enabled", enabled)
+        put("status", status.wire)
+        put("viewers", viewers)
+        put("detail", detail)
+        put("url", url ?: JSONObject.NULL)
+        put("lens", lens.pref)
+        put("lenses", lenses)
+        put("appForeground", appForeground)
+    }
+
+    companion object {
+        /** What a runtime with no camera-share support reports: the block is always present so a
+         *  client can tell "cannot share" from "too old to say". */
+        val UNSUPPORTED = ControlCameraShare(
+            supported = false, enabled = false, status = ControlCameraShareStatus.OFF, viewers = 0,
+            detail = "", url = null, lens = CameraShareSettings.Lens.FRONT, lenses = 0, appForeground = false,
+        )
+    }
+}
+
+/**
+ * What `POST /api/camera/share` asks for. At least one field is set (the router refuses `{}`):
+ * [on] flips the persisted share switch, [lens] selects the lens — both may arrive together.
+ */
+data class ControlCameraShareCommand(val on: Boolean?, val lens: CameraShareSettings.Lens?)
+
+/** Outcome of `POST /api/camera/share`. Only [Ok] carries a snapshot; the others are refusals. */
+sealed class ControlCameraShareResult {
+    /** Pre-command snapshot by design, like [ControlForegroundResult.Ok]: the share starts
+     *  asynchronously and the page confirms through `GET /api/state`. */
+    data class Ok(val snapshot: ControlSnapshot) : ControlCameraShareResult()
+    /** No H.264 encoder or no lens: this device can never share (404). */
+    object Unsupported : ControlCameraShareResult()
+    /** Turning on needs Rusty's window in front and it cannot be brought there (no overlay grant). */
+    object NeedsForeground : ControlCameraShareResult()
+    /** The CAMERA runtime grant was never given; only the device's own settings can ask for it. */
+    object PermissionNeeded : ControlCameraShareResult()
+}
+
 /**
  * Immutable snapshot of the entire device control state.
  * Serializes to a nested JSON structure for the HTTP API.
@@ -90,6 +158,9 @@ data class ControlSnapshot(
     val slideshowEnabled: Boolean,
     val panel: ControlPanel,
     val app: ControlApp,
+    /** Null means the runtime has no camera-share support (every test fake); serialized as
+     *  [ControlCameraShare.UNSUPPORTED]. */
+    val cameraShare: ControlCameraShare? = null,
 ) {
     /**
      * Encodes this snapshot as JSON, matching the `GET /api/state` contract.
@@ -149,6 +220,8 @@ data class ControlSnapshot(
         appObj.put("foreground", app.foreground)
         appObj.put("canBringForward", app.canBringForward)
         root.put("app", appObj)
+
+        root.put("cameraShare", (cameraShare ?: ControlCameraShare.UNSUPPORTED).toJson())
 
         return root.toString()
     }

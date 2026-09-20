@@ -58,7 +58,7 @@
      they are the device's two output levels and read as one row of faders. */
   @media (min-width: 720px) {
     main { grid-template-columns: 1fr 1fr; }
-    #dock, #source-card, #announce-card, #service-card { grid-column: 1 / -1; }
+    #dock, #source-card, #announce-card, #camshare-card, #service-card { grid-column: 1 / -1; }
     /* Fixed-volume device: nothing left to pair with, so Screen takes the whole row rather
        than sitting half-width beside a hole. */
     body.no-volume #screen-card { grid-column: 1 / -1; }
@@ -385,6 +385,25 @@
   .btn:active:not(:disabled) { transform: scale(0.97); }
 
   /* ================================================================
+     Camera share: THIS device's own camera, offered to other Rustys and any RTSP viewer. A
+     power button like Screen's, a status line, the lens chips and the address to watch at.
+     ================================================================ */
+  .status.pending { color: var(--pending); }
+  .url-row {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--slab);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 6px 6px 6px 12px;
+  }
+  .url-row code {
+    flex: 1; min-width: 0;
+    font-family: var(--mono); font-size: 0.8rem; color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .btn.small { min-height: 36px; padding: 0 14px; font-size: 0.8rem; }
+
+  /* ================================================================
      Cameras: a chip strip under the source switch, exactly like the lock
      screen's themes. The page selects WHICH camera the device shows; it
      never renders camera imagery itself.
@@ -645,6 +664,30 @@
     <p id="announce-error" class="error-text" hidden></p>
   </section>
 
+  <!-- Camera share: hidden until /api/state says cameraShare.supported -->
+  <section id="camshare-card" class="card" aria-labelledby="camshare-heading" hidden>
+    <div class="switch-row" style="min-height:auto">
+      <div>
+        <p class="lab" id="camshare-heading">Camera share</p>
+        <p class="sub">This device's camera</p>
+      </div>
+      <button id="camshare-pwr" type="button" class="pwr" aria-pressed="false" aria-label="Camera share on or off">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10l4.5-2.5v9L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg>
+      </button>
+    </div>
+    <p id="camshare-status" class="status" role="status" aria-live="polite" hidden></p>
+    <p id="camshare-notice" class="notice" hidden></p>
+    <p id="camshare-error" class="error-text" hidden></p>
+    <div class="voice-line" id="camshare-lens" hidden>
+      <span class="lab" id="camshare-lens-label">Lens</span>
+      <div id="camshare-chips" class="chips" role="group" aria-labelledby="camshare-lens-label"></div>
+    </div>
+    <div id="camshare-url" class="url-row" hidden>
+      <code id="camshare-url-text"></code>
+      <button id="camshare-copy" type="button" class="btn small">Copy</button>
+    </div>
+  </section>
+
   <!-- Service -->
   <section id="service-card" class="card" aria-labelledby="service-heading">
     <p class="lab" id="service-heading">Service</p>
@@ -779,7 +822,14 @@
   var pendingForeground = null;
   var foregroundSince = 0;
 
-  /** One timer for both pending controls; runs while either is outstanding. */
+  /** The camera-share switch position requested but not yet confirmed (`true`/`false`), or null.
+   *  Confirmation is slower than the other two: turning on may bring Rusty to the front AND open
+   *  the camera, so it gets its own, longer timeout. */
+  var pendingShare = null;
+  var shareSince = 0;
+  var SHARE_TIMEOUT_MS = 20000;
+
+  /** One timer for every pending control; runs while any is outstanding. */
   var fastPollTimer = null;
 
   var el = {};
@@ -800,6 +850,8 @@
       "update-status", "update-notes", "update-error", "update-button", "update-summary",
       "update-progress", "update-progress-bar",
       "camera-strip", "camera-chips", "camera-error",
+      "camshare-card", "camshare-pwr", "camshare-status", "camshare-notice", "camshare-error",
+      "camshare-lens", "camshare-chips", "camshare-url", "camshare-url-text", "camshare-copy",
       "toast", "toast-text"
     ].forEach(function (id) {
       el[id] = document.getElementById(id);
@@ -959,6 +1011,8 @@
             var message = (data && data.error) || ("HTTP " + res.status);
             var err = new Error(message);
             err.status = res.status;
+            // Machine-readable refusal, where the device sends one (camera share's two 409s).
+            err.reason = (data && data.reason) || null;
             if (res.status === 401) showLogin();
             throw err;
           }
@@ -1238,6 +1292,157 @@
     renderCameraStrip();
     renderScreen(data.screen);
     renderVolume(data.volume);
+    renderCameraShare(data.cameraShare);
+  }
+
+  // ---- camera share card ----
+
+  var LENS_LABELS = { front: "Front", back: "Back" };
+
+  /**
+   * Paints the card from the `cameraShare` block. The switch follows the same rule as the
+   * foreground switch: it stays "pending" until a poll reports the position it asked for, so a
+   * start the device silently dropped never looks like it worked. A start that ends in
+   * `unavailable` is a resolved request too — the reason is on screen, nothing more will come.
+   */
+  function renderCameraShare(cs) {
+    var supported = !!(cs && cs.supported);
+    el["camshare-card"].hidden = !supported;
+    if (!supported) return;
+
+    if (pendingShare !== null) {
+      var settled = cs.enabled === pendingShare && (pendingShare === false || cs.status !== "starting");
+      if (settled || cs.status === "unavailable") {
+        clearSharePending();
+      } else if (Date.now() - shareSince > SHARE_TIMEOUT_MS) {
+        clearSharePending();
+        setNotice(el["camshare-error"], pendingShare ?
+          "The camera didn't start. Check Rusty's screen — it may be asking for camera access — and try again." :
+          "The camera share didn't stop. Try again.");
+      }
+    }
+    var pending = pendingShare !== null;
+    var shown = pending ? pendingShare : !!cs.enabled;
+
+    var pwr = el["camshare-pwr"];
+    pwr.setAttribute("aria-pressed", String(shown));
+    pwr.setAttribute("aria-label", shown ? "Turn camera share off" : "Turn camera share on");
+    pwr.disabled = pending;
+
+    // Status line: what the share is doing right now. Off says nothing; the notice speaks then.
+    var status = el["camshare-status"];
+    var text = null, tone = "";
+    if (pending && pendingShare) {
+      text = cs.appForeground ? "Starting the camera\u2026" : "Bringing Rusty to the front and starting the camera\u2026";
+      tone = "pending";
+    } else if (pending) {
+      text = "Stopping\u2026";
+      tone = "pending";
+    } else if (cs.status === "starting") {
+      text = "Starting the camera\u2026";
+      tone = "pending";
+    } else if (cs.status === "ready") {
+      text = "Ready for viewers";
+    } else if (cs.status === "streaming") {
+      text = "Sharing to " + cs.viewers + (cs.viewers === 1 ? " viewer" : " viewers") +
+        (cs.detail ? " \u00b7 " + cs.detail : "");
+    } else if (cs.status === "unavailable") {
+      text = "Camera unavailable \u2014 " + (cs.detail || "unknown reason");
+      tone = "pending";
+    }
+    setNotice(status, text);
+    status.classList.toggle("pending", tone === "pending");
+
+    // The window rule, said before the tap rather than after a refusal.
+    var notice = null;
+    if (cs.status === "unavailable" && /permission/i.test(cs.detail || "")) {
+      notice = "Camera access was never granted on the device: turn the share on once in Rusty's Cameras settings first.";
+    } else if (!cs.enabled && !pending && !cs.appForeground) {
+      notice = "Off. Rusty has to be on screen to start its camera \u2014 turning this on brings Rusty to the front on the device.";
+    }
+    setNotice(el["camshare-notice"], notice);
+
+    // Lens chips, only where there is a choice.
+    var lenses = ["front", "back"];
+    el["camshare-lens"].hidden = !(cs.lenses >= 2);
+    if (cs.lenses >= 2) {
+      el["camshare-chips"].innerHTML = "";
+      lenses.forEach(function (lens) {
+        var chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip";
+        chip.setAttribute("aria-pressed", String(lens === cs.lens));
+        chip.textContent = LENS_LABELS[lens];
+        chip.addEventListener("click", function () {
+          onSelectLens(lens);
+        });
+        el["camshare-chips"].appendChild(chip);
+      });
+    }
+
+    el["camshare-url"].hidden = !cs.url;
+    if (cs.url) el["camshare-url-text"].textContent = cs.url;
+  }
+
+  function onToggleShare() {
+    var cs = state && state.cameraShare;
+    if (!cs || !cs.supported || pendingShare !== null) return;
+    var want = !cs.enabled;
+    setNotice(el["camshare-error"], null);
+    pendingShare = want;
+    shareSince = Date.now();
+    startFastPoll();
+    renderCameraShare(cs);
+
+    writeJSON("/api/camera/share", "POST", { on: want })
+      .catch(function (err) {
+        clearSharePending();
+        // The two 409s already carry their own sentence; other failures get the raw message.
+        // (err.reason is "needs_foreground" or "permission_needed" for those.)
+        setNotice(el["camshare-error"], err.message);
+      })
+      .then(function () {
+        return refresh();
+      });
+  }
+
+  function onSelectLens(lens) {
+    var cs = state && state.cameraShare;
+    if (!cs || cs.lens === lens) return;
+    setNotice(el["camshare-error"], null);
+    // A preference write on the device, applied before it answers (a live camera restarts by
+    // itself), so like the lock-screen theme there is nothing to wait for.
+    writeJSON("/api/camera/share", "POST", { lens: lens })
+      .then(function () {
+        toast(LENS_LABELS[lens] + " camera selected.");
+      })
+      .catch(function (err) {
+        setNotice(el["camshare-error"], err.message);
+      })
+      .then(function () {
+        return refresh();
+      });
+  }
+
+  function onCopyShareUrl() {
+    var url = el["camshare-url-text"].textContent;
+    if (!url) return;
+    var done = function () { toast("Address copied."); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, function () { selectShareUrl(); });
+    } else {
+      selectShareUrl();
+    }
+  }
+
+  /** No clipboard (plain-http pages on some browsers): select the text so a long-press copies. */
+  function selectShareUrl() {
+    var range = document.createRange();
+    range.selectNodeContents(el["camshare-url-text"]);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    toast("Long-press the address to copy it.");
   }
 
   // ---- state polling ----
@@ -1266,7 +1471,7 @@
   /** Stops the fast poll only once BOTH pending controls have resolved — otherwise clearing one
    *  would slow the other back down to 5s mid-flight. */
   function stopFastPollIfIdle() {
-    if (pendingPanel !== null || pendingForeground !== null) return;
+    if (pendingPanel !== null || pendingForeground !== null || pendingShare !== null) return;
     if (fastPollTimer === null) return;
     clearInterval(fastPollTimer);
     fastPollTimer = null;
@@ -1281,6 +1486,12 @@
   function clearForegroundPending() {
     pendingForeground = null;
     foregroundSince = 0;
+    stopFastPollIfIdle();
+  }
+
+  function clearSharePending() {
+    pendingShare = null;
+    shareSince = 0;
     stopFastPollIfIdle();
   }
 
@@ -2027,6 +2238,8 @@
     el["vol-range"].addEventListener("input", paintVolume);
     el["filters-save"].addEventListener("click", onSaveFilters);
     el["update-button"].addEventListener("click", onUpdateClick);
+    el["camshare-pwr"].addEventListener("click", onToggleShare);
+    el["camshare-copy"].addEventListener("click", onCopyShareUrl);
     setupAnnounce();
     wireFaderDrag(el["bright-range"], el["bright-fader"]);
     wireFaderDrag(el["vol-range"], el["vol-fader"]);

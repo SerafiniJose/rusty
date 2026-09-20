@@ -27,6 +27,7 @@ class ControlPageAssetTest {
             "/api/screen", "/api/volume", "/api/announce/text",
             "/api/slideshow/filters", "/api/immich/", "/api/update/install",
             "/api/cameras", "\"/api/camera/view\"", "\"/api/camera/grid\"",
+            "\"/api/camera/share\"",
         ).forEach { endpoint ->
             assertTrue("page must reference $endpoint", page.contains(endpoint))
         }
@@ -55,6 +56,28 @@ class ControlPageAssetTest {
         ).forEach { marker ->
             assertFalse("catalog/download UI must stay on-device: $marker", page.contains(marker))
         }
+    }
+
+    /**
+     * The Camera share card: a power button, a status/notice/error line, Front/Back lens chips
+     * and the rtsp URL with a copy button — between Announce and Service, hidden until
+     * `cameraShare.supported`. The page must read the `reason` an error body carries so the two
+     * 409s (window vs. permission) get their own wording.
+     */
+    @Test fun page_hasCameraShareCardBetweenAnnounceAndService() {
+        listOf(
+            "id=\"camshare-card\"", "id=\"camshare-pwr\"", "id=\"camshare-status\"",
+            "id=\"camshare-notice\"", "id=\"camshare-error\"", "id=\"camshare-lens\"",
+            "id=\"camshare-chips\"", "id=\"camshare-url\"", "id=\"camshare-copy\"",
+            "cameraShare.supported", "needs_foreground", "permission_needed",
+            "Rusty has to be on screen",
+        ).forEach { marker ->
+            assertTrue("camera share marker missing: $marker", page.contains(marker))
+        }
+        val announce = page.indexOf("id=\"announce-card\"")
+        val share = page.indexOf("id=\"camshare-card\"")
+        val service = page.indexOf("id=\"service-card\"")
+        assertTrue("camera share card must sit between Announce and Service", share > announce && share < service)
     }
 
     /** The lock-screen theme belongs to the switch that selects the lock screen, not to Service. */

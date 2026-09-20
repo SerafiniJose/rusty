@@ -273,7 +273,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
 
         val camerasSection = CollapsibleSection(
             panel.findViewById(R.id.headCamCameras), panel.findViewById(R.id.bodyCamCameras),
-            "Cameras", startExpanded = true,
+            "Cameras", startExpanded = false,
         )
         val behaviorSection = CollapsibleSection(
             panel.findViewById(R.id.headCamBehavior), panel.findViewById(R.id.bodyCamBehavior),
