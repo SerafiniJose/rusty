@@ -850,6 +850,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
                         val result = withTimeoutOrNull(TEST_TIMEOUT_MS) { probeRtsp(activity, uri, edit.forceTcp) }
                             ?: ProbeResult(false, null)
                         lines += TestReport.line(label, result.ok, result.format)
+                        if (!result.ok) TestReport.hint(result.errorKind)?.let { lines += it }
                         val f = result.format
                         if (result.ok && f != null) {
                             // Still a ✓: the RTSP handshake really did succeed, only playback on
@@ -963,7 +964,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
 
 /** Isolated so [CameraSettingsPanel] stays free of ExoPlayer wiring in its main body. Not unit
  *  tested — thin Android I/O, same posture as [AndroidSnapshotIo.grabFrame]. */
-data class ProbeResult(val ok: Boolean, val format: VideoFormatInfo?)
+data class ProbeResult(val ok: Boolean, val format: VideoFormatInfo?, val errorKind: StreamErrorKind? = null)
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 private object RtspProbe {
@@ -985,7 +986,8 @@ private object RtspProbe {
                     }
 
                     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                        finish(ProbeResult(false, null))
+                        val kind = CameraRetryPolicy.classify(error.errorCode, PlaybackErrorText.flatten(error))
+                        finish(ProbeResult(false, null, kind))
                     }
                 })
                 val source = androidx.media3.exoplayer.rtsp.RtspMediaSource.Factory()

@@ -27,6 +27,10 @@ sealed interface LiveState {
      *  (absolute, on the plan's clock). */
     data class Reconnecting(val attempt: Int, val nextAtMs: Long) : LiveState
 
+    /** The direct stream can't be played as advertised; the SDP repair (sniff SPS/PPS, start the
+     *  loopback proxy) is running. No watchdog is armed: the repairer has its own deadline. */
+    object Repairing : LiveState
+
     /** The stream failed in a way retrying cannot fix; only a manual retry leaves this state. */
     data class Fatal(val kind: StreamErrorKind) : LiveState
 }
@@ -54,6 +58,13 @@ sealed interface PlaybackEffect {
 
     /** Build and prepare a player right now. */
     object BuildPlayer : PlaybackEffect
+
+    /** Run the SDP repair for the current stream, then call [CameraPlaybackPlan.onRepairReady] or
+     *  [CameraPlaybackPlan.onRepairFailed]. */
+    object RepairStream : PlaybackEffect
+
+    /** Start a fresh session on the other stream of the same camera (an automatic fallback). */
+    data class SwitchStream(val to: StreamChoice) : PlaybackEffect
 }
 
 /**
@@ -67,12 +78,21 @@ sealed interface PlaybackEffect {
  * surfaces `STATE_ENDED` rather than an error, which is why [onStreamEnded] exists and behaves
  * exactly like a transient failure.
  *
+ * A [FATAL_NO_CODEC_PARAMS][StreamErrorKind.FATAL_NO_CODEC_PARAMS] error enters [LiveState.Repairing]
+ * once per plan; the owner runs the SDP repair and reports back with [onRepairReady]/[onRepairFailed].
+ *
  * Every entry point takes an explicit `now` defaulting to [clock], so tests drive time directly
  * while the Android owner just calls the no-arg form.
  *
  * Not thread-safe: it is driven from the main looper by [CameraPlayback].
  */
-class CameraPlaybackPlan(private val clock: () -> Long = { SystemClock.elapsedRealtime() }) {
+class CameraPlaybackPlan(
+    private val clock: () -> Long = { SystemClock.elapsedRealtime() },
+    /** Which stream this session plays; decides whether a failed repair may fall back to MAIN. */
+    private val stream: StreamChoice = StreamChoice.SUB,
+    /** Whether the camera record has a main URL at all. */
+    private val hasMain: Boolean = false,
+) {
 
     companion object {
         /** Deadline for the RTSP handshake (OPTIONS/DESCRIBE/SETUP/PLAY) after a player is built. */
@@ -96,6 +116,9 @@ class CameraPlaybackPlan(private val clock: () -> Long = { SystemClock.elapsedRe
     private var playingSince: Long? = null
 
     private var released = false
+
+    /** One repair per session: a repaired stream that STILL lacks fmtp is not going to improve. */
+    private var repairAttempted = false
 
     /** A player was just built: arm both connect watchdogs and go [LiveState.Connecting]. */
     fun onAttemptStarted(now: Long = clock()): List<PlaybackEffect> {
@@ -134,8 +157,23 @@ class CameraPlaybackPlan(private val clock: () -> Long = { SystemClock.elapsedRe
         if (released) return emptyList()
         return when (val kind = CameraRetryPolicy.classify(code, msg)) {
             StreamErrorKind.TRANSIENT -> transient(now)
+            StreamErrorKind.FATAL_NO_CODEC_PARAMS -> repairOrFallback()
             else -> fatal(kind)
         }
+    }
+
+    /** The repairer finished and the proxy is listening: rebuild through it, watchdogs armed. */
+    fun onRepairReady(now: Long = clock()): List<PlaybackEffect> {
+        if (released || state != LiveState.Repairing) return emptyList()
+        state = LiveState.Connecting
+        playingSince = null
+        return listOf(PlaybackEffect.CancelTimers, PlaybackEffect.BuildPlayer) + armWatchdogs(now)
+    }
+
+    /** The repairer gave up (no SPS/PPS within its deadline, proxy bind failed, no repairer). */
+    fun onRepairFailed(now: Long = clock()): List<PlaybackEffect> {
+        if (released || state != LiveState.Repairing) return emptyList()
+        return fallbackOrFatal()
     }
 
     /** `STATE_ENDED` on a live stream means the camera went away: same handling as a transient. */
@@ -185,7 +223,7 @@ class CameraPlaybackPlan(private val clock: () -> Long = { SystemClock.elapsedRe
      * followed by `STATE_ENDED`.
      */
     private fun transient(now: Long): List<PlaybackEffect> {
-        if (state is LiveState.Reconnecting || state is LiveState.Fatal) return emptyList()
+        if (state is LiveState.Reconnecting || state is LiveState.Fatal || state == LiveState.Repairing) return emptyList()
         val since = playingSince
         if (since != null && CameraRetryPolicy.shouldResetAttempts(now - since)) attempts = 0
         val delay = CameraRetryPolicy.nextDelayMs(attempts)
@@ -198,6 +236,28 @@ class CameraPlaybackPlan(private val clock: () -> Long = { SystemClock.elapsedRe
             PlaybackEffect.TearDownPlayer,
             PlaybackEffect.ScheduleRetry(at),
         )
+    }
+
+    /** The advertised SDP is unplayable. The first time, hand the session to the repairer; a
+     *  second one means the repair did not help, so go straight to the fallback. */
+    private fun repairOrFallback(): List<PlaybackEffect> {
+        if (state is LiveState.Fatal) return emptyList()
+        if (repairAttempted) return fallbackOrFatal()
+        repairAttempted = true
+        playingSince = null
+        state = LiveState.Repairing
+        return listOf(PlaybackEffect.CancelTimers, PlaybackEffect.TearDownPlayer, PlaybackEffect.RepairStream)
+    }
+
+    /** SUB with a main URL -> let the owner start a MAIN session (a new plan). Anything else is
+     *  terminal: MAIN never falls back to SUB (that is where we came from). */
+    private fun fallbackOrFatal(): List<PlaybackEffect> {
+        playingSince = null
+        if (stream == StreamChoice.SUB && hasMain) {
+            state = LiveState.Connecting
+            return listOf(PlaybackEffect.CancelTimers, PlaybackEffect.SwitchStream(StreamChoice.MAIN))
+        }
+        return fatal(StreamErrorKind.FATAL_NO_CODEC_PARAMS)
     }
 
     private fun fatal(kind: StreamErrorKind): List<PlaybackEffect> {
@@ -222,6 +282,24 @@ object PlaybackErrorText {
      * returned unchanged.
      */
     fun stripUserinfo(text: String): String = USERINFO.replace(text, "//•••@")
+
+    /**
+     * Folds [top]'s message and up to eight `cause` messages into one `" | "`-joined string with
+     * every embedded URI userinfo stripped. media3 reports RTSP failures as code 2000 with the real
+     * reason ("RTSP/1.0 401 Unauthorized", "missing attribute fmtp") buried in a cause, so
+     * classification must see the whole chain — but those messages quote the credentialed URI.
+     */
+    fun flatten(top: Throwable): String {
+        val sb = StringBuilder(top.message ?: "")
+        var cause: Throwable? = top.cause
+        var depth = 0
+        while (cause != null && depth < 8) {
+            cause.message?.let { sb.append(" | ").append(it) }
+            cause = cause.cause
+            depth += 1
+        }
+        return stripUserinfo(sb.toString())
+    }
 }
 
 /**
@@ -252,6 +330,12 @@ class CameraPlayback(
     /** The live view's info chip (resolution · measured fps · codec), on the main looper: once a
      *  second while a player is up, and null on teardown. */
     private val onVideoStats: (VideoStats?) -> Unit = {},
+    /** Fired right before an automatic stream switch (a failed SDP repair on SUB with a MAIN URL),
+     *  so the overlay can say why the stream is changing. Main looper. */
+    private val onAutoFallback: (StreamChoice) -> Unit = {},
+    /** Repairs an SDP that media3 refuses. Defaults to the no-op [StreamRepairer.None]; the app
+     *  passes [LiveStreamRepairer.shared] from `CameraFragment.buildPlayback`. */
+    private val repairer: StreamRepairer = StreamRepairer.None,
     private val clock: () -> Long = { SystemClock.elapsedRealtime() },
 ) {
 
@@ -304,6 +388,12 @@ class CameraPlayback(
 
     /** Which stream the current session is playing. */
     private var stream = StreamChoice.SUB
+
+    /** Loopback proxy URL for the current session once a repair succeeded; null = direct. */
+    private var proxyUrl: String? = null
+
+    /** Bumped by every startSession so a late repair callback for an older session is dropped. */
+    private var sessionSerial = 0
 
     /** The stream the live view is on, for the chrome pill and the hint row. */
     val currentStream: StreamChoice get() = stream
@@ -414,13 +504,21 @@ class CameraPlayback(
     private fun startSession(cam: CameraRecord, user: String?, pass: String?, audio: Boolean, stream: StreamChoice) {
         handler.removeCallbacksAndMessages(null)
         tearDownPlayer()
+        // A proxy belongs to ONE session (camera + stream): whatever the previous session repaired
+        // is meaningless here, and leaving it listening would leak a socket per switch.
+        repairer.close()
+        sessionSerial += 1
         camera = cam
         username = user
         password = pass
         audioActive = audio
         this.stream = stream
         lastVideoFormat = null
-        plan = CameraPlaybackPlan(clock)
+        plan = CameraPlaybackPlan(clock, stream, hasMain = !cam.mainRtspUrl.isNullOrBlank())
+        // Known-bad stream: go through the proxy from the first attempt instead of paying the
+        // failed direct DESCRIBE again.
+        proxyUrl = repairer.cachedProxyUrl(rawStreamUrl(cam))
+        if (proxyUrl != null) Log.i(TAG, "live open via cached repair (${redactedUrl()})")
         buildPlayer()
         onKeepScreenOn(true)
         run(plan.onAttemptStarted())
@@ -451,6 +549,7 @@ class CameraPlayback(
         handler.removeCallbacksAndMessages(null)
         statsHandler.removeCallbacksAndMessages(null)
         tearDownPlayer()
+        repairer.close()
         onVideoStats(null)
         view?.player = null
         view = null
@@ -471,9 +570,66 @@ class CameraPlayback(
                 is PlaybackEffect.ScheduleRetry -> scheduleRetry(effect.atMs)
                 is PlaybackEffect.TearDownPlayer -> tearDownPlayer()
                 is PlaybackEffect.BuildPlayer -> buildPlayer()
+                is PlaybackEffect.RepairStream -> startRepair()
+                is PlaybackEffect.SwitchStream -> {
+                    onAutoFallback(effect.to)
+                    // Starts a whole new session (and a new plan) synchronously; the state
+                    // published below is that new plan's Connecting, which is what we want the
+                    // fragment to render.
+                    switchStream(effect.to)
+                }
             }
         }
+        // A repaired stream that is STILL rejected for missing codec parameters means the cached
+        // parameter sets are wrong for this camera, so the next session must sniff again rather
+        // than trust them. Only that kind: an auth/not-found/unsupported failure says nothing
+        // about the parameter sets, and dropping the proxy for one would send Retry at the raw
+        // camera URL that media3 already refused — with the plan's one repair per session spent,
+        // a MAIN-only camera would re-fatal instantly.
+        if ((plan.state as? LiveState.Fatal)?.kind == StreamErrorKind.FATAL_NO_CODEC_PARAMS && proxyUrl != null) {
+            camera?.let { repairer.invalidate(rawStreamUrl(it)) }
+            // …and this session stops trusting the proxy too: a manual Retry rebuilds against the
+            // camera URL instead of the very repair that just failed fatally. It does NOT sniff
+            // again — onManualRetry reuses this plan, whose repairAttempted is already latched, so
+            // a still-unplayable SDP goes straight to the MAIN fallback or back to Fatal; the
+            // fresh sniff happens on the next session, which finds the cache empty. Closing the
+            // proxy leaves nothing listening for a URL nobody can obtain any more.
+            proxyUrl = null
+            repairer.close()
+        }
         if (!released) onState(plan.state)
+    }
+
+    /**
+     * Hands the current stream to [repairer] and reports the outcome back to the plan.
+     *
+     * The result callback may arrive on any thread and at any time, so it hops to the main looper
+     * and is dropped if the owner was released or a newer session has started meanwhile — a proxy
+     * URL sniffed for the stream we WERE playing must never be opened for the one we are on now.
+     */
+    private fun startRepair() {
+        val cam = camera ?: return
+        val serial = sessionSerial
+        val raw = rawStreamUrl(cam)
+        Log.i(TAG, "repair start (${CameraUri.redact(raw)})")
+        repairer.repair(raw, username, password, cam.forceTcp) { result ->
+            handler.post {
+                if (released || serial != sessionSerial) return@post
+                when (result) {
+                    is RepairResult.Ready -> {
+                        proxyUrl = result.proxyUrl
+                        Log.i(TAG, "repair ready -> ${CameraUri.redact(result.proxyUrl)}")
+                        run(plan.onRepairReady())
+                    }
+                    is RepairResult.Failed -> {
+                        // The reason is authored by the repairer; strip any URI userinfo before it
+                        // reaches the log, whatever a future implementation puts in it.
+                        Log.w(TAG, "repair failed: ${PlaybackErrorText.stripUserinfo(result.reason)}")
+                        run(plan.onRepairFailed())
+                    }
+                }
+            }
+        }
     }
 
     private fun armTimer(w: Watchdog, atMs: Long) {
@@ -490,7 +646,9 @@ class CameraPlayback(
     private fun buildPlayer() {
         tearDownPlayer()
         val cam = camera ?: return
-        val rawUrl = rawStreamUrl(cam)
+        // Once a repair has landed the session plays the loopback proxy instead of the camera; the
+        // logs keep naming the camera URL, which is the one that identifies the stream.
+        val rawUrl = proxyUrl ?: rawStreamUrl(cam)
         val uri = CameraUri.withCredentials(rawUrl, username, password)
         val loadControl = DefaultLoadControl.Builder()
             // Live video: a small buffer keeps latency down and recovers fast after a rebuffer.
@@ -533,7 +691,7 @@ class CameraPlayback(
         p.playWhenReady = true
         statsHandler.removeCallbacks(statsTick)
         statsHandler.postDelayed(statsTick, STATS_TICK_MS)
-        Log.i(TAG, "live open ${CameraUri.redact(rawUrl)} tcp=${cam.forceTcp} stream=$stream")
+        Log.i(TAG, "live open ${redactedUrl()} tcp=${cam.forceTcp} stream=$stream proxied=${proxyUrl != null}")
     }
 
     private fun tearDownPlayer() {
@@ -573,24 +731,8 @@ class CameraPlayback(
      *  line here may ever carry. */
     private fun redactedUrl(): String = camera?.let { CameraUri.redact(rawStreamUrl(it)) } ?: "?"
 
-    /**
-     * Folds an exception's `cause` chain into one string, with any embedded URI credentials
-     * stripped. media3 reports RTSP failures as code 2000 with the actual status line
-     * ("RTSP/1.0 401 Unauthorized") living in a cause, so classification has to see the whole
-     * chain — but those messages also quote the credentialed URI, and a password containing "401"
-     * would otherwise turn a retryable blip into a permanent auth failure. Never logged.
-     */
-    private fun flatten(error: PlaybackException): String {
-        val sb = StringBuilder(error.message ?: "")
-        var cause: Throwable? = error.cause
-        var depth = 0
-        while (cause != null && depth < 8) {
-            cause.message?.let { sb.append(" | ").append(it) }
-            cause = cause.cause
-            depth += 1
-        }
-        return PlaybackErrorText.stripUserinfo(sb.toString())
-    }
+    /** See [PlaybackErrorText.flatten]. Never logged. */
+    private fun flatten(error: PlaybackException): String = PlaybackErrorText.flatten(error)
 
     private companion object {
         const val TAG = "CameraPlayback"

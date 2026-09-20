@@ -180,6 +180,9 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
      *  open or a reconnect. Cleared on Playing/Fatal and by every [setMode] (which every camera
      *  switch and every exit to the grid goes through). */
     private var pendingStreamSwitch = false
+    /** Set by [CameraPlayback]'s `onAutoFallback`; makes the next Connecting overlay explain the
+     *  switch the app made on its own. Cleared exactly where [pendingStreamSwitch] is. */
+    private var autoFallbackTo: StreamChoice? = null
     private var streamToggle: View? = null
     private var streamSub: TextView? = null
     private var streamMain: TextView? = null
@@ -582,6 +585,17 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
             onClosed = ::onPlaybackClosed,
             onKeepScreenOn = { keepScreenOnBase = it; applyKeepScreenOn() },
             onVideoStats = ::renderLiveInfo,
+            onAutoFallback = { to ->
+                autoFallbackTo = to
+                // Not a user-driven switch: the "Switching to … stream…" copy must not win over
+                // the fallback's own explanation.
+                pendingStreamSwitch = false
+                // Posted, not called: the switch itself runs synchronously right AFTER this
+                // callback returns, so reading currentStream() here would still see the old one.
+                mainHandler.post { if (isAdded) renderStreamToggle() }
+            },
+            // Process-wide: what one live view sniffed stays learned for the next one.
+            repairer = LiveStreamRepairer.shared,
         )
     }
 
@@ -651,6 +665,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         // Every exit to the grid and every camera switch passes through here, and neither is a
         // stream switch — so a stale `true` can never mislabel the next camera's first connect.
         pendingStreamSwitch = false
+        autoFallbackTo = null
         applyMode()
         applySchedulerSuspension()
         publishApiStates()
@@ -698,7 +713,10 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         // The switch has an outcome now, so the next Connecting is an ordinary one. Cleared before
         // the render, which is the first thing that must see the new value. Reconnecting keeps the
         // flag: the switch has not landed yet, and the retry is still on its way to the new stream.
-        if (state is LiveState.Playing || state is LiveState.Fatal) pendingStreamSwitch = false
+        if (state is LiveState.Playing || state is LiveState.Fatal) {
+            pendingStreamSwitch = false
+            autoFallbackTo = null
+        }
         renderOverlay(state)
         if (state is LiveState.Reconnecting) {
             mainHandler.removeCallbacks(reconnectTickRunnable)
@@ -728,9 +746,15 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         when (state) {
             LiveState.Connecting -> {
                 connectOverlay?.visibility = View.VISIBLE
-                connectText?.text = if (pendingStreamSwitch) {
-                    getString(R.string.camera_switching_stream, getString(if (currentStream() == StreamChoice.MAIN) R.string.camera_stream_main else R.string.camera_stream_sub))
-                } else getString(R.string.camera_connecting)
+                connectText?.text = when {
+                    autoFallbackTo == StreamChoice.MAIN -> getString(R.string.camera_fallback_main)
+                    pendingStreamSwitch -> getString(R.string.camera_switching_stream, getString(if (currentStream() == StreamChoice.MAIN) R.string.camera_stream_main else R.string.camera_stream_sub))
+                    else -> getString(R.string.camera_connecting)
+                }
+            }
+            LiveState.Repairing -> {
+                connectOverlay?.visibility = View.VISIBLE
+                connectText?.text = getString(R.string.camera_repairing)
             }
             LiveState.Playing -> Unit
             is LiveState.Reconnecting -> {
@@ -791,6 +815,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         StreamErrorKind.FATAL_AUTH -> R.string.camera_fatal_auth
         StreamErrorKind.FATAL_NOT_FOUND -> R.string.camera_fatal_not_found
         StreamErrorKind.FATAL_UNSUPPORTED -> R.string.camera_fatal_unsupported
+        StreamErrorKind.FATAL_NO_CODEC_PARAMS -> R.string.camera_fatal_no_codec_params
         StreamErrorKind.TRANSIENT -> R.string.camera_fatal_generic
     }
 
@@ -822,6 +847,9 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         // Set BEFORE the call: switchStream publishes Connecting synchronously, and that render
         // is the one that has to read "Switching to …".
         pendingStreamSwitch = true
+        // A hand-driven switch supersedes whatever automatic fallback got us here, so its own copy
+        // must not keep winning in renderOverlay.
+        autoFallbackTo = null
         resetZoom()
         playback?.switchStream(next)
         renderStreamToggle()

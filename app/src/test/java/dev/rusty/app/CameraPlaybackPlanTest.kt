@@ -11,7 +11,7 @@ import org.junit.Test
 class CameraPlaybackPlanTest {
 
     private var nowMs = 1_000L
-    private val plan = CameraPlaybackPlan { nowMs }
+    private val plan = CameraPlaybackPlan({ nowMs })
 
     private fun at(t: Long): Long {
         nowMs = t
@@ -351,5 +351,149 @@ class CameraPlaybackPlanTest {
 
         assertEquals(raw, cleaned)
         assertEquals(StreamErrorKind.FATAL_AUTH, CameraRetryPolicy.classify(2000, cleaned))
+    }
+
+    @Test
+    fun `flatten joins the cause chain and strips credentials`() {
+        val leaf = IllegalArgumentException("missing attribute fmtp")
+        val mid = java.io.IOException("rtsp://admin:s3cret@192.168.4.90:554/h264Preview_01_sub", leaf)
+        val top = RuntimeException("Source error", mid)
+
+        val text = PlaybackErrorText.flatten(top)
+
+        assertEquals("Source error | rtsp://•••@192.168.4.90:554/h264Preview_01_sub | missing attribute fmtp", text)
+    }
+
+    @Test
+    fun `flatten stops after eight causes`() {
+        var t: Throwable = RuntimeException("c9")
+        for (i in 8 downTo 0) t = RuntimeException("c$i", t)
+        val text = PlaybackErrorText.flatten(t)
+        assertTrue(text.endsWith("c8"))
+        assertTrue(!text.contains("c9"))
+    }
+
+    // ---- SDP repair (missing fmtp) ----
+
+    private val fmtpMsg = "Source error | missing attribute fmtp"
+
+    @Test
+    fun `missing fmtp enters Repairing and asks for a repair once`() {
+        plan.onAttemptStarted(at(1_000))
+
+        val effects = plan.onError(2000, fmtpMsg, at(1_500))
+
+        assertEquals(listOf(PlaybackEffect.CancelTimers, PlaybackEffect.TearDownPlayer, PlaybackEffect.RepairStream), effects)
+        assertEquals(LiveState.Repairing, plan.state)
+    }
+
+    /**
+     * Characterization, not a regression test for the fix: it pins the PRECONDITION of the
+     * `CameraPlayback.run()` proxy-teardown guard, namely that a session playing through a live
+     * proxy still reaches `Fatal` with kinds OTHER than FATAL_NO_CODEC_PARAMS. The guard itself
+     * lives in the Handler/ExoPlayer-bound owner and has no unit-test seam.
+     */
+    @Test
+    fun `a non-codec failure on a repaired stream is fatal with its own kind`() {
+        plan.onAttemptStarted(at(1_000))
+        plan.onError(2000, fmtpMsg, at(1_500))
+        plan.onRepairReady(at(2_000))
+        plan.onFirstFrame(at(2_500))
+
+        plan.onError(4001, "decoder init failed", at(3_000))
+
+        assertEquals(LiveState.Fatal(StreamErrorKind.FATAL_UNSUPPORTED), plan.state)
+    }
+
+    @Test
+    fun `repair ready rebuilds and re-arms the watchdogs`() {
+        plan.onAttemptStarted(at(1_000))
+        plan.onError(2000, fmtpMsg, at(1_500))
+
+        val effects = plan.onRepairReady(at(3_000))
+
+        assertEquals(
+            listOf(
+                PlaybackEffect.CancelTimers,
+                PlaybackEffect.BuildPlayer,
+                PlaybackEffect.ArmTimer(Watchdog.HANDSHAKE, 11_000L),
+                PlaybackEffect.ArmTimer(Watchdog.FIRST_FRAME, 15_000L),
+            ),
+            effects,
+        )
+        assertEquals(LiveState.Connecting, plan.state)
+    }
+
+    @Test
+    fun `repair failed on SUB with a main url switches to MAIN`() {
+        val p = CameraPlaybackPlan({ nowMs }, stream = StreamChoice.SUB, hasMain = true)
+        p.onAttemptStarted(at(1_000))
+        p.onError(2000, fmtpMsg, at(1_500))
+
+        val effects = p.onRepairFailed(at(6_500))
+
+        assertEquals(listOf(PlaybackEffect.CancelTimers, PlaybackEffect.SwitchStream(StreamChoice.MAIN)), effects)
+        assertEquals(LiveState.Connecting, p.state)
+    }
+
+    @Test
+    fun `repair failed without a main url is fatal with the codec-params kind`() {
+        plan.onAttemptStarted(at(1_000))
+        plan.onError(2000, fmtpMsg, at(1_500))
+
+        val effects = plan.onRepairFailed(at(6_500))
+
+        assertEquals(listOf(PlaybackEffect.CancelTimers, PlaybackEffect.TearDownPlayer), effects)
+        assertEquals(LiveState.Fatal(StreamErrorKind.FATAL_NO_CODEC_PARAMS), plan.state)
+    }
+
+    @Test
+    fun `repair failed on MAIN never switches back to SUB`() {
+        val p = CameraPlaybackPlan({ nowMs }, stream = StreamChoice.MAIN, hasMain = true)
+        p.onAttemptStarted(at(1_000))
+        p.onError(2000, fmtpMsg, at(1_500))
+
+        p.onRepairFailed(at(6_500))
+
+        assertEquals(LiveState.Fatal(StreamErrorKind.FATAL_NO_CODEC_PARAMS), p.state)
+    }
+
+    @Test
+    fun `a second missing fmtp after a repair goes straight to the fallback`() {
+        val p = CameraPlaybackPlan({ nowMs }, stream = StreamChoice.SUB, hasMain = true)
+        p.onAttemptStarted(at(1_000))
+        p.onError(2000, fmtpMsg, at(1_500))
+        p.onRepairReady(at(3_000))
+
+        val effects = p.onError(2000, fmtpMsg, at(3_500))
+
+        assertEquals(listOf(PlaybackEffect.CancelTimers, PlaybackEffect.SwitchStream(StreamChoice.MAIN)), effects)
+    }
+
+    @Test
+    fun `watchdogs and manual retry are ignored while repairing`() {
+        plan.onAttemptStarted(at(1_000))
+        plan.onError(2000, fmtpMsg, at(1_500))
+
+        assertEquals(emptyList<PlaybackEffect>(), plan.onWatchdogFired(Watchdog.HANDSHAKE, at(9_000)))
+        assertEquals(emptyList<PlaybackEffect>(), plan.onManualRetry(at(9_100)))
+        assertEquals(LiveState.Repairing, plan.state)
+    }
+
+    @Test
+    fun `repair callbacks outside Repairing are no-ops`() {
+        plan.onAttemptStarted(at(1_000))
+        assertEquals(emptyList<PlaybackEffect>(), plan.onRepairReady(at(1_100)))
+        assertEquals(emptyList<PlaybackEffect>(), plan.onRepairFailed(at(1_200)))
+        assertEquals(LiveState.Connecting, plan.state)
+    }
+
+    @Test
+    fun `release while repairing freezes the plan`() {
+        plan.onAttemptStarted(at(1_000))
+        plan.onError(2000, fmtpMsg, at(1_500))
+        plan.onReleased()
+        assertEquals(emptyList<PlaybackEffect>(), plan.onRepairReady(at(2_000)))
+        assertEquals(LiveState.Repairing, plan.state)
     }
 }

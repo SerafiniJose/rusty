@@ -36,6 +36,9 @@
     <string name="camera_fatal_codec">This device can\'t decode %1$s at %2$d×%3$d — set the camera to H.264.</string>
     <string name="camera_fatal_codec_main">This device can\'t decode %1$s at %2$d×%3$d — switch to the sub stream (▼) or set the camera to H.264.</string>
     <string name="camera_fatal_generic">Camera unavailable.</string>
+    <string name="camera_repairing">Fixing stream…</string>
+    <string name="camera_fallback_main">Sub stream can\'t play here — switching to main stream…</string>
+    <string name="camera_fatal_no_codec_params">This camera\'s stream doesn\'t advertise its H.264 parameters, so it can\'t be played directly. Add its main stream URL in Settings, or use the main URL as the stream.</string>
 
     <!-- Camera settings panel (Task 12) -->
 </resources>

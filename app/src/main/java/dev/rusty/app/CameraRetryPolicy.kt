@@ -1,7 +1,9 @@
 package dev.rusty.app
 
-/** How a stream failure should be handled: retry it, or give up because it will never recover. */
-enum class StreamErrorKind { TRANSIENT, FATAL_AUTH, FATAL_NOT_FOUND, FATAL_UNSUPPORTED }
+/** How a stream failure should be handled: retry it, or give up because it will never recover.
+ *  [FATAL_NO_CODEC_PARAMS]: the SDP's H.264 track has no `a=fmtp` / `sprop-parameter-sets`, which
+ *  media3 refuses outright — repairable by the SDP proxy, never by retrying. */
+enum class StreamErrorKind { TRANSIENT, FATAL_AUTH, FATAL_NOT_FOUND, FATAL_UNSUPPORTED, FATAL_NO_CODEC_PARAMS }
 
 /**
  * Classifies media3 `PlaybackException` failures for RTSP camera streams, and derives the
@@ -19,6 +21,9 @@ object CameraRetryPolicy {
      * Classifies a media3 `PlaybackException` (by [errorCode] and its flattened [message]) into a
      * [StreamErrorKind].
      *
+     * - regardless of [errorCode]: a message containing media3's "missing attribute fmtp" or
+     *   "missing sprop parameter" phrase -> [StreamErrorKind.FATAL_NO_CODEC_PARAMS], checked before
+     *   any code range below.
      * - `2000..2008` (io, including the unspecified 2000 code seen on-device): the message is
      *   matched case-insensitively for RTSP status markers — "401"/"unauthorized" or "403" ->
      *   [StreamErrorKind.FATAL_AUTH]; "404"/"454"/"not found" -> [StreamErrorKind.FATAL_NOT_FOUND];
@@ -29,12 +34,21 @@ object CameraRetryPolicy {
      * - `4001..4005` (decoder init/decoding) -> [StreamErrorKind.FATAL_UNSUPPORTED].
      * - anything else (unknown codes) -> [StreamErrorKind.TRANSIENT].
      */
-    fun classify(errorCode: Int, message: String?): StreamErrorKind = when (errorCode) {
-        in 2000..2008 -> classifyIoMessage(message)
-        in 3001..3004 -> StreamErrorKind.FATAL_UNSUPPORTED
-        in 4001..4005 -> StreamErrorKind.FATAL_UNSUPPORTED
-        else -> StreamErrorKind.TRANSIENT
+    fun classify(errorCode: Int, message: String?): StreamErrorKind {
+        // Checked before the code ranges: on-device this arrives as code 2000 (io) but it is a
+        // parse failure in disguise, and no code range tells the two apart.
+        if (message != null && isMissingCodecParams(message.lowercase())) return StreamErrorKind.FATAL_NO_CODEC_PARAMS
+        return when (errorCode) {
+            in 2000..2008 -> classifyIoMessage(message)
+            in 3001..3004 -> StreamErrorKind.FATAL_UNSUPPORTED
+            in 4001..4005 -> StreamErrorKind.FATAL_UNSUPPORTED
+            else -> StreamErrorKind.TRANSIENT
+        }
     }
+
+    /** media3's exact phrases from `RtspMediaTrack.generatePayloadFormat` / `processH264FmtpAttribute`. */
+    private fun isMissingCodecParams(lower: String): Boolean =
+        lower.contains("missing attribute fmtp") || lower.contains("missing sprop parameter")
 
     private fun classifyIoMessage(message: String?): StreamErrorKind {
         val text = message?.lowercase() ?: return StreamErrorKind.TRANSIENT

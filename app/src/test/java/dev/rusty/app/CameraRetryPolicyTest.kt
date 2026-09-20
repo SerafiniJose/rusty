@@ -156,6 +156,41 @@ class CameraRetryPolicyTest {
         assertEquals(StreamErrorKind.FATAL_UNSUPPORTED, CameraRetryPolicy.classify(4005, null))
     }
 
+    // ---- classify: SDP without H.264 parameters (Reolink CX820 firmware 2024.12+) ----
+
+    @Test
+    fun classify2000WithMissingAttributeFmtpIsFatalNoCodecParams() {
+        // Real-device shape (2026-09-10, Rusty Office): code 2000, media3's IllegalArgumentException
+        // message folded into the cause chain.
+        assertEquals(
+            StreamErrorKind.FATAL_NO_CODEC_PARAMS,
+            CameraRetryPolicy.classify(2000, "Source error | java.lang.IllegalArgumentException: missing attribute fmtp | missing attribute fmtp"),
+        )
+    }
+
+    @Test
+    fun classifyMissingSpropParameterIsFatalNoCodecParams() {
+        assertEquals(
+            StreamErrorKind.FATAL_NO_CODEC_PARAMS,
+            CameraRetryPolicy.classify(3001, "Missing SPROP parameter"),
+        )
+    }
+
+    @Test
+    fun classifyFmtpMarkerWinsOverStatusCodes() {
+        // The marker is decisive even when a status code is also present in the chain.
+        assertEquals(
+            StreamErrorKind.FATAL_NO_CODEC_PARAMS,
+            CameraRetryPolicy.classify(2000, "RTSP/1.0 200 OK | missing attribute fmtp"),
+        )
+    }
+
+    @Test
+    fun classifyPlainFmtpWordAloneStaysTransient() {
+        // Only the exact media3 phrases count; "fmtp" in some other sentence is not a diagnosis.
+        assertEquals(StreamErrorKind.TRANSIENT, CameraRetryPolicy.classify(2000, "fmtp parsed fine, socket reset"))
+    }
+
     // ---- classify: unknown codes ----
 
     @Test

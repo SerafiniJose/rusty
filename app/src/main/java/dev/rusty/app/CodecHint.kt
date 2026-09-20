@@ -58,4 +58,12 @@ object TestReport {
         val mark = if (ok) "✓" else "✗"
         return if (format == null) "$label $mark" else "$label $mark · ${CodecHint.describe(format)}"
     }
+
+    /** A second line under a ✗ that explains a failure the user can act on. Only the SDP case for
+     *  now: auth/not-found already read clearly from the ✗ plus the URL the user just typed. */
+    fun hint(kind: StreamErrorKind?): String? = when (kind) {
+        StreamErrorKind.FATAL_NO_CODEC_PARAMS ->
+            "⚠ This stream doesn't advertise its H.264 parameters — Rusty can't play it directly. Put the main stream URL here, or add it as Main."
+        else -> null
+    }
 }

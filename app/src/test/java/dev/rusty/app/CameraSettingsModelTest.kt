@@ -287,4 +287,16 @@ class CameraSettingsModelTest {
         assertEquals("1", result.credentials?.password)
         assertEquals("rtsp://h/main", result.cameras.single().mainRtspUrl)
     }
+
+    // ---- TestReport.hint --------------------------------------------------------------------
+
+    @Test
+    fun `test report hints only for the missing-parameters kind`() {
+        assertEquals(
+            "⚠ This stream doesn't advertise its H.264 parameters — Rusty can't play it directly. Put the main stream URL here, or add it as Main.",
+            TestReport.hint(StreamErrorKind.FATAL_NO_CODEC_PARAMS),
+        )
+        assertNull(TestReport.hint(StreamErrorKind.FATAL_AUTH))
+        assertNull(TestReport.hint(null))
+    }
 }
