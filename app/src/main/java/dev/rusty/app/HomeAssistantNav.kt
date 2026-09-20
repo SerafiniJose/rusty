@@ -457,6 +457,15 @@ object HomeAssistantNav {
               (!deep||!!hui.querySelector('#rusty-home'));
           }
           function applyAll(){
+            // HA copies env(safe-area-inset-*) into --safe-area-inset-* on <html> and pads every
+            // view by them. In this WebView the top one reads 25px on a device with no cutout —
+            // it is the HIDDEN status bar (immersive fullscreen) — and the app already keeps the
+            // WebView clear of every system bar, so the strip is reserved for nothing. Zero HA's
+            // copies at document level; !important outranks HA's own inline setProperty. Left and
+            // right are left alone: nothing ever reported them non-zero. Measured on-device
+            // (Echo Show 8, 1280x800): hui-view grows 453 -> 478 CSS px.
+            styled(document.head,'rusty-kiosk-safe-area',
+              'html{--safe-area-inset-top:0px!important;--safe-area-inset-bottom:0px!important;}');
             var m=mainRoot();
             var sidebar=styled(m,'rusty-kiosk-sidebar',
               'ha-sidebar{display:none!important;}'+

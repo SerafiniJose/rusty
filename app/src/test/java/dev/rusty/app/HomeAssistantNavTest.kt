@@ -221,6 +221,17 @@ class HomeAssistantNavTest {
 
     // ---- kioskJs ------------------------------------------------------------
 
+    @Test fun kioskJs_zeroesHaSafeAreaInsetsAtDocumentLevel() {
+        // Measured on an Echo Show 8 (1280x800, fullscreen, no cutout): the WebView still reports
+        // env(safe-area-inset-top)=25px — the HIDDEN status bar — and HA copies it into
+        // --safe-area-inset-top, which hui-view-container pads by. The app already places the
+        // WebView clear of every system bar, so that strip is reserved for nothing. Zero HA's
+        // copies at document level; !important beats HA's own inline setProperty.
+        val js = HomeAssistantNav.kioskJs()
+        assertTrue(js.contains("styled(document.head,'rusty-kiosk-safe-area'"))
+        assertTrue(js.contains("html{--safe-area-inset-top:0px!important;--safe-area-inset-bottom:0px!important;}"))
+    }
+
     @Test fun kioskJs_neverHidesTheTopAppBarScaffoldItself() {
         // Regression: HA's newer panels (ha-panel-security / -light / -climate / -history …) use
         // <ha-top-app-bar-fixed> as the page SCAFFOLD — the dashboard content is slotted INSIDE it.

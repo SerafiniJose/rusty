@@ -91,6 +91,7 @@
             android:name=".HomeActivity"
             android:exported="true"
             android:banner="@drawable/tv_banner"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
