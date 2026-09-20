@@ -65,7 +65,7 @@ internal class CameraAddCard(
     private val cameras: () -> List<CameraRecord>,
     private val ownDeviceId: String,
     /** [fixedUsername] non-null pre-fills the login's user name and locks the field — a Rusty share
-     *  always authenticates as [RtspAuth.USER], so only its password is ever in question. */
+     *  always authenticates as [BasicAuth.USER], so only its password is ever in question. */
     private val askCredentials: (
         cameraName: String?,
         fixedUsername: String?,
@@ -229,9 +229,9 @@ internal class CameraAddCard(
                     ),
                 )
             }
-            // The sharing side always authenticates as RtspAuth.USER, so the prompt asks for the
+            // The sharing side always authenticates as BasicAuth.USER, so the prompt asks for the
             // password only — there is nothing for the user to get wrong in the other field.
-            if (cam.requiresAuth) askCredentials(cam.name, RtspAuth.USER) { user, pass -> open(user, pass) }
+            if (cam.requiresAuth) askCredentials(cam.name, BasicAuth.USER) { user, pass -> open(user, pass) }
             else open(null, null)
         }
 

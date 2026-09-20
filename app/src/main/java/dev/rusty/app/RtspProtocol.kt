@@ -1,7 +1,5 @@
 package dev.rusty.app
 
-import java.util.Base64
-
 data class RtspRequest(val method: String, val uri: String, val cseq: Int, val headers: Map<String, String>)
 
 data class RtspResponse(val status: Int, val reason: String, val headers: List<Pair<String, String>>, val body: String = "") {
@@ -63,26 +61,28 @@ class RtspProtocol(
         const val METHODS = "OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN, GET_PARAMETER"
         const val TRACK = "track0"
 
-        fun sdp(sps: ByteArray, pps: ByteArray, streamPath: String): String {
-            val b64 = Base64.getEncoder()
-            // Defensive: a caller handing over MediaCodec's csd buffers would include an Annex-B
-            // start code, which makes profile-level-id read 000001 and corrupts sprop-parameter-sets.
-            val spsNal = H264Nal.splitAnnexB(sps).firstOrNull() ?: sps
-            val ppsNal = H264Nal.splitAnnexB(pps).firstOrNull() ?: pps
-            val profileLevelId = if (spsNal.size >= 4) "%02x%02x%02x".format(spsNal[1], spsNal[2], spsNal[3]) else "42001e"
-            return buildString {
-                append("v=0\r\n")
-                append("o=- 0 0 IN IP4 0.0.0.0\r\n")
-                append("s=Rusty camera\r\n")
-                append("t=0 0\r\n")
-                append("a=control:*\r\n")
-                append("m=video 0 RTP/AVP 96\r\n")
-                append("c=IN IP4 0.0.0.0\r\n")
-                append("a=rtpmap:96 H264/90000\r\n")
-                append("a=fmtp:96 packetization-mode=1;profile-level-id=").append(profileLevelId)
-                append(";sprop-parameter-sets=").append(b64.encodeToString(spsNal)).append(',').append(b64.encodeToString(ppsNal)).append("\r\n")
-                append("a=control:").append(TRACK).append("\r\n")
-            }
+        /** The payload type this server always offers. */
+        const val PAYLOAD_TYPE = 96
+
+        /** The stream's own path is deliberately absent: the session control is `*` and the track
+         *  control is relative, so both resolve against the `Content-Base` of the DESCRIBE that
+         *  carries this body. A path baked in here could only contradict it. */
+        fun sdp(sps: ByteArray, pps: ByteArray): String = buildString {
+            append("v=0\r\n")
+            append("o=- 0 0 IN IP4 0.0.0.0\r\n")
+            append("s=Rusty camera\r\n")
+            append("t=0 0\r\n")
+            append("a=control:*\r\n")
+            append("m=video 0 RTP/AVP $PAYLOAD_TYPE\r\n")
+            append("c=IN IP4 0.0.0.0\r\n")
+            append("a=rtpmap:$PAYLOAD_TYPE H264/90000\r\n")
+            // The same line SdpRepair writes into a camera's SDP that left it out, from the same
+            // builder: the stream this server offers and a stream it repairs must describe their
+            // parameter sets identically, and one builder is the only way to keep that true. It
+            // also carries the Annex-B guard — a caller handing over MediaCodec's csd buffers
+            // would otherwise make profile-level-id read 000001 and corrupt sprop-parameter-sets.
+            append(SdpRepair.fmtpLine(PAYLOAD_TYPE, sps, pps)).append("\r\n")
+            append("a=control:").append(TRACK).append("\r\n")
         }
     }
 
@@ -135,7 +135,7 @@ class RtspProtocol(
             "DESCRIBE" -> when (val d = source.describe()) {
                 is DescribeResult.Unavailable -> err(503, "Service Unavailable")
                 is DescribeResult.Ready -> RtspOutcome(
-                    resp(200, "OK", listOf("Content-Type" to "application/sdp", "Content-Base" to contentBase(req.uri)), sdp(d.sps, d.pps, streamPath)),
+                    resp(200, "OK", listOf("Content-Type" to "application/sdp", "Content-Base" to contentBase(req.uri)), sdp(d.sps, d.pps)),
                     SessionEffect.NONE,
                 )
             }

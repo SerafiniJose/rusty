@@ -22,7 +22,7 @@ class RtspParamSetFetcherTest {
     // with realm "rusty" and the tests sign in as "rusty"; the client code itself is agnostic (see
     // the last test for a foreign realm/user).
     private val realm = RtspAuth.REALM
-    private val user = RtspAuth.USER
+    private val user = BasicAuth.USER
 
     /** Reads one request head from [input]: (method, uri, headers upper-cased). */
     private fun readRequest(input: DataInputStream): Triple<String, String, Map<String, String>>? {

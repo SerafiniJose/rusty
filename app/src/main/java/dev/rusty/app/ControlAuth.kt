@@ -1,11 +1,10 @@
 package dev.rusty.app
 
 import java.security.MessageDigest
-import java.util.Base64
 
 /**
  * The control API's password gate, pure and off-device-testable like the rest of
- * [ControlProtocol]'s decisions (`java.security`/`java.util` only — no `android.*`).
+ * [ControlProtocol]'s decisions (`java.security` only — no `android.*`).
  *
  * Scheme: `Authorization: Bearer <password>` on every `/api/...` request — [authorized] is
  * that gate. Bearer rather than HTTP Basic so browsers never pop their native credential dialog
@@ -18,8 +17,7 @@ import java.util.Base64
  * and never for the general gate (that's [authorized]'s job). That fetcher is another Rusty
  * device polling for a grid thumbnail, not a browser, so the native-dialog concern does not apply
  * — and it is the same credential shape [RtspAuth] already accepts for the RTSP stream itself, so
- * one password works both ways. [basicPassword] is the decoder for it; the fixed username is
- * `rusty`, matching [RtspAuth.USER].
+ * one password works both ways. [BasicAuth] owns the username and the decoder for both gates.
  *
  * Why the split matters: HTTP Basic credentials, once presented to an origin by a real browser (a
  * URL with embedded `rusty:pw@host`, a bookmark, an HA Lovelace picture-entity URL), are cached
@@ -35,8 +33,6 @@ import java.util.Base64
  */
 object ControlAuth {
 
-    private const val BASIC_USER = "rusty"
-
     /**
      * The password presented by [authorizationHeader], or null when the header is absent, blank,
      * or not a Bearer credential. Outer whitespace is trimmed; inner spaces are kept — they are
@@ -51,27 +47,14 @@ object ControlAuth {
     }
 
     /**
-     * The password presented by a `Basic` [authorizationHeader] for the fixed user [BASIC_USER],
-     * or null when the header is absent, malformed, not Basic, for any other user, or decodes to
-     * an empty password. Never throws: a non-base64 payload is simply rejected.
-     *
-     * Uses the MIME decoder rather than the strict one — same reason [RtspAuth.authorized] does:
-     * it tolerates the embedded line breaks Android's own `android.util.Base64.DEFAULT` wraps a
-     * long credential with, so a real client that built its header that way is not rejected on a
-     * technicality.
+     * The password presented by a `Basic` [authorizationHeader] for the fixed user
+     * [BasicAuth.USER], or null when the header is absent, malformed, not Basic, for any other
+     * user, or decodes to an empty password. Never throws: a non-base64 payload is simply
+     * rejected. The decoding itself is [BasicAuth.passwordFromHeader]'s, shared with [RtspAuth];
+     * the empty-password rule is this gate's own — a blank credential never satisfies it.
      */
-    fun basicPassword(authorizationHeader: String?): String? {
-        val header = authorizationHeader?.trim() ?: return null
-        val space = header.indexOf(' ')
-        if (space < 0 || !header.substring(0, space).equals("Basic", ignoreCase = true)) return null
-        val decoded = runCatching {
-            String(Base64.getMimeDecoder().decode(header.substring(space + 1).trim()), Charsets.UTF_8)
-        }.getOrNull() ?: return null
-        val colon = decoded.indexOf(':')
-        if (colon < 0) return null
-        if (decoded.substring(0, colon) != BASIC_USER) return null
-        return decoded.substring(colon + 1).takeIf { it.isNotEmpty() }
-    }
+    fun basicPassword(authorizationHeader: String?): String? =
+        BasicAuth.passwordFromHeader(authorizationHeader)?.takeIf { it.isNotEmpty() }
 
     /**
      * Whether a request carrying [authorizationHeader] may proceed when [requiredPassword] is in
@@ -88,7 +71,7 @@ object ControlAuth {
     }
 
     /**
-     * Like [authorized], but Basic (for [BASIC_USER]) is ALSO accepted — Bearer is tried
+     * Like [authorized], but Basic (for [BasicAuth.USER]) is ALSO accepted — Bearer is tried
      * first, then Basic. Reserved for EXACTLY ONE route: [ControlProtocol.route] must only reach
      * for this when the path is `/api/camera/local/snapshot.jpg`, never for the general gate.
      * Constant-time comparison ([passwordMatches]) so a remote caller can't binary-search the

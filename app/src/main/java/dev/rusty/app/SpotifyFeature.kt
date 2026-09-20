@@ -373,31 +373,6 @@ private class SpotifySettingsPanel(
         }
     }
 
-    /**
-     * Wires a set of standalone [RadioButton]s as one mutually-exclusive choice. They are not in a
-     * RadioGroup (they are positioned by a Flow, so they are not its direct children), so this
-     * checks the option whose value equals [selected] and, on any user check, unchecks the siblings
-     * and reports the new value through [onSelect]. [suppress] stops the programmatic sibling
-     * unchecks from re-entering [onSelect].
-     */
-    private fun <T> bindRadioChoice(
-        options: List<Pair<RadioButton, T>>,
-        selected: T,
-        onSelect: (T) -> Unit,
-    ) {
-        options.forEach { (radio, value) -> radio.isChecked = value == selected }
-        var suppress = false
-        options.forEach { (radio, value) ->
-            radio.setOnCheckedChangeListener { _, isChecked ->
-                if (!isChecked || suppress) return@setOnCheckedChangeListener
-                suppress = true
-                options.forEach { (other, _) -> if (other !== radio) other.isChecked = false }
-                suppress = false
-                onSelect(value)
-            }
-        }
-    }
-
     private fun showFeedback(view: TextView, message: String, color: Int) {
         view.text = message
         view.setTextColor(color)

@@ -513,7 +513,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         fun renderRotationRow() {
             rotationRow.isVisible = layout != GridLayoutChoice.ALL
         }
-        bindCameraRadioChoice(
+        bindRadioChoice(
             options = listOf(
                 panel.findViewById<RadioButton>(R.id.rbCamLayoutAll) to GridLayoutChoice.ALL,
                 panel.findViewById<RadioButton>(R.id.rbCamLayout4) to GridLayoutChoice.PAGES_4,
@@ -917,7 +917,7 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         }
 
     /** Login prompt for a discovered camera. [fixedUsername] non-null (a Rusty share, which always
-     *  authenticates as [RtspAuth.USER]) shows that name in a disabled field and starts on the
+     *  authenticates as [BasicAuth.USER]) shows that name in a disabled field and starts on the
      *  password, so the only thing asked for is the only thing that varies. */
     private fun openDiscoveryCredentialsDialog(
         cameraName: String?,
@@ -999,22 +999,6 @@ private object RtspProbe {
             }
         } finally {
             player.release()
-        }
-    }
-}
-
-/** Mutual exclusion for Flow-positioned radios (not a RadioGroup's direct children); copied from
- *  SpotifyFeature.bindRadioChoice so the two panels share one behaviour. */
-private fun <T> bindCameraRadioChoice(options: List<Pair<RadioButton, T>>, selected: T, onSelect: (T) -> Unit) {
-    options.forEach { (radio, value) -> radio.isChecked = value == selected }
-    var suppress = false
-    options.forEach { (radio, value) ->
-        radio.setOnCheckedChangeListener { _, isChecked ->
-            if (!isChecked || suppress) return@setOnCheckedChangeListener
-            suppress = true
-            options.forEach { (other, _) -> if (other !== radio) other.isChecked = false }
-            suppress = false
-            onSelect(value)
         }
     }
 }

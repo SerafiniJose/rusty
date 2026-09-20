@@ -14,8 +14,6 @@ import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -417,26 +415,11 @@ class ControlService : Service() {
     private val defaultNetworkCallback = AddressCallback()
     private val lanNetworkCallback = AddressCallback()
 
-    /**
-     * Why two callbacks: the LAN is not always the DEFAULT network. With a VPN up the default is the
-     * tunnel (whose CGNAT address is not site-local), and a Wi-Fi network Android could not validate
-     * — a LAN with no internet — never becomes default at all. Watching only the default network
-     * would leave a server that came up before Wi-Fi did with no address forever, which is the
-     * normal case for this feature: `BOOT_COMPLETED` fires before Wi-Fi associates. Transcribed from
-     * [dev.rusty.app.renderer.MediaRendererService.registerNetworkCallbacks], which solves exactly
-     * this for SSDP; Task 10's NSD re-registration hangs off the same signal ([refreshUrl]).
-     */
+    /** Both callbacks, and why there are two, live in [LanNetworkCallbacks]. Task 10's NSD
+     *  re-registration hangs off the same signal ([refreshUrl]). */
     private fun registerNetworkCallbacks() {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
-        runCatching { cm.registerDefaultNetworkCallback(defaultNetworkCallback) }
-            .onFailure { Log.w(TAG, "Failed to register default-network callback", it) }
-        runCatching {
-            val lanRequest = NetworkRequest.Builder()
-                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
-                .build()
-            cm.registerNetworkCallback(lanRequest, lanNetworkCallback)
-        }.onFailure { Log.w(TAG, "Failed to register LAN network callback", it) }
+        LanNetworkCallbacks.register(cm, TAG, defaultNetworkCallback, lanNetworkCallback)
     }
 
     private fun unregisterNetworkCallbacks() {

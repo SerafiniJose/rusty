@@ -54,8 +54,8 @@ class RtspProtocolTest {
     }
 
     @Test fun `sdp strips Annex-B start codes from the parameter sets`() {
-        val bare = RtspProtocol.sdp(sps, pps, "/live")
-        val prefixed = RtspProtocol.sdp(byteArrayOf(0, 0, 0, 1) + sps, byteArrayOf(0, 0, 1) + pps, "/live")
+        val bare = RtspProtocol.sdp(sps, pps)
+        val prefixed = RtspProtocol.sdp(byteArrayOf(0, 0, 0, 1) + sps, byteArrayOf(0, 0, 1) + pps)
         assertEquals(bare, prefixed)
         assertTrue(prefixed.contains("profile-level-id=42001e"))
         assertTrue(prefixed.contains("sprop-parameter-sets=Z0IAHg==,aM44gA=="))

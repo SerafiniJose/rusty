@@ -38,6 +38,8 @@ RELEASING.md
 
 # Knowledge-graph output from the graphify skill — local analysis, not app source
 graphify-out/
+# Architecture diagram exports from the archify skill — same: local analysis, not app source
+*.archify.json
 
 # showcase videos (not tracked for now)
 /videos/

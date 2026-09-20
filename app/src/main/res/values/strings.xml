@@ -2,7 +2,6 @@
     <string name="app_name">Rusty</string>
 
     <!-- Camera feature (Task 11) -->
-    <string name="camera_feature_name">Cameras</string>
     <string name="camera_grid_empty">No cameras yet. Add one in Settings.</string>
     <string name="camera_tile_offline_for">Offline for %1$s</string>
     <string name="camera_live_badge">LIVE</string>

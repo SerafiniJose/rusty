@@ -1,12 +1,11 @@
 package dev.rusty.app
 
 import java.security.MessageDigest
-import java.util.Base64
 
 /**
  * RFC 2617 Digest (MD5, no qop — what IP-camera clients expect) and Basic, for the RTSP server.
- * User is fixed to [USER]; the password is the device's Remote Control password. Pure
- * (`java.security`/`java.util` only — no `android.*`), like [ControlAuth].
+ * User is fixed to [BasicAuth.USER]; the password is the device's Remote Control password. Pure
+ * (`java.security` only — no `android.*`), like [ControlAuth].
  *
  * Digest is offered first so a client never has to put the password on the wire; Basic stays as a
  * fallback for players that don't implement Digest. Neither hides the stream itself — interleaved
@@ -17,7 +16,6 @@ import java.util.Base64
  */
 object RtspAuth {
     const val REALM = "rusty"
-    const val USER = "rusty"
 
     /** The two `WWW-Authenticate` headers a 401 carries: Digest first, then Basic. */
     fun challengeHeaders(nonce: String): List<Pair<String, String>> = listOf(
@@ -50,23 +48,18 @@ object RtspAuth {
         val rest = h.substring(space + 1).trim()
         return when (scheme) {
             "basic" -> {
-                // The MIME decoder (not the strict Basic one) tolerates embedded whitespace: Android's
-                // own android.util.Base64.DEFAULT, which media3 uses to build the header, wraps at 76
-                // characters, so a long "rusty:<password>" blob would otherwise be rejected outright.
-                val decoded = runCatching { String(Base64.getMimeDecoder().decode(rest), Charsets.UTF_8) }.getOrNull() ?: return false
-                val colon = decoded.indexOf(':')
-                if (colon < 0) return false
-                decoded.substring(0, colon) == USER && eq(decoded.substring(colon + 1), password)
+                val presented = BasicAuth.password(rest) ?: return false
+                eq(presented, password)
             }
             "digest" -> {
                 val params = parseParams(rest)
-                if (params["username"] != USER) return false
+                if (params["username"] != BasicAuth.USER) return false
                 if (params["realm"] != REALM) return false
                 if (params["nonce"] != nonce) return false
                 val uri = params["uri"] ?: return false
                 if (uri != requestUri) return false
                 val response = params["response"] ?: return false
-                eq(response.lowercase(), digestResponse(USER, REALM, password, method, uri, nonce))
+                eq(response.lowercase(), digestResponse(BasicAuth.USER, REALM, password, method, uri, nonce))
             }
             else -> false
         }

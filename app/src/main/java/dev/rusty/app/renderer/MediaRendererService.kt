@@ -11,8 +11,6 @@ import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.IBinder
@@ -21,6 +19,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import dev.rusty.app.HomeActivity
+import dev.rusty.app.LanNetworkCallbacks
 import dev.rusty.app.NativeBridge
 import dev.rusty.app.R
 import dev.rusty.app.ServiceNotifications
@@ -434,23 +433,9 @@ class MediaRendererService : Service(), RendererRuntime {
     private fun buildIdentity(): SsdpIdentity =
         SsdpIdentity(udnValue, "http://$currentIp:$httpPort${UpnpXml.DESCRIPTION_PATH}", bootId, configId)
 
-    private fun registerNetworkCallbacks() {
-        runCatching { connectivityManager.registerDefaultNetworkCallback(defaultNetworkCallback) }
-            .onFailure { Log.w(TAG, "Failed to register default-network callback", it) }
-
-        // The LAN is not always the DEFAULT network: with a VPN up the default is the tunnel, and a
-        // Wi-Fi network Android could not validate (a LAN with no internet) never becomes default at
-        // all. The default callback then only ever reports links with no site-local IPv4, so a
-        // renderer that came up before Wi-Fi did would never learn its address. Watch the LAN
-        // transports directly — no INTERNET capability is required, deliberately.
-        runCatching {
-            val lanRequest = NetworkRequest.Builder()
-                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
-                .build()
-            connectivityManager.registerNetworkCallback(lanRequest, lanNetworkCallback)
-        }.onFailure { Log.w(TAG, "Failed to register LAN network callback", it) }
-    }
+    /** Both callbacks, and why there are two, live in [dev.rusty.app.LanNetworkCallbacks]. */
+    private fun registerNetworkCallbacks() =
+        LanNetworkCallbacks.register(connectivityManager, TAG, defaultNetworkCallback, lanNetworkCallback)
 
     /**
      * The address we advertise. The default network is consulted first (it is the semantically
