@@ -735,7 +735,12 @@ async fn consume_player_events(session: Session, mut event_channel: PlayerEventC
                         idle_deadline = None;
                         publish_track_event(&session, "PLAYING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
                     }
-                    // Seeking should only be possible if PLAYING or PAUSED
+                    // A seek republishes the transport state we are already in, at the new
+                    // position. Guarding on last_published is belt-and-braces — librespot 0.8 only
+                    // emits Seeked from its own Playing or Paused states, and a seek during Loading
+                    // restarts the load and emits Loading instead — but it states the intent, and
+                    // it keeps the idle-timeout bookkeeping identical to the Playing/Paused arms
+                    // below, which is the easy thing to get wrong here.
                     PlayerEvent::Seeked { track_id, position_ms, .. } => {
                         match last_published.as_ref().map(|fp| fp.0.as_str()) {
                             Some("PLAYING") => {
@@ -747,6 +752,17 @@ async fn consume_player_events(session: Session, mut event_channel: PlayerEventC
                                 publish_track_event(&session, "PAUSED", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
                             }
                             _ => {}
+                        }
+                    }
+                    // Drift correction: librespot emits this when the decoder's position has
+                    // fallen a second or more behind the nominal clock, and only from its own
+                    // Playing state (upstream's spirc.rs groups it with Playing for that reason).
+                    // Same treatment as a seek — republish at the corrected position — with no
+                    // PAUSED arm to mirror, because a paused player has no clock to drift.
+                    PlayerEvent::PositionCorrection { track_id, position_ms, .. } => {
+                        if last_published.as_ref().map(|fp| fp.0.as_str()) == Some("PLAYING") {
+                            idle_deadline = None;
+                            publish_track_event(&session, "PLAYING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
                         }
                     }
                     PlayerEvent::Paused { track_id, position_ms, .. } => {
