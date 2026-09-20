@@ -448,6 +448,27 @@ class SdpRepairProxyTest {
         assertNoProxyThreadsLeft()
     }
 
+    /**
+     * `ServerSocket.close()` does NOT release the port while the accept thread is still parked in
+     * `accept()`: the JDK defers the real close until that thread returns. A [SdpRepairProxy.close]
+     * that does not wait for its accept thread therefore hands back a listener that still answers
+     * connects — which is what made `close stops accepting` and `starting after close binds
+     * nothing` fail intermittently under load, and what would let a stale proxy accept a media3
+     * connection the repairer has already torn down.
+     */
+    @Test
+    fun `close releases the listening port before it returns`() {
+        val proxy = SdpRepairProxy("127.0.0.1", 1, sps, pps)
+        val port = proxy.start()!!
+        proxy.close()
+        // Binding it ourselves proves the fd is gone, not merely flagged closed.
+        ServerSocket().use { rebound ->
+            rebound.reuseAddress = true
+            rebound.bind(java.net.InetSocketAddress(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)), port), 4)
+            assertEquals(port, rebound.localPort)
+        }
+    }
+
     @Test
     fun `starting after close binds nothing`() {
         val proxy = SdpRepairProxy("127.0.0.1", 1, sps, pps)

@@ -65,6 +65,19 @@ class RendererHttpServer(private val runtime: RendererRuntime) {
         } catch (_: IOException) {
         }
         serverSocket = null
+        // Join BEFORE returning: closing a ServerSocket does NOT release its port while a thread
+        // is still parked in accept() — the JDK defers the real close until that thread comes
+        // back. A stop() that skipped this would hand the caller a port that is still bound and
+        // still accepting, and the next start() would walk past the sticky port onto 49153,
+        // silently breaking a LOCATION URL a user registered by hand in Home Assistant.
+        // Bounded, and never from the accept thread itself, which would deadlock.
+        acceptThread?.takeIf { it !== Thread.currentThread() }?.let { thread ->
+            try {
+                thread.join(1_000)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
         acceptThread = null
         connectionPool.shutdownNow()
     }

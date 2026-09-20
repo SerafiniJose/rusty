@@ -33,6 +33,7 @@ open class SdpRepairProxy(
     private val log: (String) -> Unit = {},
 ) : AutoCloseable {
     private var listener: ServerSocket? = null
+    private var acceptThread: Thread? = null
     private val sockets: MutableSet<Socket> = Collections.synchronizedSet(HashSet())
     @Volatile private var closed = false
 
@@ -67,7 +68,8 @@ open class SdpRepairProxy(
                 log("proxy bind failed: ${e.javaClass.simpleName}"); return null
             }
             listener = ss
-            Thread({ acceptLoop(ss) }, "sdp-proxy-accept").apply { isDaemon = true; start() }
+            acceptThread = Thread({ acceptLoop(ss) }, "sdp-proxy-accept")
+                .apply { isDaemon = true; start() }
             return ss.localPort
         }
     }
@@ -197,13 +199,27 @@ open class SdpRepairProxy(
     open override fun close() {
         // The listener is read under the monitor too, so a start() that is still binding cannot
         // hand us a socket we have already walked past.
-        val (ss, live) = synchronized(sockets) {
+        val (ss, live, accepter) = synchronized(sockets) {
             if (closed) return
             closed = true
-            listener to sockets.toList().also { sockets.clear() }
+            Triple(listener, sockets.toList().also { sockets.clear() }, acceptThread)
         }
         runCatching { ss?.close() }
         live.forEach { runCatching { it.close() } }
+        // Join the accepter LAST, and always: closing a ServerSocket does NOT release its port
+        // while a thread is still parked in accept() — the JDK defers the real close until that
+        // thread comes back. Until it does, this proxy is still listening, so a close() that
+        // skipped the join would hand a media3 reconnect to a proxy the repairer has already
+        // discarded. The wait is a socket teardown, not a relay: the accept loop's remaining work
+        // is a bounded set of field assignments, and track() refuses new connections now that
+        // `closed` is set. Bounded anyway, and never from the accept thread itself.
+        accepter?.takeIf { it !== Thread.currentThread() }?.let { thread ->
+            try {
+                thread.join(1_000)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
     }
 
     private companion object {

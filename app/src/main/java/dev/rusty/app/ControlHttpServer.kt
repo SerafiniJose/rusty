@@ -79,6 +79,18 @@ class ControlHttpServer(
         } catch (_: IOException) {
         }
         serverSocket = null
+        // Join BEFORE returning: closing a ServerSocket does NOT release its port while a thread
+        // is still parked in accept() — the JDK defers the real close until that thread comes
+        // back. Without this the port is still bound (and still accepting) when stop() returns,
+        // so an immediate restart on the fixed control port throws "Address already in use".
+        // Bounded, and never from the accept thread itself, which would deadlock.
+        acceptThread?.takeIf { it !== Thread.currentThread() }?.let { thread ->
+            try {
+                thread.join(1_000)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
         acceptThread = null
         connectionPool.shutdownNow()
     }
