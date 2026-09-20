@@ -8,7 +8,47 @@ The section matching each release tag is published as that release's notes and i
 what the app shows under **About & updates → What's new**, so keep entries short and
 user-facing.
 
-## [Unreleased]
+## [2.7.0] - 2026-09-20
+
+### Added
+- Share this camera. A Rusty with a camera can stream it to other Rusty
+  devices, Home Assistant or VLC over plain RTSP, switched on either in
+  Settings → Cameras or from a card on the control page. Needs Remote
+  control on; off by default, and open to anyone on your network unless
+  you've set a Remote control password.
+- Open the control page by scanning a QR code. Settings → Remote Control →
+  Control page shows the server's live address and a Show QR button, so a
+  phone doesn't have to be told an IP address by hand. The code carries the
+  address only, never the password.
+- Pinch to zoom the live camera picture, up to 4x, and drag to move around
+  it. Touch only.
+- Seek within a track from Spotify. Dragging the progress bar in a Spotify
+  client now moves playback on Rusty, and the position it shows stays
+  right after a correction. Thanks to HazZelnutz.
+
+### Changed
+- Spoken announcements no longer need the DLNA player running.
+- The README is now a short landing page; requirements, build steps, how
+  it works, cameras and remote control have their own pages under docs/.
+
+### Fixed
+- Rusty is properly navigable with a TV remote again: the settings tab strip is
+  visible and reachable with the D-pad, the focus highlight keeps clear of the
+  text it surrounds everywhere it appears, and Back on the Home Assistant page
+  returns to Rusty's own buttons instead of closing the app. Touch is unchanged.
+- Lighter on the device, which matters on the MediaTek Echo Shows where
+  video and audio compete for memory bandwidth. Canvas videos no longer run
+  two decoders at once when the screensaver covers the now-playing screen,
+  a Canvas loop buffers a few seconds ahead instead of nearly a minute, and
+  launching Rusty while it is already running returns to the running copy
+  instead of stacking a second one, each with its own Home Assistant page.
+  Should also help with audio micro-cuts on weaker devices.
+- Restarting Remote control or the DLNA player no longer finds its port
+  still taken by the copy that just stopped.
+- The Home Assistant dashboard fills the whole page instead of leaving a
+  band for a status bar that isn't there.
+- The Slideshow server section starts collapsed like the others.
+- Camera grid tiles no longer show a dark bar along their bottom edge.
 
 ## [2.6.0] - 2026-09-05
 
