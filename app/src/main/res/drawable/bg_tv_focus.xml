@@ -3,6 +3,13 @@
      interactive controls so the existing ripple background is preserved. Draws a brand-green
      ring only while the view holds D-pad focus; invisible to touch users on phones/tablets. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- A view keeps isFocused() while its window loses focus to a dialog, so without this the
+         ring behind an open card stays lit and the screen shows two focus rings at once. -->
+    <item android:state_window_focused="false">
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
     <item android:state_focused="true">
         <shape android:shape="rectangle">
             <corners android:radius="14dp" />

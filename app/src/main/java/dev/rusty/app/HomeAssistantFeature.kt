@@ -540,6 +540,12 @@ private class HomeAssistantSettingsPanel(
         androidx.core.content.res.ResourcesCompat.getFont(activity, R.font.hanken_regular)
             ?.let { rb.typeface = it }
         rb.foreground = ContextCompat.getDrawable(activity, R.drawable.bg_tv_focus_switch)
+        // Same breathing room the XML radios get (tv_focus_ring_gap): the ring is a foreground, so
+        // without padding it is drawn straight over the end of the theme's name. The container's
+        // start margin is reduced by the same amount so the first chip stays on the label grid.
+        val ringGap = activity.resources.getDimensionPixelSize(R.dimen.tv_focus_ring_gap)
+        val ringGapV = (activity.resources.displayMetrics.density * 4f).toInt()
+        rb.setPadding(ringGap, ringGapV, ringGap, ringGapV)
         rb.isChecked = checked
         rb.layoutParams = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams(
             androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.WRAP_CONTENT,

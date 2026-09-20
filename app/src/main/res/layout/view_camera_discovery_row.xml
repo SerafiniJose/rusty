@@ -3,6 +3,8 @@
      the add dialog. A camera already matched by host (see CameraSettingsPanel.hostOf) is dimmed
      and shows "Added" instead of accepting a tap. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+    android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:clickable="true"

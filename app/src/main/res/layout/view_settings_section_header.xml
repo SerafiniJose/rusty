@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- One collapsible-section header row: title + live summary + rotating chevron (and an optional
      avatar for the HA Server section). Same idiom as view_immich_filter_row so the sheet keeps a
-     single visual language. Included per section; ids are looked up on the include root. -->
+     single visual language. Included per section; ids are looked up on the include root.
+
+     The horizontal padding is what keeps the D-pad focus ring off the title and the chevron —
+     android:foreground is clipped to the view's bounds, so the ring can only gain breathing room
+     from the row's own padding. Every include site cancels it with a matching negative margin, so
+     the text still lines up with the unpadded rows below and only the ring grows outward. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
     android:paddingVertical="12dp"
+    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
     android:focusable="true"
     android:clickable="true"
     android:foreground="@drawable/bg_tv_focus">

@@ -33,7 +33,7 @@
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="20dp"
+            android:layout_marginStart="12dp"
             android:layout_weight="1">
 
             <androidx.constraintlayout.helper.widget.Flow
@@ -41,7 +41,7 @@
                 android:layout_height="wrap_content"
                 app:constraint_referenced_ids="rbThemeClock,rbThemeOled,rbThemeCanvas,rbThemeSlideshow"
                 app:flow_horizontalBias="0"
-                app:flow_horizontalGap="16dp"
+                app:flow_horizontalGap="24dp"
                 app:flow_horizontalStyle="packed"
                 app:flow_verticalGap="6dp"
                 app:flow_wrapMode="chain"
@@ -53,6 +53,8 @@
                 android:id="@+id/rbThemeClock"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"
@@ -63,6 +65,8 @@
                 android:id="@+id/rbThemeOled"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"
@@ -73,6 +77,8 @@
                 android:id="@+id/rbThemeCanvas"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"
@@ -83,6 +89,8 @@
                 android:id="@+id/rbThemeSlideshow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"

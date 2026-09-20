@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- One configured camera in the Cameras section. Whole row opens the edit dialog. The status dot and sub-line are live: CameraSettingsPanel paints them from CameraStatusRelay. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+    android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:clickable="true"

@@ -88,6 +88,8 @@
              when a newer release is found; opens the About sheet. -->
         <LinearLayout
             android:id="@+id/rowAbout"
+            android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+            android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"

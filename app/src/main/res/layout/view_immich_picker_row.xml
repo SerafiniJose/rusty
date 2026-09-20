@@ -3,6 +3,8 @@
      The check is a plain TextView styled in code (outlined circle vs filled accent ✓)
      to avoid a drawable pair; the whole row is the toggle target. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+    android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"

@@ -152,16 +152,37 @@ object SettingsSheet {
         // getTabAt(0).select() is a no-op when index 0 is already selected, so bind it explicitly.
         if (index == 0 && container.childCount == 0) specs.firstOrNull()?.let { showPanel(it) }
 
+        // select() only scrolls the strip once it has been laid out; called this early it leaves a
+        // later tab (Spotify, Home Assistant, Cameras) parked off the right edge, so the strip
+        // shows no selection at all and looks like it does not belong to the panel below. Posting
+        // the scroll runs it after the first layout pass, when the offset is computable.
+        tabs.post { tabs.setScrollPosition(index, 0f, true) }
+
         // Restore D-pad initial focus (posted so layout has completed before traversal).
         container.post {
             if (container.isInTouchMode) return@post
             val panel = if (container.childCount > 0) container.getChildAt(0) else null
-            val target: View? = when (initialTab) {
-                SettingsTabKey.SPOTIFY -> panel?.findViewById(R.id.btnToggleService)
-                else -> panel?.focusSearch(View.FOCUS_DOWN)
+            // requestFocus(FOCUS_DOWN) walks into the first focusable descendant and skips GONE
+            // subtrees. The previous Spotify special case named a button inside a collapsed
+            // section, so it silently failed and left the card with no focused view at all —
+            // the ring stayed on the gear behind the dialog and the first D-pad press was spent
+            // re-entering the card. Falling back to the selected tab keeps that from recurring
+            // if a panel ever inflates with nothing focusable in it.
+            if (panel == null || !panel.requestFocus(View.FOCUS_DOWN)) {
+                selectedTabView(tabs)?.requestFocus()
             }
-            target?.requestFocus()
         }
+    }
+
+    /**
+     * The [TabLayout] child view backing the currently selected tab, or null if there is none.
+     *
+     * TabLayout keeps its tabs in a single strip child; walking it is the public way to reach a
+     * tab's view, since TabLayout.Tab.view is library-internal.
+     */
+    private fun selectedTabView(tabs: TabLayout): View? {
+        val strip = tabs.getChildAt(0) as? android.view.ViewGroup ?: return null
+        return strip.getChildAt(tabs.selectedTabPosition)
     }
 
     // ---- Shell-owned binders (General and Screensaver) ----------------------

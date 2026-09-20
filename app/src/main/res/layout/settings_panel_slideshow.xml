@@ -19,7 +19,8 @@
         android:id="@+id/headSsServer"
         layout="@layout/view_settings_section_header"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset" />
 
     <LinearLayout
         android:id="@+id/bodySsServer"
@@ -117,7 +118,8 @@
         android:id="@+id/headSsFilters"
         layout="@layout/view_settings_section_header"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset" />
 
     <LinearLayout
         android:id="@+id/bodySsFilters"
@@ -168,7 +170,8 @@
         android:id="@+id/headSsDisplay"
         layout="@layout/view_settings_section_header"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset" />
 
     <LinearLayout
         android:id="@+id/bodySsDisplay"

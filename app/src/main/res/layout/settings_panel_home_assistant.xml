@@ -12,7 +12,8 @@
     <include android:id="@+id/headHaServer"
         layout="@layout/view_settings_section_header"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset" />
 
     <LinearLayout
         android:id="@+id/bodyHaServer"
@@ -250,7 +251,8 @@
     <include android:id="@+id/headHaDash"
         layout="@layout/view_settings_section_header"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset" />
 
     <LinearLayout
         android:id="@+id/bodyHaDash"
@@ -280,7 +282,8 @@
     <include android:id="@+id/headHaApps"
         layout="@layout/view_settings_section_header"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset" />
 
     <LinearLayout
         android:id="@+id/bodyHaApps"
@@ -309,7 +312,8 @@
     <include android:id="@+id/headHaAppearance"
         layout="@layout/view_settings_section_header"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset" />
 
     <LinearLayout
         android:id="@+id/bodyHaAppearance"
@@ -359,7 +363,7 @@
                     android:id="@+id/haThemeFlowContainer"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="18dp"
+                    android:layout_marginStart="10dp"
                     android:layout_weight="1">
 
                     <androidx.constraintlayout.helper.widget.Flow
@@ -367,7 +371,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         app:flow_horizontalBias="0"
-                        app:flow_horizontalGap="16dp"
+                        app:flow_horizontalGap="24dp"
                         app:flow_horizontalStyle="packed"
                         app:flow_verticalGap="6dp"
                         app:flow_wrapMode="chain"
@@ -397,7 +401,7 @@
                 <androidx.constraintlayout.widget.ConstraintLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="18dp"
+                    android:layout_marginStart="10dp"
                     android:layout_weight="1">
 
                     <androidx.constraintlayout.helper.widget.Flow
@@ -405,7 +409,7 @@
                         android:layout_height="wrap_content"
                         app:constraint_referenced_ids="rbHaModeAuto,rbHaModeLight,rbHaModeDark"
                         app:flow_horizontalBias="0"
-                        app:flow_horizontalGap="16dp"
+                        app:flow_horizontalGap="24dp"
                         app:flow_horizontalStyle="packed"
                         app:flow_verticalGap="6dp"
                         app:flow_wrapMode="chain"
@@ -417,6 +421,8 @@
                         android:id="@+id/rbHaModeAuto"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                        android:paddingVertical="4dp"
                         android:buttonTint="@color/accent_fallback"
                         android:fontFamily="@font/hanken_regular"
                         android:foreground="@drawable/bg_tv_focus_switch"
@@ -427,6 +433,8 @@
                         android:id="@+id/rbHaModeLight"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                        android:paddingVertical="4dp"
                         android:buttonTint="@color/accent_fallback"
                         android:fontFamily="@font/hanken_regular"
                         android:foreground="@drawable/bg_tv_focus_switch"
@@ -437,6 +445,8 @@
                         android:id="@+id/rbHaModeDark"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                        android:paddingVertical="4dp"
                         android:buttonTint="@color/accent_fallback"
                         android:fontFamily="@font/hanken_regular"
                         android:foreground="@drawable/bg_tv_focus_switch"

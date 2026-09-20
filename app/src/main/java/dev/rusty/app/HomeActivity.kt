@@ -589,6 +589,18 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         if (!screensaver.isShowing) screensaver.resetIdleTimer()
     }
 
+    /**
+     * Hands D-pad focus to the launcher button in the bottom chrome. Reports whether focus
+     * actually landed, so a caller that consumed a key on the strength of it can fall back —
+     * requestFocus() returns false in touch mode and whenever the button is not visible, which
+     * includes the whole time the screensaver is covering the shell.
+     */
+    override fun focusChromeLauncher(): Boolean {
+        val launcher = findViewById<View>(R.id.btnLauncher) ?: return false
+        if (launcher.visibility != View.VISIBLE || screensaver.isShowing) return false
+        return launcher.requestFocus()
+    }
+
     // ---- Remote control: the panel host ------------------------------------
 
     /**

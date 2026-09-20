@@ -127,12 +127,25 @@ class HomeAssistantFragment : Fragment(), InsetAware, FocusRestorable, ShellCont
         requireActivity().onBackPressedDispatcher.addCallback(
             viewLifecycleOwner,
             object : OnBackPressedCallback(true) {
+                /** Leaves Rusty, the behaviour BACK has always had once HA's history ran out. */
+                private fun exit() {
+                    isEnabled = false
+                    requireActivity().onBackPressedDispatcher.onBackPressed()
+                }
+
                 override fun handleOnBackPressed() {
-                    if (webView.visibility == View.VISIBLE && webView.canGoBack()) {
-                        webView.goBack()
-                    } else {
-                        isEnabled = false
-                        requireActivity().onBackPressedDispatcher.onBackPressed()
+                    val action = HaBackPolicy.decide(
+                        webViewShowing = webView.visibility == View.VISIBLE,
+                        canGoBack = webView.canGoBack(),
+                        inTouchMode = webView.isInTouchMode,
+                    )
+                    when (action) {
+                        HaBackAction.WEB_HISTORY -> webView.goBack()
+                        HaBackAction.EXIT -> exit()
+                        // The WebView owns the arrow keys, so on a remote this press is the only
+                        // way back to the shell. Honour a refusal rather than swallow the key.
+                        HaBackAction.FOCUS_CHROME ->
+                            if ((activity as? ShellHost)?.focusChromeLauncher() != true) exit()
                     }
                 }
             }

@@ -140,4 +140,16 @@ interface ShellHost {
      * idle screensaver does not cover a video the user is actively watching.
      */
     fun keepAlive()
+
+    /**
+     * Moves D-pad focus to the bottom chrome's launcher button, the way out of the current feature.
+     * Returns false if the chrome could not take focus — hidden, detached, or in touch mode, where
+     * Android grants no view focus at all. A caller that consumed a key on the strength of this
+     * must honour false and fall back, or the key reads as dead.
+     *
+     * Exists for the Home Assistant page, whose WebView holds D-pad focus against the arrow keys
+     * ([HaBackPolicy]); the chrome is shell-owned, so a feature asks rather than reaching for the
+     * button itself.
+     */
+    fun focusChromeLauncher(): Boolean
 }

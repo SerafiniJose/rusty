@@ -42,4 +42,12 @@
     <!-- Corner radius for inner settings cards (account row + dashboard cards) — rounder than the
          old 12dp so they sit closer to the app's other surfaces. -->
     <dimen name="settings_card_radius">16dp</dimen>
+    <!-- Breathing room between a D-pad focus ring and the text it surrounds. The rings are drawn as
+         android:foreground, which is clipped to the view's own bounds, so the only way to keep the
+         2dp stroke off the glyphs is to pad the focusable view itself — without it the ring sits on
+         the last letter of a radio label and cuts the chevron off a section header.
+         Every view that takes this padding cancels it again with tv_focus_ring_gap_offset on its
+         layout margin, so only the ring grows and the text stays where it was. -->
+    <dimen name="tv_focus_ring_gap">8dp</dimen>
+    <dimen name="tv_focus_ring_gap_offset">-8dp</dimen>
 </resources>

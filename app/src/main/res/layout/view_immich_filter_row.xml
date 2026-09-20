@@ -2,6 +2,8 @@
 <!-- One category summary row: title + state line, up to 3 overlapping thumbs, chevron.
      Included 3x from the panel; ids are looked up on the include root. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+    android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"

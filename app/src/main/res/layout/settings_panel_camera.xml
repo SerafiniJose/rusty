@@ -15,7 +15,8 @@
         android:id="@+id/headCamCameras"
         layout="@layout/view_settings_section_header"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset" />
 
     <LinearLayout
         android:id="@+id/bodyCamCameras"
@@ -117,7 +118,8 @@
         android:id="@+id/headCamBehavior"
         layout="@layout/view_settings_section_header"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset" />
 
     <LinearLayout
         android:id="@+id/bodyCamBehavior"
@@ -145,6 +147,7 @@
             android:textSize="13sp" />
 
         <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_marginStart="@dimen/tv_focus_ring_gap_offset"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp">
@@ -154,7 +157,7 @@
                 android:layout_height="wrap_content"
                 app:constraint_referenced_ids="rbCamLayoutAll,rbCamLayout4,rbCamLayout6,rbCamLayout8"
                 app:flow_horizontalBias="0"
-                app:flow_horizontalGap="20dp"
+                app:flow_horizontalGap="24dp"
                 app:flow_horizontalStyle="packed"
                 app:flow_verticalGap="6dp"
                 app:flow_wrapMode="chain"
@@ -166,6 +169,8 @@
                 android:id="@+id/rbCamLayoutAll"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"
@@ -176,6 +181,8 @@
                 android:id="@+id/rbCamLayout4"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"
@@ -186,6 +193,8 @@
                 android:id="@+id/rbCamLayout6"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"
@@ -196,6 +205,8 @@
                 android:id="@+id/rbCamLayout8"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
                 android:buttonTint="@color/accent_fallback"
                 android:fontFamily="@font/hanken_regular"
                 android:foreground="@drawable/bg_tv_focus_switch"
@@ -327,7 +338,8 @@
         android:id="@+id/headCamShare"
         layout="@layout/view_settings_section_header"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset" />
 
     <LinearLayout
         android:id="@+id/bodyCamShare"
@@ -423,6 +435,7 @@
                 android:textSize="16sp" />
 
             <RadioGroup
+                android:layout_marginStart="@dimen/tv_focus_ring_gap_offset"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
@@ -432,6 +445,8 @@
                     android:id="@+id/rbCamShareFront"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                    android:paddingVertical="4dp"
                     android:buttonTint="@color/accent_fallback"
                     android:fontFamily="@font/hanken_regular"
                     android:foreground="@drawable/bg_tv_focus_switch"
@@ -442,7 +457,9 @@
                     android:id="@+id/rbCamShareBack"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="20dp"
+                    android:layout_marginStart="24dp"
+                    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                    android:paddingVertical="4dp"
                     android:buttonTint="@color/accent_fallback"
                     android:fontFamily="@font/hanken_regular"
                     android:foreground="@drawable/bg_tv_focus_switch"
@@ -470,6 +487,7 @@
                 android:textSize="16sp" />
 
             <RadioGroup
+                android:layout_marginStart="@dimen/tv_focus_ring_gap_offset"
                 android:id="@+id/rgCamShareQuality"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -480,6 +498,8 @@
                     android:id="@+id/rbCamShareLow"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                    android:paddingVertical="4dp"
                     android:buttonTint="@color/accent_fallback"
                     android:fontFamily="@font/hanken_regular"
                     android:foreground="@drawable/bg_tv_focus_switch"
@@ -490,7 +510,9 @@
                     android:id="@+id/rbCamShareMedium"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="20dp"
+                    android:layout_marginStart="24dp"
+                    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                    android:paddingVertical="4dp"
                     android:buttonTint="@color/accent_fallback"
                     android:fontFamily="@font/hanken_regular"
                     android:foreground="@drawable/bg_tv_focus_switch"
@@ -501,7 +523,9 @@
                     android:id="@+id/rbCamShareHigh"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="20dp"
+                    android:layout_marginStart="24dp"
+                    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                    android:paddingVertical="4dp"
                     android:buttonTint="@color/accent_fallback"
                     android:fontFamily="@font/hanken_regular"
                     android:foreground="@drawable/bg_tv_focus_switch"
@@ -523,6 +547,7 @@
                 android:textSize="16sp" />
 
             <RadioGroup
+                android:layout_marginStart="@dimen/tv_focus_ring_gap_offset"
                 android:id="@+id/rgCamShareTier"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -533,6 +558,8 @@
                     android:id="@+id/rbCamShareBasic"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                    android:paddingVertical="4dp"
                     android:buttonTint="@color/accent_fallback"
                     android:fontFamily="@font/hanken_regular"
                     android:foreground="@drawable/bg_tv_focus_switch"
@@ -543,7 +570,9 @@
                     android:id="@+id/rbCamShareGood"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="20dp"
+                    android:layout_marginStart="24dp"
+                    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                    android:paddingVertical="4dp"
                     android:buttonTint="@color/accent_fallback"
                     android:fontFamily="@font/hanken_regular"
                     android:foreground="@drawable/bg_tv_focus_switch"
@@ -554,7 +583,9 @@
                     android:id="@+id/rbCamShareBest"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="20dp"
+                    android:layout_marginStart="24dp"
+                    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                    android:paddingVertical="4dp"
                     android:buttonTint="@color/accent_fallback"
                     android:fontFamily="@font/hanken_regular"
                     android:foreground="@drawable/bg_tv_focus_switch"
@@ -572,6 +603,7 @@
                 android:textSize="16sp" />
 
             <RadioGroup
+                android:layout_marginStart="@dimen/tv_focus_ring_gap_offset"
                 android:id="@+id/rgCamShareFps"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -582,6 +614,8 @@
                     android:id="@+id/rbCamShareFps10"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                    android:paddingVertical="4dp"
                     android:buttonTint="@color/accent_fallback"
                     android:fontFamily="@font/hanken_regular"
                     android:foreground="@drawable/bg_tv_focus_switch"
@@ -592,7 +626,9 @@
                     android:id="@+id/rbCamShareFps15"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="20dp"
+                    android:layout_marginStart="24dp"
+                    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                    android:paddingVertical="4dp"
                     android:buttonTint="@color/accent_fallback"
                     android:fontFamily="@font/hanken_regular"
                     android:foreground="@drawable/bg_tv_focus_switch"
@@ -603,7 +639,9 @@
                     android:id="@+id/rbCamShareFps30"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="20dp"
+                    android:layout_marginStart="24dp"
+                    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                    android:paddingVertical="4dp"
                     android:buttonTint="@color/accent_fallback"
                     android:fontFamily="@font/hanken_regular"
                     android:foreground="@drawable/bg_tv_focus_switch"
