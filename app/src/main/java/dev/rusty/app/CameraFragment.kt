@@ -156,6 +156,12 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
     private var chromeRevealed = true
     private var keepScreenOnBase = false
 
+    /** Touch-driven pan/zoom on the live picture. Reset by [setMode] — so every camera switch and
+     *  every exit to the grid starts fitted — and by [selectStream], whose new stream is a
+     *  different resolution. Touch-only by design: LIVE mode has no spare D-pad key (see
+     *  [onKeyEvent]), so a D-pad device simply never zooms. */
+    private var zoom = Zoom.NONE
+
     // ---- Views ----------------------------------------------------------------------------------
 
     private var gridContainer: View? = null
@@ -313,6 +319,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         streamMain?.setOnClickListener { selectStream(StreamChoice.MAIN) }
         snapshotButton?.setOnClickListener { saveSnapshot() }
         audioButton?.setOnClickListener { toggleAudio() }
+        installZoomGestures()
 
         adapter = object : RecyclerView.Adapter<TileHolder>() {
             override fun getItemCount() = visibleCameras().size
@@ -640,6 +647,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
 
     private fun setMode(next: Mode) {
         mode = next
+        resetZoom()
         // Every exit to the grid and every camera switch passes through here, and neither is a
         // stream switch — so a stale `true` can never mislabel the next camera's first connect.
         pendingStreamSwitch = false
@@ -814,6 +822,7 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
         // Set BEFORE the call: switchStream publishes Connecting synchronously, and that render
         // is the one that has to read "Switching to …".
         pendingStreamSwitch = true
+        resetZoom()
         playback?.switchStream(next)
         renderStreamToggle()
         restoreChrome()
@@ -978,6 +987,112 @@ class CameraFragment : Fragment(), InsetAware, KeyEventTarget, FocusRestorable {
             android.widget.Toast.makeText(requireContext(), R.string.camera_snapshot_failed, android.widget.Toast.LENGTH_SHORT).show()
         }
     }
+
+    // ---- Live-picture pan and zoom (touch only) --------------------------------------------------
+
+    /**
+     * Pinch to zoom, drag to pan once zoomed — both on the live container, which is where taps
+     * already land (the PlayerView runs without a controller, so it consumes nothing).
+     * [CameraZoom] owns the geometry; this only turns events into calls and writes the result onto
+     * the view.
+     *
+     * Every gesture starts by restoring the chrome, exactly as a plain tap does, so a pinch never
+     * leaves the user looking at a bare picture with no way back. Zoom itself is allowed only while
+     * a picture is actually on screen: zooming a Connecting or Fatal overlay would strand a magnified
+     * black frame behind it.
+     */
+    private fun installZoomGestures() {
+        val container = liveContainer ?: return
+        // A recreated view (rotation) brings a fresh, untransformed PlayerView, so the field has to
+        // start from fit again or the first pan would jump by the old offset.
+        zoom = Zoom.NONE
+        val scaleDetector = android.view.ScaleGestureDetector(
+            requireContext(),
+            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
+                    if (!zoomable()) return false
+                    setZoom(CameraZoom.pinch(zoom, detector.scaleFactor, detector.focusX, detector.focusY, zoomFrame()))
+                    return true
+                }
+            },
+        )
+        val tapDetector = android.view.GestureDetector(
+            requireContext(),
+            object : android.view.GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(e: android.view.MotionEvent): Boolean {
+                    restoreChrome()
+                    return true
+                }
+
+                override fun onSingleTapUp(e: android.view.MotionEvent): Boolean {
+                    // Routed through the container's own click listener so "a tap restores the
+                    // chrome" keeps its single implementation, and so TalkBack's click still works.
+                    container.performClick()
+                    return true
+                }
+
+                override fun onScroll(
+                    e1: android.view.MotionEvent?,
+                    e2: android.view.MotionEvent,
+                    distanceX: Float,
+                    distanceY: Float,
+                ): Boolean {
+                    // A pinch moves the picture through its own focal point, and a second finger
+                    // makes this callback's deltas jump; leave the whole two-finger case to the
+                    // scale detector.
+                    if (!zoomable() || scaleDetector.isInProgress || e2.pointerCount > 1) return false
+                    // distanceX/Y are old-minus-new, so negate to make the picture follow the finger.
+                    setZoom(CameraZoom.pan(zoom, -distanceX, -distanceY, zoomFrame()))
+                    return true
+                }
+            },
+        )
+        container.setOnTouchListener { _, event ->
+            scaleDetector.onTouchEvent(event)
+            tapDetector.onTouchEvent(event)
+            true
+        }
+        // The picture rect changes when the video format arrives, on a rotation, and on a sub/main
+        // switch. Re-clamp against the new frame so a zoom that was legal cannot leave an edge
+        // hanging inside the viewport.
+        playerView?.videoSurfaceView?.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob ->
+            if (r - l != orr - ol || b - t != ob - ot) setZoom(CameraZoom.clamp(zoom, zoomFrame()))
+        }
+    }
+
+    /** Zoom is meaningful only over a live picture, never over the connect or fatal overlay. */
+    private fun zoomable(): Boolean = mode == Mode.LIVE && lastLiveState is LiveState.Playing
+
+    /**
+     * The letterboxed picture rect inside the viewport it is centred in. PlayerView sizes its
+     * content frame (and so the surface) to the video's aspect, which is exactly the rect a pan
+     * must not pull away from — measuring the whole PlayerView instead would let the letterbox
+     * bars slide into view.
+     */
+    private fun zoomFrame(): ZoomFrame {
+        val pv = playerView ?: return ZoomFrame(0, 0, 0, 0)
+        val surface = pv.videoSurfaceView
+        return ZoomFrame(
+            contentW = surface?.width ?: 0,
+            contentH = surface?.height ?: 0,
+            viewW = pv.width,
+            viewH = pv.height,
+        )
+    }
+
+    private fun setZoom(next: Zoom) {
+        if (next == zoom) return
+        zoom = next
+        val pv = playerView ?: return
+        // Scale about the view's default pivot — its centre — which is the origin CameraZoom's
+        // geometry is written against.
+        pv.scaleX = next.scale
+        pv.scaleY = next.scale
+        pv.translationX = next.tx
+        pv.translationY = next.ty
+    }
+
+    private fun resetZoom() = setZoom(Zoom.NONE)
 
     // ---- Key routing (ShellKeyRouting hook: HomeActivity.dispatchKeyEvent -> KeyEventTarget) --------
 
