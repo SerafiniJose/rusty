@@ -21,20 +21,14 @@ android_logger = "0.13"
 
 # Librespot (0.8.0 umbrella crate). default-features disabled to drop native-tls
 # (OpenSSL — painful on Android NDK). We select rustls with compiled-in webpki roots
-# (no host cert store / no OpenSSL), the rodio audio backend (oboe on Android), and
-# the pure-Rust libmdns zeroconf discovery backend.
+# (no host cert store / no OpenSSL) and the pure-Rust libmdns zeroconf discovery
+# backend. No audio backend is selected: the sink in src/audio_sink.rs writes
+# to android.media.AudioTrack directly, so rodio/cpal are not built at all.
 librespot = { version = "0.8", default-features = false, features = [
     "rustls-tls-webpki-roots",
-    "rodio-backend",
     "with-libmdns",
 ] }
 
-# We provide our own audio sink (see src/audio_sink.rs) instead of librespot's
-# stock rodio backend so we can reopen the output stream when Android changes the
-# active audio route (e.g. Bluetooth connect/disconnect). Pinned to the same rodio
-# (and therefore cpal) version librespot uses so the types unify into one crate.
-# cpal is reached via rodio's re-export (`rodio::cpal`), so no direct cpal dep.
-rodio = { version = "0.21", default-features = false, features = ["playback"] }
 
 # Crypto
 sha1 = "0.10"
@@ -70,7 +64,7 @@ librespot-core = { path = "vendor/librespot-core" }
 # Release profile. Cargo's stock release settings left ~10.5 MB of dead weight in
 # the shipped APK: the cdylib kept its full static symbol table (.symtab/.strtab
 # was 6.3 MB of the 18.1 MB arm64 core), and 16 codegen units meant no
-# cross-unit inlining across the librespot/tokio/rodio stack.
+# cross-unit inlining across the librespot/tokio stack.
 #
 # `strip = "symbols"` drops .symtab/.strtab only — the dynamic symbol table
 # (.dynsym) survives, so JNI method resolution and the libc++_shared NEEDED entry

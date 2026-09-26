@@ -1,216 +1,359 @@
-//! Route-following audio sink.
+//! Android `AudioTrack` audio sink.
 //!
 //! ## Why this exists
 //!
-//! On Android, cpal 0.16 (pulled in via rodio) uses a native **AAudio** backend.
-//! `default_output_device()` returns the *unspecified* device, so a stream opens on
-//! AAudio's default output and correctly targets whatever route is active **at open
-//! time** (built-in speaker, Bluetooth A2DP, wired headset…).
+//! The previous sink drove `rodio` (and therefore cpal, and therefore **AAudio**).
+//! That path has two Android-specific problems:
 //!
-//! The catch is what AAudio does on a *route change*. Per the AAudio contract a
-//! stream is **disconnected** the moment its device "is no longer the highest
-//! priority audio device" — i.e. exactly when a Bluetooth sink connects mid-playback
-//! (BT outranks the speaker), or a headset is (un)plugged. A disconnected output
-//! stream silently swallows writes: no audio, no error shown to the user.
+//! 1. **Route changes.** An AAudio stream binds to one device at open time. When
+//!    that device stops being the highest-priority output (headset plugged in, BT
+//!    connected) Android *disconnects* the stream rather than migrating it, and a
+//!    disconnected stream silently swallows writes. This module's cpal-based
+//!    predecessor worked around that by watching cpal's error callback and
+//!    rebuilding the stream by hand.
+//! 2. **No control over stream attributes.** cpal pins `ndk` to `api-level-26`, so
+//!    `AAudioStreamBuilder_setUsage`/`setContentType`/`setPerformanceMode` are
+//!    compiled out — the stream is tagged `CONTENT_TYPE_UNKNOWN` and cannot be fixed
+//!    from outside cpal.
 //!
-//! librespot builds its sink **once per session** (`Player::new` takes the sink
-//! builder as an `FnOnce`) and its stock `RodioSink` never reopens the stream, while
-//! this app does no Android-side route handling. The result was the reported bug:
-//! playing on the tablet speaker, connecting Bluetooth killed the audio, and only a
-//! force-close + relaunch (which rebuilds the player) recovered it.
+//! `android.media.AudioTrack` has neither problem. AudioFlinger owns device
+//! selection and migrates an existing track across a route change without telling
+//! the app, which is why `MediaPlayer`-based players (and Spotify itself) need no
+//! route handling at all. Attributes are set at construction.
 //!
-//! ## What this does
+//! ## Shape
 //!
-//! `RouteFollowingSink` reuses the same rodio output path (so rodio still handles
-//! buffering, mixing and resampling) but registers a cpal **stream error callback**.
-//! AAudio surfaces the disconnect through that callback (`AAUDIO_ERROR_DISCONNECTED`
-//! → `cpal::StreamError::DeviceNotAvailable`), which sets an atomic flag. The next
-//! `write`/`start` on the player thread tears the dead stream down and rebuilds it
-//! via `default_output_device()`, which re-binds to the *now-active* route. The
-//! Spirc session, player and playback position all stay intact across the switch.
+//! Only **framework** classes are touched (`android.media.*`), never app classes, so
+//! `FindClass` works from any thread without a cached ClassLoader. The librespot
+//! player thread is attached to the JVM permanently on first use.
+//!
+//! `AudioTrack.write(..., WRITE_BLOCKING)` blocks until the track has room, which is
+//! exactly the backpressure the rodio sink emulated with a `sleep(10ms)` poll loop.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
-
+use jni::objects::{GlobalRef, JShortArray, JValue};
+use jni::{JNIEnv, JavaVM};
 use librespot::playback::audio_backend::{Sink, SinkError, SinkResult};
 use librespot::playback::convert::Converter;
 use librespot::playback::decoder::AudioPacket;
+use log::{info, warn};
 
-use log::{error, info, warn};
+/// librespot decodes and normalises to interleaved stereo at 44.1 kHz.
+const SAMPLE_RATE: i32 = 44_100;
+const NUM_CHANNELS: i32 = 2;
 
-use rodio::cpal;
-use rodio::cpal::traits::{DeviceTrait, HostTrait};
-use rodio::OutputStream;
+// android.media.AudioFormat
+const CHANNEL_OUT_STEREO: i32 = 12;
+const ENCODING_PCM_16BIT: i32 = 2;
+// android.media.AudioAttributes
+const USAGE_MEDIA: i32 = 1;
+const CONTENT_TYPE_MUSIC: i32 = 2;
+// android.media.AudioTrack
+const MODE_STREAM: i32 = 1;
+const WRITE_BLOCKING: i32 = 0;
 
-/// librespot decodes and normalises to interleaved stereo `f32` at 44.1 kHz (its
-/// `NUM_CHANNELS` / `SAMPLE_RATE`). We feed rodio at the same rate and let AAudio
-/// resample to the device's native rate.
-const NUM_CHANNELS: u16 = 2;
-const SAMPLE_RATE: u32 = 44_100;
+/// Multiple of `getMinBufferSize` to request. The HAL runs a 1536-frame period on
+/// this class of device (~32 ms); a few bursts of slack keeps a late decode from
+/// being audible without adding meaningful latency to a Connect receiver.
+const BUFFER_BURSTS: i32 = 4;
 
-/// Backpressure threshold, mirroring librespot's `RodioSink`: appended chunks
-/// average ~1628 samples, so ~27 queued chunks ≈ 44_100 frames ≈ 0.5 s buffered.
-const MAX_BUFFERED_CHUNKS: usize = 26;
-
-pub struct RouteFollowingSink {
-    /// `None` until the first (re)build succeeds. The rodio `Sink` and its backing
-    /// `OutputStream` are kept together so they are dropped as a unit on rebuild and
-    /// teardown.
-    active: Option<(rodio::Sink, OutputStream)>,
-    /// Set by the cpal error callback (AAudio disconnect on a route change) and
-    /// observed on the player thread to trigger an in-place stream rebuild.
-    reopen: Arc<AtomicBool>,
+fn err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
 }
 
-impl RouteFollowingSink {
+/// Attach the calling thread to the JVM and hand back a `JNIEnv`.
+///
+/// librespot calls `write` from a single long-lived player thread, so the
+/// attachment is made permanent: repeated calls are then just a TLS lookup.
+fn jni_env() -> Result<JNIEnv<'static>, String> {
+    // The `JavaVM` must outlive every `JNIEnv` handed out, so it is cached rather
+    // than rebuilt per call.
+    static VM: std::sync::OnceLock<JavaVM> = std::sync::OnceLock::new();
+    if VM.get().is_none() {
+        let ctx = ndk_context::android_context();
+        let vm = unsafe { JavaVM::from_raw(ctx.vm().cast()) }.map_err(err)?;
+        let _ = VM.set(vm);
+    }
+    VM.get()
+        .ok_or_else(|| "JavaVM unavailable".to_string())?
+        .attach_current_thread_permanently()
+        .map_err(err)
+}
+
+pub struct AudioTrackSink {
+    /// `android.media.AudioTrack`, `None` until the first successful build.
+    track: Option<GlobalRef>,
+    /// Reused `short[]` staging array handed to `AudioTrack.write`.
+    staging: Option<GlobalRef>,
+    staging_len: usize,
+    playing: bool,
+}
+
+impl AudioTrackSink {
     pub fn new() -> Self {
-        let mut sink = Self {
-            active: None,
-            reopen: Arc::new(AtomicBool::new(false)),
-        };
-        // Best-effort initial open. If the output device is momentarily unavailable
-        // we retry on the first write rather than panicking the player thread.
-        sink.ensure_stream();
-        sink
+        Self {
+            track: None,
+            staging: None,
+            staging_len: 0,
+            playing: false,
+        }
     }
 
-    /// (Re)builds the rodio output stream if we have none yet, or a route change has
-    /// flagged the current one as dead. Opening picks the active default route.
-    fn ensure_stream(&mut self) {
-        if self.active.is_some() && !self.reopen.load(Ordering::SeqCst) {
+    /// Builds the `AudioTrack` if it is not up yet. Failures are logged and retried
+    /// on the next write rather than killing the player thread.
+    fn ensure_track(&mut self) {
+        if self.track.is_some() {
             return;
         }
-
-        // Clear the flag *before* (re)building: the old stream is dropped first (so its
-        // error callback can't fire again), and the new stream's callback is only wired
-        // once `build_stream` returns — so a disconnect arriving during the rebuild is
-        // never lost, it just re-flags and we rebuild again on the next write.
-        self.reopen.store(false, Ordering::SeqCst);
-
-        // Drop the old (dead) stream first so AAudio releases it before we open the
-        // replacement on the new route.
-        self.active = None;
-
-        match build_stream(self.reopen.clone()) {
-            Ok((sink, stream)) => {
-                // A freshly built sink must be playing: on a mid-session rebuild
-                // librespot does not call start() again.
-                sink.play();
-                info!("Audio output (re)opened on the active route");
-                self.active = Some((sink, stream));
+        match Self::build_track() {
+            Ok(track) => {
+                info!("AudioTrack sink opened ({SAMPLE_RATE} Hz, {NUM_CHANNELS} ch, PCM16)");
+                self.track = Some(track);
+                self.playing = false;
             }
-            Err(e) => {
-                // Leave the flag set so the next write retries the open.
-                self.reopen.store(true, Ordering::SeqCst);
-                error!("Failed to open audio output stream: {e}");
-            }
+            Err(e) => warn!("AudioTrack build failed ({e}); retrying on next write"),
         }
+    }
+
+    fn build_track() -> Result<GlobalRef, String> {
+        let mut env = jni_env()?;
+
+        // AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+        let track_cls = env.find_class("android/media/AudioTrack").map_err(err)?;
+        let min = env
+            .call_static_method(
+                &track_cls,
+                "getMinBufferSize",
+                "(III)I",
+                &[
+                    JValue::Int(SAMPLE_RATE),
+                    JValue::Int(CHANNEL_OUT_STEREO),
+                    JValue::Int(ENCODING_PCM_16BIT),
+                ],
+            )
+            .and_then(|v| v.i())
+            .map_err(err)?;
+        if min <= 0 {
+            return Err(format!("getMinBufferSize returned {min}"));
+        }
+        let buffer_bytes = min * BUFFER_BURSTS;
+
+        // new AudioAttributes.Builder().setUsage(MEDIA).setContentType(MUSIC).build()
+        let attrs = {
+            let cls = env
+                .find_class("android/media/AudioAttributes$Builder")
+                .map_err(err)?;
+            let b = env.new_object(&cls, "()V", &[]).map_err(err)?;
+            let b = env
+                .call_method(
+                    &b,
+                    "setUsage",
+                    "(I)Landroid/media/AudioAttributes$Builder;",
+                    &[JValue::Int(USAGE_MEDIA)],
+                )
+                .and_then(|v| v.l())
+                .map_err(err)?;
+            let b = env
+                .call_method(
+                    &b,
+                    "setContentType",
+                    "(I)Landroid/media/AudioAttributes$Builder;",
+                    &[JValue::Int(CONTENT_TYPE_MUSIC)],
+                )
+                .and_then(|v| v.l())
+                .map_err(err)?;
+            env.call_method(&b, "build", "()Landroid/media/AudioAttributes;", &[])
+                .and_then(|v| v.l())
+                .map_err(err)?
+        };
+
+        // new AudioFormat.Builder().setEncoding(..).setSampleRate(..).setChannelMask(..).build()
+        let format = {
+            let cls = env
+                .find_class("android/media/AudioFormat$Builder")
+                .map_err(err)?;
+            let b = env.new_object(&cls, "()V", &[]).map_err(err)?;
+            let b = env
+                .call_method(
+                    &b,
+                    "setEncoding",
+                    "(I)Landroid/media/AudioFormat$Builder;",
+                    &[JValue::Int(ENCODING_PCM_16BIT)],
+                )
+                .and_then(|v| v.l())
+                .map_err(err)?;
+            let b = env
+                .call_method(
+                    &b,
+                    "setSampleRate",
+                    "(I)Landroid/media/AudioFormat$Builder;",
+                    &[JValue::Int(SAMPLE_RATE)],
+                )
+                .and_then(|v| v.l())
+                .map_err(err)?;
+            let b = env
+                .call_method(
+                    &b,
+                    "setChannelMask",
+                    "(I)Landroid/media/AudioFormat$Builder;",
+                    &[JValue::Int(CHANNEL_OUT_STEREO)],
+                )
+                .and_then(|v| v.l())
+                .map_err(err)?;
+            env.call_method(&b, "build", "()Landroid/media/AudioFormat;", &[])
+                .and_then(|v| v.l())
+                .map_err(err)?
+        };
+
+        // new AudioTrack.Builder()... .build()
+        let cls = env
+            .find_class("android/media/AudioTrack$Builder")
+            .map_err(err)?;
+        let b = env.new_object(&cls, "()V", &[]).map_err(err)?;
+        let b = env
+            .call_method(
+                &b,
+                "setAudioAttributes",
+                "(Landroid/media/AudioAttributes;)Landroid/media/AudioTrack$Builder;",
+                &[JValue::Object(&attrs)],
+            )
+            .and_then(|v| v.l())
+            .map_err(err)?;
+        let b = env
+            .call_method(
+                &b,
+                "setAudioFormat",
+                "(Landroid/media/AudioFormat;)Landroid/media/AudioTrack$Builder;",
+                &[JValue::Object(&format)],
+            )
+            .and_then(|v| v.l())
+            .map_err(err)?;
+        let b = env
+            .call_method(
+                &b,
+                "setBufferSizeInBytes",
+                "(I)Landroid/media/AudioTrack$Builder;",
+                &[JValue::Int(buffer_bytes)],
+            )
+            .and_then(|v| v.l())
+            .map_err(err)?;
+        let b = env
+            .call_method(
+                &b,
+                "setTransferMode",
+                "(I)Landroid/media/AudioTrack$Builder;",
+                &[JValue::Int(MODE_STREAM)],
+            )
+            .and_then(|v| v.l())
+            .map_err(err)?;
+        let track = env
+            .call_method(&b, "build", "()Landroid/media/AudioTrack;", &[])
+            .and_then(|v| v.l())
+            .map_err(err)?;
+
+        info!("AudioTrack buffer {buffer_bytes} bytes (min {min} x {BUFFER_BURSTS})");
+        env.new_global_ref(track).map_err(err)
+    }
+
+    /// Calls a no-arg void method on the track, logging rather than propagating.
+    fn track_call(&mut self, name: &'static str) {
+        let Some(track) = self.track.as_ref() else {
+            return;
+        };
+        let Ok(mut env) = jni_env() else { return };
+        if let Err(e) = env.call_method(track.as_obj(), name, "()V", &[]) {
+            warn!("AudioTrack.{name}() failed: {e}");
+            let _ = env.exception_clear();
+        }
+    }
+
+    /// Grows the reused `short[]` when a packet needs more room.
+    fn ensure_staging(&mut self, env: &mut JNIEnv, len: usize) -> Result<(), String> {
+        if self.staging.is_some() && self.staging_len >= len {
+            return Ok(());
+        }
+        let arr = env.new_short_array(len as i32).map_err(err)?;
+        self.staging = Some(env.new_global_ref(&arr).map_err(err)?);
+        self.staging_len = len;
+        Ok(())
     }
 }
 
-impl Sink for RouteFollowingSink {
+impl Sink for AudioTrackSink {
     fn start(&mut self) -> SinkResult<()> {
-        self.ensure_stream();
-        if let Some((sink, _)) = &self.active {
-            sink.play();
+        self.ensure_track();
+        if !self.playing {
+            self.track_call("play");
+            self.playing = true;
         }
         Ok(())
     }
 
     fn stop(&mut self) -> SinkResult<()> {
-        if let Some((sink, _)) = &self.active {
-            // Only drain when the stream is healthy. A route change that killed the
-            // stream stops the AAudio callback from pulling, so `sleep_until_end`
-            // would block forever — skip the drain and just pause in that case.
-            if !self.reopen.load(Ordering::SeqCst) {
-                sink.sleep_until_end();
-            }
-            sink.pause();
+        if self.playing {
+            self.track_call("pause");
+            self.track_call("flush");
+            self.playing = false;
         }
         Ok(())
     }
 
     fn write(&mut self, packet: AudioPacket, converter: &mut Converter) -> SinkResult<()> {
-        self.ensure_stream();
-        let Some((sink, _)) = &self.active else {
-            // No usable output right now (device temporarily gone). Drop this packet
-            // instead of erroring so the player keeps running; we retry next write.
+        self.ensure_track();
+        if self.track.is_none() {
+            // No output right now; drop the packet rather than erroring so the
+            // player keeps running and we retry on the next write.
             return Ok(());
-        };
+        }
 
         let samples = packet
             .samples()
             .map_err(|e| SinkError::OnWrite(e.to_string()))?;
-        let samples_f32: &[f32] = &converter.f64_to_f32(samples);
-        let source = rodio::buffer::SamplesBuffer::new(NUM_CHANNELS, SAMPLE_RATE, samples_f32);
-        sink.append(source);
+        // Straight to the HAL's native format, with librespot's TPDF dither, instead
+        // of f32 -> AudioFlinger's undithered s16 conversion.
+        let pcm: Vec<i16> = converter.f64_to_s16(samples);
+        if pcm.is_empty() {
+            return Ok(());
+        }
 
-        // Backpressure: wait for rodio to drain a bit, but bail the moment a route
-        // change flags a rebuild so we never spin on a dead stream's queue (which
-        // never drains). The next write then rebuilds onto the new route.
-        while sink.len() > MAX_BUFFERED_CHUNKS && !self.reopen.load(Ordering::SeqCst) {
-            thread::sleep(Duration::from_millis(10));
+        let mut env = jni_env().map_err(SinkError::OnWrite)?;
+        self.ensure_staging(&mut env, pcm.len())
+            .map_err(SinkError::OnWrite)?;
+
+        let staging = self.staging.as_ref().expect("staging just ensured").clone();
+        let arr: &JShortArray = staging.as_obj().into();
+        env.set_short_array_region(arr, 0, &pcm)
+            .map_err(|e| SinkError::OnWrite(e.to_string()))?;
+
+        let track = self.track.as_ref().expect("track checked above").clone();
+        let written = env
+            .call_method(
+                track.as_obj(),
+                "write",
+                "([SIII)I",
+                &[
+                    JValue::Object(staging.as_obj()),
+                    JValue::Int(0),
+                    JValue::Int(pcm.len() as i32),
+                    JValue::Int(WRITE_BLOCKING),
+                ],
+            )
+            .and_then(|v| v.i())
+            .map_err(|e| SinkError::OnWrite(e.to_string()))?;
+
+        if written < 0 {
+            // Negative return values are AudioTrack error codes (ERROR_INVALID_OPERATION,
+            // ERROR_DEAD_OBJECT, …). Drop the track so the next write rebuilds it.
+            warn!("AudioTrack.write returned {written}; rebuilding track");
+            self.track = None;
+            self.playing = false;
         }
         Ok(())
     }
 }
 
-/// Records a stream error (most importantly the AAudio disconnect that arrives as
-/// `DeviceNotAvailable` on a route change) by flagging the stream for rebuild.
-fn on_stream_error(e: cpal::StreamError, reopen: &AtomicBool) {
-    warn!("Audio stream error ({e}); will reopen on the active route");
-    reopen.store(true, Ordering::SeqCst);
-}
-
-/// Builds a rodio output stream on the current default route, wiring a cpal error
-/// callback that flags the stream for rebuild when AAudio disconnects it.
-fn build_stream(reopen: Arc<AtomicBool>) -> Result<(rodio::Sink, OutputStream), String> {
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| "no default output device".to_string())?;
-
-    // Prefer native stereo 44.1 kHz (matches our feed, no rodio resampling); fall
-    // back to the device default rate (rodio/AAudio resample), mirroring librespot.
-    let default_config = device.default_output_config().map_err(|e| e.to_string())?;
-    let config = device
-        .supported_output_configs()
-        .map_err(|e| e.to_string())?
-        .find(|c| c.channels() == NUM_CHANNELS)
-        .and_then(|c| {
-            c.try_with_sample_rate(cpal::SampleRate(SAMPLE_RATE))
-                .or_else(|| c.try_with_sample_rate(default_config.sample_rate()))
-        })
-        .unwrap_or(default_config);
-
-    let stream = {
-        let flag = reopen.clone();
-        rodio::OutputStreamBuilder::default()
-            .with_device(device.clone())
-            .with_config(&config.config())
-            .with_sample_format(cpal::SampleFormat::F32)
-            .with_error_callback(move |e: cpal::StreamError| on_stream_error(e, &flag))
-            .open_stream()
-    };
-
-    let mut stream = match stream {
-        Ok(stream) => stream,
-        Err(e) => {
-            warn!("exact audio config failed ({e}); falling back to device default");
-            let flag = reopen.clone();
-            rodio::OutputStreamBuilder::from_device(device)
-                .map_err(|e| e.to_string())?
-                .with_error_callback(move |e: cpal::StreamError| on_stream_error(e, &flag))
-                .open_stream_or_fallback()
-                .map_err(|e| e.to_string())?
-        }
-    };
-
-    // Teardown of a dead stream is routine here (every route change), so silence
-    // rodio's drop-time logging.
-    stream.log_on_drop(false);
-    let sink = rodio::Sink::connect_new(stream.mixer());
-    Ok((sink, stream))
+impl Drop for AudioTrackSink {
+    fn drop(&mut self) {
+        self.track_call("stop");
+        self.track_call("release");
+    }
 }
