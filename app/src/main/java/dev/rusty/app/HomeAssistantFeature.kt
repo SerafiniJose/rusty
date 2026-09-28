@@ -64,6 +64,16 @@ object HomeAssistantFeature : Feature {
         edit.apply()
     }
 
+    /** The dashboards on the shell's chip bar, read from [prefs] — see [HomeAssistantDashboards.chipBar].
+     *  Shared by the chip bar itself and the remote's dashboard picker. */
+    fun chipBarDashboards(prefs: SharedPreferences): List<HomeAssistantDashboards.HaDashboard> =
+        HomeAssistantDashboards.chipBar(
+            base = HomeAssistantUrl.normalize(prefs.getString(KEY_URL, null)),
+            cacheOrigin = prefs.getString(KEY_DASHBOARDS_ORIGIN, null),
+            cacheJson = prefs.getString(KEY_DASHBOARDS_CACHE, null),
+            selectedJson = prefs.getString(KEY_SELECTED_DASHBOARDS, null),
+        )
+
     override val id = FeatureId.HOME_ASSISTANT
     override val title = "Home Assistant"
     override val iconRes = R.drawable.ic_mdi_home_assistant

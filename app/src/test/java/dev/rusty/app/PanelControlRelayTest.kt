@@ -24,6 +24,11 @@ private class FakeHost(val name: String = "host") : PanelControlHost {
     override fun sendToBackground() {
         backgroundCalls++
     }
+
+    val dashboards = mutableListOf<String>()
+    override fun showDashboard(path: String) {
+        dashboards.add(path)
+    }
 }
 
 class PanelControlRelayTest {
@@ -131,6 +136,44 @@ class PanelControlRelayTest {
         PanelControlRelay.attachHost(host, ControlPanelId.SPOTIFY)
         PanelControlRelay.notifyLockscreenThemeChanged()
         assertEquals(1, host.themeChanges)
+    }
+
+    // ---- Home Assistant dashboard -------------------------------------------
+
+    @Test fun `attach seeds the dashboard on screen`() {
+        PanelControlRelay.attachHost(FakeHost(), ControlPanelId.HOME_ASSISTANT, dashboard = "kitchen")
+        assertEquals("kitchen", PanelControlRelay.currentDashboard())
+    }
+
+    @Test fun `publishDashboard records the dashboard on screen, null included`() {
+        PanelControlRelay.attachHost(FakeHost(), ControlPanelId.HOME_ASSISTANT)
+        PanelControlRelay.publishDashboard("energy")
+        assertEquals("energy", PanelControlRelay.currentDashboard())
+        PanelControlRelay.publishDashboard(null)
+        assertNull(PanelControlRelay.currentDashboard())
+    }
+
+    /** Same late-edge rule as [PanelControlRelay.publishCurrent]: no window, nothing on screen. */
+    @Test fun `publishDashboard while detached is ignored and detach clears it`() {
+        val host = FakeHost()
+        PanelControlRelay.attachHost(host, ControlPanelId.HOME_ASSISTANT, dashboard = "kitchen")
+        PanelControlRelay.detachHost(host)
+        assertNull(PanelControlRelay.currentDashboard())
+        PanelControlRelay.publishDashboard("energy")
+        assertNull(PanelControlRelay.currentDashboard())
+    }
+
+    /** Accepted, not applied: the reported dashboard only moves when the shell publishes it. */
+    @Test fun `requestDashboard forwards to the host without moving the report`() {
+        val host = FakeHost()
+        PanelControlRelay.attachHost(host, ControlPanelId.HOME_ASSISTANT, dashboard = "kitchen")
+        assertTrue(PanelControlRelay.requestDashboard("energy"))
+        assertEquals(listOf("energy"), host.dashboards)
+        assertEquals("kitchen", PanelControlRelay.currentDashboard())
+    }
+
+    @Test fun `requestDashboard with no host reports false`() {
+        assertFalse(PanelControlRelay.requestDashboard("energy"))
     }
 
     // ---- detach ------------------------------------------------------------

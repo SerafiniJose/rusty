@@ -28,7 +28,8 @@ class ControlModelsTest {
         ),
         theme: ScreensaverThemeId = ScreensaverThemeId.CLOCK,
         themes: List<ScreensaverThemeId> = listOf(ScreensaverThemeId.CLOCK, ScreensaverThemeId.OLED),
-    ) = ControlPanel(active, available, ControlLockscreen(theme, themes))
+        homeAssistant: ControlHomeAssistant = ControlHomeAssistant.NONE,
+    ) = ControlPanel(active, available, ControlLockscreen(theme, themes), homeAssistant)
 
     private fun JSONObject.stringList(key: String): List<String> =
         getJSONArray(key).let { a -> (0 until a.length()).map { a.getString(it) } }
@@ -93,6 +94,36 @@ class ControlModelsTest {
         assertEquals(true, o.has("active"))
         assertEquals(true, o.isNull("active"))
         assertEquals(true, json.contains("\"active\":null"))
+    }
+
+    /** The dashboard picker's data: the chip-bar dashboards in chip order, each as the url_path
+     *  the page posts back plus the title it shows, and the one on screen. */
+    @Test fun panelJson_reportsHomeAssistantDashboardsAndActive() {
+        val ha = ControlHomeAssistant(
+            dashboards = listOf(
+                ControlHaDashboard(path = "__overview__", title = "Overview"),
+                ControlHaDashboard(path = "kitchen", title = "Kitchen"),
+            ),
+            active = "kitchen",
+        )
+        val o = JSONObject(snap(panel(homeAssistant = ha)).toJson())
+            .getJSONObject("panel").getJSONObject("homeAssistant")
+        val list = o.getJSONArray("dashboards")
+        assertEquals(2, list.length())
+        assertEquals("__overview__", list.getJSONObject(0).getString("path"))
+        assertEquals("Overview", list.getJSONObject(0).getString("title"))
+        assertEquals("kitchen", list.getJSONObject(1).getString("path"))
+        assertEquals("Kitchen", list.getJSONObject(1).getString("title"))
+        assertEquals("kitchen", o.getString("active"))
+    }
+
+    /** Off the HA panel (or with HA switched off) nothing is on screen: `active` is present AND
+     *  null, the same always-present-key rule as `panel.active`. */
+    @Test fun panelJson_homeAssistantActiveIsExplicitNullWhenNothingShows() {
+        val o = JSONObject(snap().toJson()).getJSONObject("panel").getJSONObject("homeAssistant")
+        assertEquals(0, o.getJSONArray("dashboards").length())
+        assertEquals(true, o.has("active"))
+        assertEquals(true, o.isNull("active"))
     }
 
     // ---- app block ----------------------------------------------------------

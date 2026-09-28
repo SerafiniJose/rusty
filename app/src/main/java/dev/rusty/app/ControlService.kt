@@ -951,6 +951,18 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
                 theme = SlideshowDisable.initialTheme(stored, slideshowEnabled),
                 themes = ControlLockscreenThemes.selectable(slideshowEnabled),
             ),
+            homeAssistant = homeAssistantSnapshot(),
+        )
+    }
+
+    /** The dashboard picker's data: the device's own chip bar (nothing while HA is switched off),
+     *  and what the shell reports on screen. */
+    private fun homeAssistantSnapshot(): ControlHomeAssistant {
+        if (!HomeAssistantFeature.isEnabled(prefs)) return ControlHomeAssistant.NONE
+        return ControlHomeAssistant(
+            dashboards = HomeAssistantFeature.chipBarDashboards(prefs)
+                .map { ControlHaDashboard(path = it.urlPath, title = it.title) },
+            active = PanelControlRelay.currentDashboard(),
         )
     }
 
@@ -1008,6 +1020,19 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
         // Deliberately the PRE-switch snapshot: the transaction has not run yet, so claiming the
         // new panel here would be the optimistic report the control page is built not to trust.
         ControlPanelResult.Ok(snapshot())
+    }
+
+    override fun showDashboard(path: String): ControlDashboardResult = synchronized(commandLock) {
+        if (!HomeAssistantFeature.isEnabled(prefs)) return ControlDashboardResult.FeatureDisabled
+        // Only what the device's own chip bar offers — the same list the snapshot reports, so the
+        // page can never put up a dashboard the user left off the bar.
+        if (HomeAssistantFeature.chipBarDashboards(prefs).none { it.urlPath == path }) {
+            return ControlDashboardResult.UnknownDashboard
+        }
+        if (!PanelControlRelay.hasHost()) return ControlDashboardResult.NoWindow
+        // Posted and not awaited, exactly like setPanel: the host navigates a WebView.
+        mainHandler.post { PanelControlRelay.requestDashboard(path) }
+        ControlDashboardResult.Ok(snapshot())
     }
 
     override fun setLockscreenTheme(theme: ScreensaverThemeId): ControlLockscreenResult =

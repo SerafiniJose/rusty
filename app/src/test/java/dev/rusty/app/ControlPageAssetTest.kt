@@ -171,26 +171,39 @@ class ControlPageAssetTest {
     }
 
     /**
-     * The camera strip is CONTEXTUAL: it reports what the device is showing right now, which is
-     * not a question anywhere but the camera panel — and off that panel every camera reports
-     * "none" anyway. Gated on the SELECTED source (`pendingPanel || active`), not on `active`
-     * alone, so it appears on the tap rather than a poll later.
-     *
-     * The lock-screen theme is deliberately NOT gated this way: selecting Lock actually shows the
-     * screensaver, so gating the theme behind it would make the theme unsettable while music
-     * plays. That asymmetry is the point, so pin both halves.
+     * Every strip under the source switch is CONTEXTUAL: it belongs to one source and shows only
+     * while that source is selected. Gated on the SELECTED source (`pendingPanel || active`), not on
+     * `active` alone, so a strip appears on the tap rather than a poll later. The lock-screen theme
+     * used to be the exception (always visible); it now follows the same rule as the others.
      */
-    @Test fun page_cameraStripIsContextualButLockThemeIsNot() {
-        assertTrue("camera strip must gate on the selected source", page.contains("selectedPanel"))
-        assertTrue(
-            "the gate must be the selected source, pending included",
-            page.contains("""selectedPanel() === "camera""""),
+    @Test fun page_sourceStripsAreContextual() {
+        assertTrue("strips must gate on the selected source", page.contains("selectedPanel"))
+        listOf("camera", "lockscreen", "home_assistant").forEach { source ->
+            assertTrue(
+                "the $source strip must gate on the selected source, pending included",
+                page.contains("""selectedPanel() === "$source""""),
+            )
+        }
+        assertFalse(
+            "the lock theme must no longer be visible from every source",
+            page.contains("""el["lockscreen-strip"].hidden = themes.length === 0;"""),
         )
-        // The lock-screen strip keeps its own rule: shown whenever there are themes to pick.
-        assertTrue(
-            "lock theme must stay available from any source",
-            page.contains("""el["lockscreen-strip"].hidden = themes.length === 0"""),
-        )
+    }
+
+    /**
+     * The dashboard picker lists what the device's own chip bar lists (`panel.homeAssistant`) and
+     * posts the chosen url_path to its own endpoint.
+     */
+    @Test fun page_hasDashboardStripUnderTheSourceSwitch() {
+        listOf(
+            "id=\"dashboard-strip\"",
+            "id=\"dashboard-chips\"",
+            "\"/api/home_assistant/dashboard\"",
+            "renderDashboardStrip",
+            "panel.homeAssistant",
+        ).forEach { marker ->
+            assertTrue("dashboard strip marker missing: $marker", page.contains(marker))
+        }
     }
 
     /**

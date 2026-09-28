@@ -23,6 +23,13 @@ interface PanelControlHost {
      * this means anything.
      */
     fun sendToBackground()
+
+    /**
+     * Puts the Home Assistant dashboard [path] (a chip-bar url_path, already validated by the
+     * caller) on screen, switching to Home Assistant first — and dismissing a showing saver — when
+     * the shell is elsewhere.
+     */
+    fun showDashboard(path: String)
 }
 
 /**
@@ -64,6 +71,7 @@ object PanelControlRelay {
     private var host: PanelControlHost? = null
     private var current: ControlPanelId? = null
     private var currentFeature: ControlPanelId? = null
+    private var currentDashboard: String? = null
 
     /**
      * Registers [h] as the shell that can take panel commands, and seeds the panel it is showing.
@@ -73,13 +81,19 @@ object PanelControlRelay {
      *
      * [feature] is the FEATURE panel the shell is on, which differs from [showing] only while the
      * screensaver covers it — see [currentFeature]. Defaulted to null ("not reported") so callers
-     * that don't care (tests) stay unchanged.
+     * that don't care (tests) stay unchanged. [dashboard] seeds [currentDashboard] the same way.
      */
-    fun attachHost(h: PanelControlHost, showing: ControlPanelId, feature: ControlPanelId? = null) {
+    fun attachHost(
+        h: PanelControlHost,
+        showing: ControlPanelId,
+        feature: ControlPanelId? = null,
+        dashboard: String? = null,
+    ) {
         synchronized(lock) {
             host = h
             current = showing
             currentFeature = feature
+            currentDashboard = dashboard
         }
     }
 
@@ -95,6 +109,7 @@ object PanelControlRelay {
             host = null
             current = null
             currentFeature = null
+            currentDashboard = null
         }
     }
 
@@ -109,6 +124,21 @@ object PanelControlRelay {
             currentFeature = feature
         }
     }
+
+    /**
+     * Records the Home Assistant dashboard (url_path) the shell is showing, or null when it is not
+     * on Home Assistant. Pushed for the same reason [publishCurrent] is — the WebView's state lives
+     * on the main thread — and ignored while detached for the same reason too.
+     */
+    fun publishDashboard(path: String?) {
+        synchronized(lock) {
+            if (host == null) return
+            currentDashboard = path
+        }
+    }
+
+    /** The Home Assistant dashboard on screen, or null when none is (or no shell is attached). */
+    fun currentDashboard(): String? = synchronized(lock) { currentDashboard }
 
     /** The panel on screen, or null when no shell is attached to be showing one. */
     fun current(): ControlPanelId? = synchronized(lock) { current }
@@ -156,6 +186,17 @@ object PanelControlRelay {
     }
 
     /**
+     * Asks the attached shell to show the Home Assistant dashboard [path]; returns false when there
+     * is none. Accepted, not applied — like [requestPanel], and with the same main-thread rule: the
+     * new dashboard is observable only once the shell [publishDashboard]s it.
+     */
+    fun requestDashboard(path: String): Boolean {
+        val target = synchronized(lock) { host } ?: return false
+        target.showDashboard(path)
+        return true
+    }
+
+    /**
      * Tells the attached shell that the persisted lockscreen theme changed. Unlike [requestPanel]
      * this is a notification, not a request: the theme is already saved, so a device with no
      * window simply picks it up the next time a saver mounts, and the API reports success either
@@ -173,6 +214,7 @@ object PanelControlRelay {
             host = null
             current = null
             currentFeature = null
+            currentDashboard = null
         }
     }
 }

@@ -183,6 +183,13 @@ private class FakeControlRuntime : ControlRuntime {
 
     var localSnapshot: ControlLocalSnapshotResult = ControlLocalSnapshotResult.SharingOff
     override fun localCameraSnapshot() = localSnapshot
+
+    val dashboardCalls = mutableListOf<String>()
+    var dashboardResult: ControlDashboardResult? = null
+    override fun showDashboard(path: String): ControlDashboardResult {
+        dashboardCalls.add(path)
+        return dashboardResult ?: ControlDashboardResult.Ok(snap)
+    }
 }
 
 class ControlProtocolTest {
@@ -288,6 +295,58 @@ class ControlProtocolTest {
 
     @Test fun getPanel_isNotARoute_404() {
         assertEquals(404, route(req("GET", "/api/panel")).status)
+    }
+
+    // -- POST /api/home_assistant/dashboard -----------------------------------
+
+    @Test fun postDashboard_showsItAndReturnsSnapshot() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/home_assistant/dashboard", body = """{"path":"kitchen"}"""), rt)
+        assertEquals(200, res.status)
+        assertEquals(listOf("kitchen"), rt.dashboardCalls)
+        assertEquals(rt.snap.toJson(), res.body)
+    }
+
+    @Test fun postDashboard_missingNonStringOrBlankPath_400_andRuntimeUntouched() {
+        val rt = FakeControlRuntime()
+        listOf("""{}""", """{"path":3}""", """{"path":null}""", """{"path":"  "}""", "{").forEach { body ->
+            assertEquals(body, 400, route(req("POST", "/api/home_assistant/dashboard", body = body), rt).status)
+        }
+        assertTrue(rt.dashboardCalls.isEmpty())
+    }
+
+    /** Membership is the runtime's question (only chip-bar dashboards may be shown), and a path it
+     *  does not know is a client mistake: 400, not 404 — the route itself exists. */
+    @Test fun postDashboard_unknownDashboard_400() {
+        val rt = FakeControlRuntime()
+        rt.dashboardResult = ControlDashboardResult.UnknownDashboard
+        val res = route(req("POST", "/api/home_assistant/dashboard", body = """{"path":"garage"}"""), rt)
+        assertEquals(400, res.status)
+        assertTrue(JSONObject(res.body).getString("error").contains("garage"))
+    }
+
+    @Test fun postDashboard_featureOff_404() {
+        val rt = FakeControlRuntime()
+        rt.dashboardResult = ControlDashboardResult.FeatureDisabled
+        val res = route(req("POST", "/api/home_assistant/dashboard", body = """{"path":"kitchen"}"""), rt)
+        assertEquals(404, res.status)
+    }
+
+    @Test fun postDashboard_noWindow_409() {
+        val rt = FakeControlRuntime()
+        rt.dashboardResult = ControlDashboardResult.NoWindow
+        val res = route(req("POST", "/api/home_assistant/dashboard", body = """{"path":"kitchen"}"""), rt)
+        assertEquals(409, res.status)
+        assertTrue(JSONObject(res.body).getString("error").contains("isn't on screen"))
+    }
+
+    @Test fun postDashboard_requiresJsonContentType() {
+        val rt = FakeControlRuntime()
+        val res = route(
+            req("POST", "/api/home_assistant/dashboard", body = """{"path":"kitchen"}""", contentType = "text/plain"), rt
+        )
+        assertEquals(415, res.status)
+        assertTrue(rt.dashboardCalls.isEmpty())
     }
 
     // -- POST /api/lockscreen -------------------------------------------------

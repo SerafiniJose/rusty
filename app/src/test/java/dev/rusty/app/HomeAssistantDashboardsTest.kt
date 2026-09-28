@@ -120,6 +120,32 @@ class HomeAssistantDashboardsTest {
         assertFalse(HomeAssistantDashboards.isCacheFresh(null, "http://ha.local:8123"))
     }
 
+    // ---- chipBar tests ---------------------------------------------------------
+
+    /** The chip bar (and the remote's dashboard picker, which must list exactly the same thing) is
+     *  the user's selection, in their order, resolved against a cache from the CURRENT server. */
+    @Test fun chipBar_isTheSelectionInStoredOrder() {
+        val bar = HomeAssistantDashboards.chipBar(
+            base = "http://ha.local:8123",
+            cacheOrigin = "http://ha.local:8123",
+            cacheJson = """[{"url_path":"kitchen","title":"Kitchen"},{"url_path":"energy","title":"Energy"}]""",
+            selectedJson = """["energy","__overview__","kitchen"]""",
+        )
+        assertEquals(listOf("energy", OVERVIEW_PATH, "kitchen"), bar.map { it.urlPath })
+    }
+
+    /** A cache captured against another server is ignored, so its dashboards drop out and only
+     *  the synthetic Overview can survive. */
+    @Test fun chipBar_ignoresACacheFromAnotherServer() {
+        val bar = HomeAssistantDashboards.chipBar(
+            base = "http://ha.local:8123",
+            cacheOrigin = "http://other:8123",
+            cacheJson = """[{"url_path":"kitchen","title":"Kitchen"}]""",
+            selectedJson = """["__overview__","kitchen"]""",
+        )
+        assertEquals(listOf(OVERVIEW_PATH), bar.map { it.urlPath })
+    }
+
     // ---- resolveActiveDashboard tests ----------------------------------------
 
     private val availableForResolve = listOf(

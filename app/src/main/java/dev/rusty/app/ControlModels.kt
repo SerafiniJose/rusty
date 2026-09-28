@@ -44,6 +44,23 @@ data class ControlLockscreen(
     val themes: List<ScreensaverThemeId>,
 )
 
+/** One Home Assistant dashboard the remote may pick: the url_path it posts back, and its title. */
+data class ControlHaDashboard(val path: String, val title: String)
+
+/**
+ * Immutable snapshot of the Home Assistant dashboard picker: the dashboards on the device's own
+ * chip bar, in chip order ([HomeAssistantFeature.chipBarDashboards] — empty while the feature is
+ * off), and the url_path of the one on screen, null when Home Assistant is not showing.
+ */
+data class ControlHomeAssistant(
+    val dashboards: List<ControlHaDashboard>,
+    val active: String?,
+) {
+    companion object {
+        val NONE = ControlHomeAssistant(dashboards = emptyList(), active = null)
+    }
+}
+
 /**
  * Immutable snapshot of what the device's screen is showing and what it could show.
  *
@@ -60,6 +77,7 @@ data class ControlPanel(
     val active: ControlPanelId?,
     val available: List<ControlPanelId>,
     val lockscreen: ControlLockscreen,
+    val homeAssistant: ControlHomeAssistant = ControlHomeAssistant.NONE,
 )
 
 /**
@@ -229,6 +247,13 @@ data class ControlSnapshot(
         lockscreenObj.put("theme", ControlLockscreenThemes.wire(panel.lockscreen.theme))
         lockscreenObj.put("themes", JSONArray(panel.lockscreen.themes.map { ControlLockscreenThemes.wire(it) }))
         panelObj.put("lockscreen", lockscreenObj)
+        val haObj = JSONObject()
+        haObj.put("dashboards", JSONArray(panel.homeAssistant.dashboards.map {
+            JSONObject().put("path", it.path).put("title", it.title)
+        }))
+        // Explicit null, like `active` above: "nothing on screen" is a value, not an old build.
+        haObj.put("active", panel.homeAssistant.active ?: JSONObject.NULL)
+        panelObj.put("homeAssistant", haObj)
         root.put("panel", panelObj)
 
         // App window state
@@ -274,6 +299,19 @@ sealed class ControlCameraViewResult {
      * automation (Home Assistant, a doorbell trigger) has to branch on it, not display it.
      */
     object OverlayPermissionRequired : ControlCameraViewResult()
+}
+
+/**
+ * Outcome of `POST /api/home_assistant/dashboard`. Mirrors [ControlCameraViewResult]'s split:
+ * feature off is a 404 (the route has nothing behind it), a path that is not on the chip bar is a
+ * client mistake (400), and no window to take the switch is a 409.
+ */
+sealed class ControlDashboardResult {
+    /** Accepted; [snapshot] is the PRE-switch state (see [ControlPanelResult.Ok]). */
+    data class Ok(val snapshot: ControlSnapshot) : ControlDashboardResult()
+    object FeatureDisabled : ControlDashboardResult()
+    object UnknownDashboard : ControlDashboardResult()
+    object NoWindow : ControlDashboardResult()
 }
 
 /** Outcome of `POST /api/camera/dismiss`. Both refusals are 409, like [ControlPanelResult]'s. */

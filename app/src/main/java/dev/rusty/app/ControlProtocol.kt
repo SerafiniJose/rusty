@@ -52,6 +52,14 @@ interface ControlRuntime {
     fun setLockscreenTheme(theme: ScreensaverThemeId): ControlLockscreenResult
 
     /**
+     * Puts the Home Assistant dashboard [path] on screen — one of the device's chip-bar dashboards
+     * (the runtime owns that membership test) — switching to Home Assistant first when needed.
+     * Applied asynchronously like [setPanel]; the page confirms through `panel.homeAssistant.active`.
+     * Defaulted to the feature-off answer so the test fakes that don't care stay unchanged.
+     */
+    fun showDashboard(path: String): ControlDashboardResult = ControlDashboardResult.FeatureDisabled
+
+    /**
      * Puts Rusty's window in front ([on] = true) or sends it to the back ([on] = false).
      *
      * Bringing forward is an activity start, so — like [setPanel] — it is applied asynchronously
@@ -332,6 +340,9 @@ object ControlProtocol {
             req.method == "POST" && path == "/api/lockscreen" ->
                 writeGuarded(req) { handleSetLockscreen(req, rt) }
 
+            req.method == "POST" && path == "/api/home_assistant/dashboard" ->
+                writeGuarded(req) { handleShowDashboard(req, rt) }
+
             req.method == "POST" && path == "/api/foreground" ->
                 writeGuarded(req) { handleSetForeground(req, rt) }
 
@@ -528,6 +539,31 @@ object ControlProtocol {
             is ControlLockscreenResult.Ok -> jsonOk(result.snapshot.toJson())
             ControlLockscreenResult.ThemeUnavailable ->
                 errorResponse(409, "Conflict", "lockscreen theme is switched off in Rusty's settings")
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // /api/home_assistant/dashboard
+    // -------------------------------------------------------------------
+
+    private fun handleShowDashboard(req: HttpRequest, rt: ControlRuntime): HttpResponse {
+        val obj = parseJsonObject(req.body) ?: return errorResponse(400, "Bad Request", "malformed JSON")
+
+        val raw = obj.opt("path")
+        if (raw !is String) return errorResponse(400, "Bad Request", "'path' must be a string")
+        val path = raw.trim()
+        if (path.isEmpty()) return errorResponse(400, "Bad Request", "'path' must not be blank")
+        // Shape only — WHICH dashboards may be shown is the runtime's question (it reads the chip
+        // bar), the same split /api/camera/view makes.
+
+        return when (val result = rt.showDashboard(path)) {
+            is ControlDashboardResult.Ok -> jsonOk(result.snapshot.toJson())
+            ControlDashboardResult.FeatureDisabled ->
+                errorResponse(404, "Not Found", "Home Assistant is switched off")
+            ControlDashboardResult.UnknownDashboard ->
+                errorResponse(400, "Bad Request", "dashboard '$path' is not on Rusty's dashboard bar")
+            ControlDashboardResult.NoWindow ->
+                errorResponse(409, "Conflict", "Rusty isn't on screen right now")
         }
     }
 

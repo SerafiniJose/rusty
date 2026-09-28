@@ -160,21 +160,19 @@ class ShellChromeController(
         if (currentFeatureId() != FeatureId.HOME_ASSISTANT) {
             haChipGroup.removeAllViews()
             haChipBar.visibility = View.GONE
+            // Every change of the active dashboard, and every feature switch, lands here — so this
+            // is also where the remote-control API learns which dashboard is on screen (none now).
+            PanelControlRelay.publishDashboard(null)
             return
         }
-        val base = HomeAssistantUrl.normalize(prefs.getString(HomeAssistantFeature.KEY_URL, null))
-        val origin = prefs.getString(HomeAssistantFeature.KEY_DASHBOARDS_ORIGIN, null)
-        // Ignore a cache captured against a different HA server (URL changed).
-        val cacheJson = if (HomeAssistantDashboards.isCacheFresh(base, origin))
-            prefs.getString(HomeAssistantFeature.KEY_DASHBOARDS_CACHE, null) else null
-        val selectedJson = prefs.getString(HomeAssistantFeature.KEY_SELECTED_DASHBOARDS, null)
-        val selected = HomeAssistantDashboards.selectedFrom(cacheJson, selectedJson)
+        val activePath = (currentFragment() as? ShellContribution)?.activeDashboardPath
+        PanelControlRelay.publishDashboard(activePath)
+        val selected = HomeAssistantFeature.chipBarDashboards(prefs)
         haChipGroup.removeAllViews()
         if (selected.size < 2) {
             haChipBar.visibility = View.GONE
             return
         }
-        val activePath = (currentFragment() as? ShellContribution)?.activeDashboardPath
         val inflater = android.view.LayoutInflater.from(haChipGroup.context)
         selected.forEach { dashboard ->
             val chip = inflater.inflate(R.layout.view_dashboard_chip, haChipGroup, false)

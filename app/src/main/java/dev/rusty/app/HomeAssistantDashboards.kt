@@ -132,6 +132,15 @@ object HomeAssistantDashboards {
         return normalizeSelection(parseSelectedPaths(selectedJson), available).mapNotNull { byPath[it] }
     }
 
+    /**
+     * The dashboards the shell's chip bar offers: the selection resolved against a discovery cache
+     * captured from [base] (a cache from another server is ignored). The remote's dashboard picker
+     * lists exactly this too, so the two can never offer different sets. [base] is the NORMALIZED
+     * configured URL, the form the cache origin is stored in.
+     */
+    fun chipBar(base: String?, cacheOrigin: String?, cacheJson: String?, selectedJson: String?): List<HaDashboard> =
+        selectedFrom(if (isCacheFresh(base, cacheOrigin)) cacheJson else null, selectedJson)
+
     /** base→full dashboard URL. Overview → base root; others → base + "/" + url_path. */
     fun urlFor(baseUrl: String, dashboard: HaDashboard): String {
         val root = baseUrl.trimEnd('/')

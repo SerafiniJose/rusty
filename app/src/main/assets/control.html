@@ -177,16 +177,11 @@
   .segmented button[aria-pressed="true"] { color: var(--text); }
   .segmented button[aria-pressed="true"] .ico { color: var(--accent); }
 
-  /* Settings that belong to the selected source, inset under the switch that selects it.
-     The two strips gate differently, on purpose:
-
-     - Lock screen theme is ALWAYS present. Selecting Lock as a source actually shows the
-       screensaver on the device, so gating the theme behind it would mean you could no longer
-       set the theme for later while Spotify plays — the lock screen is what the device falls
-       back to, and it stays settable from anywhere.
-     - Camera on screen appears only while Camera is the selected source. It is not a setting
-       for later, it is what the device is showing RIGHT NOW, so it is meaningless anywhere
-       else — and off the camera panel the device reports every camera as "none" anyway. */
+  /* Settings that belong to the selected source, inset under the switch that selects it. Each
+     strip shows only while its own source is selected — Lock screen theme under Lock, Dashboard
+     on screen under Home, Camera on screen under Camera — so the card only ever carries the
+     controls for what you picked. The theme can still be set from anywhere through
+     POST /api/lockscreen (Home Assistant automations do); only this page gates it. */
   .context-strip {
     background: var(--slab);
     border: 1px solid var(--card-border);
@@ -580,6 +575,12 @@
       <p id="lockscreen-error" class="error-text" hidden></p>
     </div>
 
+    <div id="dashboard-strip" class="context-strip" hidden>
+      <p class="lab" id="dashboard-heading">Dashboard on screen</p>
+      <div id="dashboard-chips" class="chips" role="group" aria-labelledby="dashboard-heading"></div>
+      <p id="dashboard-error" class="error-text" hidden></p>
+    </div>
+
     <div id="camera-strip" class="context-strip" data-endpoint="/api/cameras" hidden>
       <p class="lab" id="camera-heading">Camera on screen</p>
       <div id="camera-chips" class="chips" role="group" aria-labelledby="camera-heading"></div>
@@ -845,6 +846,7 @@
       "announce-text", "announce-send", "announce-status", "announce-error",
       "voice-line", "announce-voices",
       "lockscreen-strip", "theme-chips", "lockscreen-error",
+      "dashboard-strip", "dashboard-chips", "dashboard-error",
       "albums-list", "albums-error", "people-list", "people-error", "tags-list", "tags-error",
       "filters-save", "filters-status", "filters-summary",
       "update-status", "update-notes", "update-error", "update-button", "update-summary",
@@ -1222,9 +1224,11 @@
     var lockscreen = (panel && panel.lockscreen) || null;
     var themes = (lockscreen && lockscreen.themes) || [];
     // `hidden` on the strip needs the [hidden] rule at the top of this file to beat the
-    // element's own `display`, same as the cards.
-    el["lockscreen-strip"].hidden = themes.length === 0;
-    if (themes.length === 0) return;
+    // element's own `display`, same as the cards. Shown only under the Lock source, like every
+    // strip here — see the .context-strip comment.
+    var show = selectedPanel() === "lockscreen" && themes.length > 0;
+    el["lockscreen-strip"].hidden = !show;
+    if (!show) return;
 
     var current = lockscreen.theme;
     el["theme-chips"].innerHTML = "";
@@ -1287,6 +1291,7 @@
     renderPanel(data.panel);
     renderApp(data.app);
     renderLockscreen(data.panel);
+    renderDashboardStrip();
     // Repainted from the same snapshot: the Grid chip's pressed state is a function of
     // panel.active, so it must settle on the state poll, not only on the camera poll.
     renderCameraStrip();
@@ -1502,8 +1507,10 @@
     pendingSince = Date.now();
     startFastPoll();
     renderPanel(state.panel);
-    // Follows the thumb: the strip belongs to the segment, so it appears (or leaves) on the tap
+    // Follows the thumb: each strip belongs to its segment, so it appears (or leaves) on the tap
     // rather than waiting for the device to confirm the switch.
+    renderLockscreen(state.panel);
+    renderDashboardStrip();
     renderCameraStrip();
 
     writeJSON("/api/panel", "POST", { id: id })
@@ -1548,6 +1555,86 @@
       })
       .catch(function (err) {
         setNotice(el["lockscreen-error"], err.message);
+      })
+      .then(function () {
+        return refresh();
+      });
+  }
+
+  // ---- Home Assistant dashboard strip ----
+
+  /** Identity+order key of the dashboard chips in the DOM; rebuilt only when it changes, so a poll
+   *  never drops keyboard focus out of the strip (the camera strip's rule). */
+  var dashboardStripKey = null;
+
+  /** The dashboard tapped but not yet reported by `panel.homeAssistant.active`, and when. Lets the
+   *  chip light on the tap instead of a poll later; dropped once the device agrees or it times out. */
+  var pendingDashboard = null;
+  var dashboardSince = 0;
+
+  function dashboardChipEls() {
+    return Array.prototype.slice.call(el["dashboard-chips"].querySelectorAll(".chip"));
+  }
+
+  /**
+   * The dashboards on the device's own chip bar (`panel.homeAssistant`), under the Home source.
+   * Like the bar itself it needs two or more to be worth showing — with one there is nothing to
+   * pick.
+   */
+  function renderDashboardStrip() {
+    var panel = state && state.panel ? state.panel : null;
+    var ha = (panel && panel.homeAssistant) || null;
+    var list = (ha && ha.dashboards) || [];
+    var available = (panel && panel.available) || [];
+
+    var show = selectedPanel() === "home_assistant" &&
+      available.indexOf("home_assistant") !== -1 &&
+      list.length >= 2;
+    el["dashboard-strip"].hidden = !show;
+    if (!show) return;
+
+    var key = list.map(function (d) { return d.path + ":" + d.title; }).join(",");
+    if (key !== dashboardStripKey) {
+      dashboardStripKey = key;
+      el["dashboard-chips"].innerHTML = "";
+      list.forEach(function (d) {
+        var chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip";
+        chip.setAttribute("data-path", d.path);
+        chip.setAttribute("aria-pressed", "false");
+        chip.textContent = d.title;
+        chip.addEventListener("click", function () { onSelectDashboard(d.path); });
+        el["dashboard-chips"].appendChild(chip);
+      });
+    }
+
+    var active = ha.active;
+    if (pendingDashboard !== null &&
+        (active === pendingDashboard || Date.now() - dashboardSince > PENDING_TIMEOUT_MS)) {
+      pendingDashboard = null;
+    }
+    var lit = pendingDashboard !== null ? pendingDashboard : active;
+    // Same reason a camera chip can't be pressed: no window is attached to take the switch.
+    var attached = panel.active !== null;
+    dashboardChipEls().forEach(function (chip) {
+      chip.setAttribute("aria-pressed", String(chip.getAttribute("data-path") === lit));
+      chip.disabled = !attached;
+    });
+  }
+
+  function onSelectDashboard(path) {
+    setNotice(el["dashboard-error"], null);
+    pendingDashboard = path;
+    dashboardSince = Date.now();
+    renderDashboardStrip();
+    writeJSON("/api/home_assistant/dashboard", "POST", { path: path })
+      .then(function () {
+        toast("Showing on device.");
+      })
+      .catch(function (err) {
+        pendingDashboard = null;
+        setNotice(el["dashboard-error"], err.message);
       })
       .then(function () {
         return refresh();
@@ -2128,8 +2215,7 @@
     var available = (panel && panel.available) || [];
 
     // Hidden unless Camera is the selected source AND the feature is on AND there is something
-    // to pick. Unlike the lock-screen strip this is contextual: it reports what the device is
-    // showing right now, which is not a question anywhere else — see the .context-strip comment.
+    // to pick — see the .context-strip comment.
     var show = selectedPanel() === "camera" &&
       available.indexOf("camera") !== -1 &&
       list !== null && list.length > 0;

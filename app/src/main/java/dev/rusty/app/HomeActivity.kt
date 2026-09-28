@@ -385,7 +385,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         // Same window as the takeover consumer, for the same reason: past onPause the navigator's
         // commitNow is unsafe, so the remote must see no host rather than crash one from an HTTP
         // thread. Seeded with what is on screen right now.
-        PanelControlRelay.attachHost(panelHost, currentPanelId(), currentFeaturePanelId())
+        PanelControlRelay.attachHost(panelHost, currentPanelId(), currentFeaturePanelId(), currentDashboardPath())
         applyKeepScreenOn()
     }
 
@@ -630,6 +630,10 @@ class HomeActivity : AppCompatActivity(), ShellHost {
      *  screensaver is up, and what a camera summon has to be able to restore under it. */
     private fun currentFeaturePanelId(): ControlPanelId = ControlPanelId.of(featureNavigator.current)
 
+    /** The Home Assistant dashboard on screen, or null off Home Assistant — what the chip bar marks
+     *  active, and what the remote's dashboard picker reports. */
+    private fun currentDashboardPath(): String? = currentHomeAssistantFragment()?.activeDashboardPath
+
     /** Pushes [currentPanelId] to the relay. Called from every edge that can change it; the relay
      *  drops it while detached, so a late callback cannot resurrect a dead window's panel. */
     private fun publishCurrentPanel() =
@@ -665,6 +669,19 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             // behind would simply be shown instead, which is not "get out of the way".
             // The relay only reaches us while attached, so this always runs on a live window.
             moveTaskToBack(true)
+        }
+
+        override fun showDashboard(path: String) {
+            // Re-resolved here rather than trusted from the HTTP thread: the chip bar may have
+            // changed in the moment between the check and this post.
+            val dashboard = HomeAssistantFeature.chipBarDashboards(prefs)
+                .firstOrNull { it.urlPath == path } ?: return
+            if (featureNavigator.current != FeatureId.HOME_ASSISTANT) switchTo(FeatureId.HOME_ASSISTANT)
+            // Same switch-then-dismiss order as showPanel.
+            screensaver.dismissToForeground()
+            // The fragment's showDashboard persists the choice and refreshes the chip bar, which
+            // is what publishes the new dashboard to the remote.
+            currentHomeAssistantFragment()?.showDashboard(dashboard)
         }
     }
 
