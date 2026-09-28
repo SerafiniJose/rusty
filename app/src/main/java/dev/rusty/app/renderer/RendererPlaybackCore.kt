@@ -3,6 +3,7 @@ package dev.rusty.app.renderer
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import dev.rusty.app.AnnouncementSettleWatcher
 import dev.rusty.app.NativeBridge
 import dev.rusty.app.ReceiverStateStore
 import dev.rusty.app.RustyApp
@@ -96,12 +97,37 @@ class RendererPlaybackCore(context: Context, private val prefsStore: RendererPre
      * eventing and the DLNA screen's now-playing UI.
      *
      * Returns false only when this core has already been released (racing its host's teardown).
+     *
+     * [onFinished] fires once, on the store's drain thread, when this core has finished the clip
+     * AND settled its debt to Spotify ([AnnouncementRouting.busy]) — the announcement card's cue to
+     * leave. Attached here rather than by the caller because only this core can see its own store,
+     * and detached the moment it fires so a clip never outlives its watcher.
      */
-    fun playAnnouncement(uri: String, mime: String?, title: String): Boolean {
+    fun playAnnouncement(
+        uri: String,
+        mime: String?,
+        title: String,
+        onFinished: (() -> Unit)? = null,
+    ): Boolean {
         if (released) return false
+        if (onFinished != null) watchUntilFinished(onFinished)
         store.dispatch(RendererEvent.SoapSetUri(uri, announcementDidl(title), mime))
         dispatchCommand(RendererCommand.Play)
         return true
+    }
+
+    /** Registers BEFORE the clip is dispatched, so the busy edge [AnnouncementSettleWatcher] waits
+     *  for cannot be missed between the dispatch and the registration. */
+    private fun watchUntilFinished(onFinished: () -> Unit) {
+        val watcher = AnnouncementSettleWatcher()
+        lateinit var listener: RendererStore.Listener
+        listener = RendererStore.Listener { state, _ ->
+            if (watcher.onState(AnnouncementRouting.busy(state))) {
+                store.removeListener(listener)
+                onFinished()
+            }
+        }
+        store.addListener(listener)
     }
 
     /** Minimal DIDL-Lite for a local announcement, so the DLNA player screen and GENA

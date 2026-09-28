@@ -62,6 +62,19 @@ class ControlSettingsTest {
         assertNull(ControlSettings.requiredPassword(p, blank))
     }
 
+    @Test fun announcementCardIsOnByDefault() {
+        // Existing installs never wrote the key, and they already show the card.
+        assertTrue(ControlSettings.isAnnouncementCardEnabled(FakePrefs()))
+    }
+
+    @Test fun announcementCardToggleRoundTrips() {
+        val p = FakePrefs()
+        ControlSettings.setAnnouncementCardEnabled(p, false)
+        assertFalse(ControlSettings.isAnnouncementCardEnabled(p))
+        ControlSettings.setAnnouncementCardEnabled(p, true)
+        assertTrue(ControlSettings.isAnnouncementCardEnabled(p))
+    }
+
     @Test fun deviceIdIsCreatedOnceAndStable() {
         val p = FakePrefs()
         val first = ControlSettings.deviceId(p)

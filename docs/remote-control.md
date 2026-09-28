@@ -37,7 +37,7 @@ URL and never the password; the page asks for that itself. Either way you get a 
 - **Volume** — the media volume slab. Hidden on devices whose volume is fixed (some TVs and
   docks).
 - **Announce** — type a message and the device says it out loud, in the voice picked from the
-  same list as **Settings → Remote control** (downloadable voices included). Spotify pauses or
+  same list as **Settings → Voice** (downloadable voices included). Spotify pauses or
   fades while it speaks and resumes afterwards. Nothing else has to be running for this: no DLNA
   player, no Home Assistant — Rusty does the speaking itself.
 - **Slideshow sources** — the same album / person / tag checklists as the in-app picker, so you

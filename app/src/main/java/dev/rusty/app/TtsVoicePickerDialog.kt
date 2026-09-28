@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Dialog
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.os.Handler
 import android.os.Looper
@@ -22,12 +23,15 @@ import androidx.core.content.res.ResourcesCompat
 import com.google.android.material.button.MaterialButton
 
 /**
- * Announcement-voice picker: the selectable voices on top, the downloadable Piper catalog below,
- * the on-device twin of the control page's Voice row and voice-catalog chips.
+ * Announcement-voice picker: the selectable voices on top, then category chips — the Piper
+ * quality tiers over the downloadable catalog, and System over the system engine's voices — the
+ * on-device twin of the control page's Voice row and voice-catalog chips. System voices get a
+ * chip of their own because Google's engine lists ~470 of them; on top they put the catalog
+ * hundreds of D-pad presses away.
  *
- * Rows are built in code rather than with a RecyclerView: the list is bounded (an engine ships
- * tens of voices, not thousands), radios and buttons are natively D-pad focusable, and a tap on
- * a voice IS the commit — pick and the card closes.
+ * Rows are built in code rather than with a RecyclerView: the list is bounded, radios and
+ * buttons are natively D-pad focusable, and a tap on a voice IS the commit — pick and the card
+ * closes.
  *
  * The dialog owns no state of its own; every read and every action goes through
  * [TtsVoicePickerModel], which is also what the control routes use. While a download runs it
@@ -60,6 +64,11 @@ class TtsVoicePickerDialog(
     private var notice: String? = null
     private var polling = false
 
+    /** True while the System chip is active: the rows under the chips are the system engine's
+     *  voices instead of the Piper catalog. Picker-local, never persisted — the saved tier is
+     *  what downloads use, and the page shares it. */
+    private var showingSystem = false
+
     fun show(onDismissed: () -> Unit = {}) {
         val root = LayoutInflater.from(activity).inflate(R.layout.dialog_tts_voice_picker, null)
         dialog = Dialog(activity)
@@ -81,9 +90,12 @@ class TtsVoicePickerDialog(
         // No curated catalog at all (a build without the asset): the whole download half —
         // header, tier chips, hint — has nothing to talk about.
         val hasCatalog = model.catalogEntries().isNotEmpty()
-        catalogHeader.isVisible(hasCatalog)
-        qualityScroll.isVisible(hasCatalog)
-        qualityHint.isVisible(hasCatalog)
+        val hasSystem = model.systemRows().isNotEmpty()
+        catalogHeader.isVisible(hasCatalog || hasSystem)
+        qualityScroll.isVisible(hasCatalog || hasSystem)
+        qualityHint.isVisible(hasCatalog || hasSystem)
+        // Without a catalog the System chip is the only category there is.
+        showingSystem = !hasCatalog && hasSystem
 
         render(focusSelected = true)
 
@@ -107,6 +119,8 @@ class TtsVoicePickerDialog(
         refocusVoiceId: String? = null,
         /** A tier chip that was just tapped, so the rebuild puts the D-pad back on it. */
         refocusQuality: VoiceQuality? = null,
+        /** The System chip was just tapped; same idea as [refocusQuality]. */
+        refocusSystem: Boolean = false,
     ) {
         val selectedId = model.selectedId()
         val font = ResourcesCompat.getFont(activity, R.font.hanken_regular)
@@ -121,21 +135,7 @@ class TtsVoicePickerDialog(
         rowsBox.removeAllViews()
         var selectedRadio: RadioButton? = null
         model.rows().forEach { v ->
-            val radio = RadioButton(activity).apply {
-                text = rowLabel(v)
-                isChecked = v.id == selectedId
-                typeface = font
-                textSize = 14f
-                setTextColor(ContextCompat.getColor(activity, R.color.ink))
-                buttonTintList = accent
-                foreground = ContextCompat.getDrawable(activity, R.drawable.bg_tv_focus_switch)
-                setPadding(dp(6), dp(10), dp(6), dp(10))
-                setOnClickListener {
-                    model.select(v)
-                    onSelectionChanged()
-                    dialog.dismiss()
-                }
-            }
+            val radio = voiceRadio(v, selectedId, font, accent)
             if (radio.isChecked) selectedRadio = radio
 
             // A downloaded voice is removed from where it lives — its own row — rather than
@@ -177,43 +177,56 @@ class TtsVoicePickerDialog(
 
         // The tier chips: the old Voice-quality dialog folded onto the catalog it filters. A
         // tap persists the tier (the picker's pick-is-the-commit posture) and refilters only
-        // the rows below \u2014 the installed list above never changes with the tier.
+        // the rows below \u2014 the installed list above never changes with the tier. The System
+        // chip after them swaps the rows below for the system engine's voices.
         qualityBox.removeAllViews()
         val quality = model.quality()
         var refocusChip: View? = null
-        VoiceQuality.entries.forEach { q ->
-            val chip = inflater.inflate(R.layout.item_voice_quality_chip, qualityBox, false)
-                as MaterialButton
-            chip.text = q.label
-            val active = q == quality
-            chip.setTextColor(
-                ContextCompat.getColor(activity, if (active) R.color.ink else R.color.muted_dim),
-            )
-            chip.backgroundTintList = ColorStateList.valueOf(
-                ContextCompat.getColor(
-                    activity,
-                    if (active) R.color.accent_chip_fill else R.color.surface_raised,
-                ),
-            )
-            chip.strokeColor = accent
-            chip.strokeWidth = if (active) dp(1) else 0
-            chip.contentDescription = "${q.label} quality \u2014 ${q.hint}"
-            chip.setOnClickListener {
-                if (q != model.quality()) {
-                    model.selectQuality(q)
-                    render(refocusQuality = q)
+        if (model.catalogEntries().isNotEmpty()) {
+            VoiceQuality.entries.forEach { q ->
+                val chip = categoryChip(
+                    label = q.label,
+                    active = !showingSystem && q == quality,
+                    description = "${q.label} quality \u2014 ${q.hint}",
+                    accent = accent,
+                ) {
+                    if (showingSystem || q != model.quality()) {
+                        showingSystem = false
+                        model.selectQuality(q)
+                        render(refocusQuality = q)
+                    }
+                }
+                if (q == refocusQuality) refocusChip = chip
+                qualityBox.addView(chip)
+            }
+        }
+        val systemRows = model.systemRows()
+        if (systemRows.isNotEmpty()) {
+            val chip = categoryChip(
+                label = "System",
+                active = showingSystem,
+                description = TtsVoices.systemCategoryHint(model.systemEngineLabel()),
+                accent = accent,
+            ) {
+                if (!showingSystem) {
+                    showingSystem = true
+                    render(refocusSystem = true)
                 }
             }
-            if (q == refocusQuality) refocusChip = chip
+            if (refocusSystem) refocusChip = chip
             qualityBox.addView(chip)
         }
-        qualityHint.text = quality.hint
+        qualityHint.text =
+            if (showingSystem) TtsVoices.systemCategoryHint(model.systemEngineLabel()) else quality.hint
 
         catalogBox.removeAllViews()
-        val entries = model.downloadableEntries()
+        if (showingSystem) systemRows.forEach { v ->
+            catalogBox.addView(voiceRadio(v, selectedId, font, accent), matchWidth())
+        }
+        val entries = if (showingSystem) emptyList() else model.downloadableEntries()
         // Empty means either "you already have them all" or "this tier has none for these
         // languages" — both normal, and worth telling apart where the rows would have been.
-        if (entries.isEmpty()) {
+        if (!showingSystem && entries.isEmpty()) {
             catalogBox.addView(
                 TextView(activity).apply {
                     // Which emptiness this is: the tier having voices at all is exactly what
@@ -376,6 +389,55 @@ class TtsVoicePickerDialog(
     }
 
     // -- labels / helpers ---------------------------------------------------------------------
+
+    /** One selectable voice. A tap IS the commit: pick and the card closes. */
+    private fun voiceRadio(
+        v: VoiceInfo,
+        selectedId: String,
+        font: Typeface?,
+        accent: ColorStateList,
+    ): RadioButton = RadioButton(activity).apply {
+        text = rowLabel(v)
+        isChecked = v.id == selectedId
+        typeface = font
+        textSize = 14f
+        setTextColor(ContextCompat.getColor(activity, R.color.ink))
+        buttonTintList = accent
+        foreground = ContextCompat.getDrawable(activity, R.drawable.bg_tv_focus_switch)
+        setPadding(dp(6), dp(10), dp(6), dp(10))
+        setOnClickListener {
+            model.select(v)
+            onSelectionChanged()
+            dialog.dismiss()
+        }
+    }
+
+    /** One category chip over the rows below: a quality tier, or System. */
+    private fun categoryChip(
+        label: String,
+        active: Boolean,
+        description: String,
+        accent: ColorStateList,
+        onClick: () -> Unit,
+    ): MaterialButton {
+        val chip = LayoutInflater.from(activity)
+            .inflate(R.layout.item_voice_quality_chip, qualityBox, false) as MaterialButton
+        chip.text = label
+        chip.setTextColor(
+            ContextCompat.getColor(activity, if (active) R.color.ink else R.color.muted_dim),
+        )
+        chip.backgroundTintList = ColorStateList.valueOf(
+            ContextCompat.getColor(
+                activity,
+                if (active) R.color.accent_chip_fill else R.color.surface_raised,
+            ),
+        )
+        chip.strokeColor = accent
+        chip.strokeWidth = if (active) dp(1) else 0
+        chip.contentDescription = description
+        chip.setOnClickListener { onClick() }
+        return chip
+    }
 
     /** Language, name, and — for a downloaded Piper voice — the quality tier it belongs to. */
     private fun rowLabel(v: VoiceInfo): String = buildString {

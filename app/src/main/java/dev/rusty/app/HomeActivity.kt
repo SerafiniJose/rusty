@@ -186,8 +186,11 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         // Registered here (not lazily) so the glyph reflects reality the instant a viewer attaches,
         // even before the first Info card open. Removed first thing in onDestroy — see there.
         CameraShareStatus.addListener(cameraShareGlyphListener)
-
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        announcementCard = AnnouncementCard(
+            findViewById(R.id.announcementCard), findViewById(R.id.tvAnnouncement),
+            enabled = { ControlSettings.isAnnouncementCardEnabled(prefs) },
+        ).also { it.attach() }
         takeover = (application as RustyApp).takeoverCoordinator
         deviceName = prefs.getString(KEY_DEVICE_NAME, DEFAULT_DEVICE_NAME) ?: DEFAULT_DEVICE_NAME
         bitrateKbps = prefs.getInt(KEY_BITRATE_KBPS, DEFAULT_BITRATE_KBPS)
@@ -337,6 +340,10 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     private val cameraShareGlyphListener: (CameraShareStatus.State) -> Unit =
         CameraShareGlyph.listener { findViewById(R.id.ivCameraShareGlyph) }
 
+    /** The announcement card for this screen. Built in onCreate once the views exist, attached
+     *  there and detached in onDestroy — see [AnnouncementCard] for why each activity owns one. */
+    private lateinit var announcementCard: AnnouncementCard
+
     override fun onStart() {
         super.onStart()
         // `screen.available` is about whether a screen command can take effect NOW, which is a
@@ -396,6 +403,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         // Unregistered first: this Activity's root view is the listener's only reference back to it,
         // and a leaked listener on a destroyed Activity's view leaks the Activity.
         CameraShareStatus.removeListener(cameraShareGlyphListener)
+        announcementCard.detach()
         // A showing card holds runtime listeners that only its dismiss callback removes.
         dismissShellDialogs()
         SlideshowConfigRelay.removeListener(slideshowConfigListener)
@@ -1098,6 +1106,8 @@ class HomeActivity : AppCompatActivity(), ShellHost {
             // the margin-vs-padding rationale (shared verbatim with LyricsActivity's own copy).
             findViewById<View>(R.id.ivCameraShareGlyph)
                 ?.let { CameraShareGlyph.applyInsetMargin(it, bars, resources.displayMetrics.density) }
+            // Same story for the announcement card: outside shellChrome so it clears the saver.
+            announcementCard.applyInsetMargin(bars, resources.displayMetrics.density)
             insets
         }
         insetsController = WindowCompat.getInsetsController(window, homeRoot).apply {

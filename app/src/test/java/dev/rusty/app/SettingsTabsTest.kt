@@ -36,6 +36,7 @@ class SettingsTabsTest {
                 SettingsTabKey.SCREENSAVER,
                 SettingsTabKey.SLIDESHOW,
                 SettingsTabKey.REMOTE_CONTROL,
+                SettingsTabKey.VOICE,
                 SettingsTabKey.SPOTIFY,
             ),
             settingsTabsFor(listOf(SettingsTabKey.SPOTIFY), slideshowEnabled = true, remoteControlEnabled = true)
@@ -63,5 +64,18 @@ class SettingsTabsTest {
                 SettingsTabKey.SPOTIFY, SettingsTabKey.HOME_ASSISTANT),
             tabs,
         )
+    }
+
+    @Test fun voiceTabFollowsRemoteControlRightAfterIt() {
+        // Voice holds the announcement voice, and announcements only arrive through the control
+        // API — so it comes and goes with Remote Control and sits immediately after it.
+        val on = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY), slideshowEnabled = false, remoteControlEnabled = true)
+        assertEquals(
+            listOf(SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER, SettingsTabKey.REMOTE_CONTROL,
+                SettingsTabKey.VOICE, SettingsTabKey.SPOTIFY),
+            on,
+        )
+        val off = settingsTabsFor(listOf(SettingsTabKey.SPOTIFY), slideshowEnabled = false, remoteControlEnabled = false)
+        assertFalse(SettingsTabKey.VOICE in off)
     }
 }

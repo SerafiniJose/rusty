@@ -192,6 +192,45 @@ class TtsVoicesTest {
         assertEquals(listOf("system:default"), TtsVoices.pickerRows(emptyList(), emptyList()).map { it.id })
     }
 
+    @Test fun pickerTopRows_keepSystemVoicesOutExceptTheSelectedOne() {
+        val piper = listOf(VoiceInfo("piper:amy", "Amy", "en_US", "medium", true, false))
+        val system = listOf(
+            VoiceInfo("system:e/a", "a", "en-US", "high", true, false),
+            VoiceInfo("system:e/b", "b", "it-IT", "high", true, false),
+        )
+        assertEquals(
+            listOf("system:default", "piper:amy"),
+            TtsVoices.pickerTopRows(piper, system, "system:default").map { it.id },
+        )
+        // The current choice is never hidden behind a chip.
+        assertEquals(
+            listOf("system:default", "piper:amy", "system:e/b"),
+            TtsVoices.pickerTopRows(piper, system, "system:e/b").map { it.id },
+        )
+    }
+
+    @Test fun systemCategoryRows_putReadyVoicesFirstAndSkipTheSelectedOne() {
+        val system = listOf(
+            VoiceInfo("system:e/a", "a", "ar", "high", false, false),
+            VoiceInfo("system:e/b", "b", "en-US", "high", true, false),
+            VoiceInfo("system:e/c", "c", "it-IT", "high", true, false),
+            VoiceInfo("system:e/d", "d", "zh-CN", "high", false, false),
+        )
+        assertEquals(
+            listOf("system:e/b", "system:e/a", "system:e/d"),
+            TtsVoices.systemCategoryRows(system, "system:e/c").map { it.id },
+        )
+    }
+
+    @Test fun systemCategoryHint_namesTheEngineWhenKnown() {
+        assertEquals(
+            "Voices from Speech Services by Google",
+            TtsVoices.systemCategoryHint("Speech Services by Google"),
+        )
+        assertEquals("Voices from the system speech engine", TtsVoices.systemCategoryHint(null))
+        assertEquals("Voices from the system speech engine", TtsVoices.systemCategoryHint(" "))
+    }
+
     // -- catalog rows ------------------------------------------------------
 
     @Test fun catalogActionDescription_describesTheIconButton() {

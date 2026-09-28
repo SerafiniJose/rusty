@@ -110,6 +110,15 @@
         android:textSize="18sp"
         android:visibility="gone" />
 
+    <!-- The same announcement card HomeActivity shows — see AnnouncementCard for why this
+         screen carries its own copy. -->
+    <include
+        layout="@layout/view_announcement_card"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="16dp" />
+
     <!-- "Someone is watching this camera": visible only while a camera-share viewer is attached.
          Declared last so it draws above the rest of this screen. Mirrors activity_home.xml's copy
          of this glyph exactly (see CameraShareGlyph) — this screen is a separate, opaque, full-screen

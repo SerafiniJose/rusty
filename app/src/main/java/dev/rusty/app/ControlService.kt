@@ -19,6 +19,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -1422,18 +1423,28 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
             // synthesizeToFile writes WAV regardless of engine.
             if (!synthesizeBlocking(engine, text, file)) return ControlAnnounceResult.TtsUnavailable
         }
-        play(file, "audio/wav", "Announcement")
+        play(file, "audio/wav", "Announcement", text)
     }
 
     /**
      * Hands the clip to whichever pipeline [AnnouncementRouting] picks. Same process, so a plain
      * `file://` URI is playable by ExoPlayer with no FileProvider or loopback HTTP hop.
      *
+     * [spokenText] is what the announcement card shows while this is being voiced — the one thing
+     * the screens cannot work out for themselves, since a Home Assistant announcement arrives as
+     * audio and has no text at all. It is published here rather than in [announceText] so that the
+     * card's life is tied to the pipeline that actually took the clip.
+     *
      * Called with [announceLock] held.
      */
-    private fun play(file: File, mime: String, title: String): ControlAnnounceResult {
+    private fun play(file: File, mime: String, title: String, spokenText: String): ControlAnnounceResult {
         if (released) return ControlAnnounceResult.PlaybackUnavailable
         val uri = Uri.fromFile(file).toString()
+        // Published before the hand-off so the settle callback below always has an id to quote. A
+        // hand-off that then fails settles it immediately: the card obeys its minimum dwell and
+        // leaves, which beats carrying a retraction path for a teardown race nobody will hit.
+        val id = AnnouncementRelay.publish(spokenText, SystemClock.elapsedRealtime())
+        val onFinished = { AnnouncementRelay.settle(id) }
         val renderer = MediaRendererService.instance
         if (AnnouncementRouting.host(renderer != null, localCore?.state) == AnnounceHost.RENDERER) {
             // The renderer can take over, so a local core that has finished its work is dropped
@@ -1443,11 +1454,14 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
             }
             // Returns false only when the renderer tore down between the read above and now; that
             // is not the user's problem, so fall through and voice it locally instead of failing.
-            if (renderer != null && renderer.playAnnouncement(uri, mime, title)) return ControlAnnounceResult.Ok
+            if (renderer != null && renderer.playAnnouncement(uri, mime, title, onFinished)) {
+                return ControlAnnounceResult.Ok
+            }
         }
         val core = localCore ?: RendererPlaybackCore(context, SharedPrefsRendererStore(prefs)).also { localCore = it }
-        return if (core.playAnnouncement(uri, mime, title)) ControlAnnounceResult.Ok
-        else ControlAnnounceResult.PlaybackUnavailable
+        if (core.playAnnouncement(uri, mime, title, onFinished)) return ControlAnnounceResult.Ok
+        onFinished()
+        return ControlAnnounceResult.PlaybackUnavailable
     }
 
     /** Called with [announceLock] held. Settles whatever the core owes Spotify before dropping it. */

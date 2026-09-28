@@ -128,6 +128,10 @@ class LyricsActivity : AppCompatActivity() {
     private val cameraShareGlyphListener: (CameraShareStatus.State) -> Unit =
         CameraShareGlyph.listener { findViewById(R.id.ivCameraShareGlyph) }
 
+    /** This screen's own announcement card — see [AnnouncementCard], and [cameraShareGlyphListener]
+     *  above for why a second copy exists at all. */
+    private lateinit var announcementCard: AnnouncementCard
+
     // The token signal is unrelated to playback state, so it stays a broadcast (Task 12 only
     // migrates status/playback consumption to the store).
     private val tokenReceiver = object : BroadcastReceiver() {
@@ -146,6 +150,11 @@ class LyricsActivity : AppCompatActivity() {
         // Registered here (not lazily) so the glyph reflects reality the instant a viewer attaches,
         // for as long as this screen can be in front. Removed first thing in onDestroy — see there.
         CameraShareStatus.addListener(cameraShareGlyphListener)
+        val prefs = getSharedPreferences("spotify_receiver_prefs", MODE_PRIVATE)
+        announcementCard = AnnouncementCard(
+            findViewById(R.id.announcementCard), findViewById(R.id.tvAnnouncement),
+            enabled = { ControlSettings.isAnnouncementCardEnabled(prefs) },
+        ).also { it.attach() }
         root = findViewById(R.id.lyricsRoot)
         scroll = findViewById(R.id.lyricsScroll)
         container = findViewById(R.id.lyricsContainer)
@@ -459,6 +468,7 @@ class LyricsActivity : AppCompatActivity() {
         // Unregistered first: this Activity's root view is the listener's only reference back to
         // it, and a leaked listener on a destroyed Activity's view leaks the Activity.
         CameraShareStatus.removeListener(cameraShareGlyphListener)
+        announcementCard.detach()
         coverProbe.dispose()
         artworkRequestId++   // invalidate any in-flight Palette callback
         super.onDestroy()
@@ -476,6 +486,7 @@ class LyricsActivity : AppCompatActivity() {
             // See CameraShareGlyph for the margin-vs-padding rationale (shared verbatim with
             // HomeActivity's own copy).
             CameraShareGlyph.applyInsetMargin(cameraShareGlyph, bars, resources.displayMetrics.density)
+            announcementCard.applyInsetMargin(bars, resources.displayMetrics.density)
             insets
         }
         val fullscreen = getSharedPreferences("spotify_receiver_prefs", MODE_PRIVATE)

@@ -344,8 +344,12 @@ class MediaRendererService : Service(), RendererRuntime {
      * is exactly how the SOAP connection threads already drive it. Returns false when the service
      * is torn down (racing [onDestroy], the same window [applyRename] guards against).
      */
-    fun playAnnouncement(uri: String, mime: String?, title: String): Boolean =
-        initialised && core.playAnnouncement(uri, mime, title)
+    fun playAnnouncement(
+        uri: String,
+        mime: String?,
+        title: String,
+        onFinished: (() -> Unit)? = null,
+    ): Boolean = initialised && core.playAnnouncement(uri, mime, title, onFinished)
 
     // -- RendererRuntime (the seam RendererHttpProtocol drives) -----------------------------
 

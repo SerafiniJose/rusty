@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The announcement card's surface. One step brighter than bg_popup_card's `surface`, because
+     this one floats over whatever feature is running rather than over a dimmed sheet. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/surface_raised" />
+    <corners android:radius="22dp" />
+    <stroke android:width="1dp" android:color="@color/surface_border" />
+</shape>

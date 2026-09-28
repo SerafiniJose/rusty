@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import android.speech.tts.TextToSpeech
 import android.view.View
 import android.view.Window
 import android.widget.EditText
@@ -22,7 +21,7 @@ import com.google.android.material.button.MaterialButton
  * while the API toggle in General is on. Not a [Feature]: like the Slideshow tab, it has no
  * launcher entry; the tab is threaded through `settingsTabsFor` explicitly.
  *
- * Three sections:
+ * Two sections:
  *  - CONTROL PAGE: the server's address and a Show QR button, so a phone can reach the page by
  *    scanning instead of typing. Follows [ControlServerStatus] live; the code encodes the plain
  *    URL only, never the password (the page asks for that itself).
@@ -31,9 +30,8 @@ import com.google.android.material.button.MaterialButton
  *    ([ControlSettings.requiredPassword] would enforce nothing, so the UI refuses the state
  *    rather than pretend): enabling with no password detours through the set-password dialog,
  *    and cancelling that reverts the switch.
- *  - ANNOUNCEMENTS: the voice quality and the announcement voice (moved here from the DLNA tab
- *    — announcements are a control-page capability, and no longer need the DLNA player running
- *    at all). Quality comes first because it decides which voices there are to pick from.
+ *
+ * The announcement voice lives in its own tab next to this one ([VoiceSettingsPanel]).
  */
 class RemoteControlSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanelProvider {
 
@@ -176,83 +174,7 @@ class RemoteControlSettingsPanel(private val ctx: SettingsPanelContext) : Settin
 
         changePassword.setOnClickListener { openPasswordDialog() }
 
-        // -- announcement voice ---------------------------------------------------------------
-        // The one voices row: quality lives INSIDE the picker card as filter chips over the
-        // catalog, so the panel no longer owns a tier row or dialog of its own.
-
-        val voiceValue = panel.findViewById<TextView>(R.id.tvTtsVoiceValue)
-        val changeVoice = panel.findViewById<MaterialButton>(R.id.btnChangeTtsVoice)
-        // Labelling and persistence live in the model, shared with the control routes.
-        fun repaintVoice(model: TtsVoicePickerModel) { voiceValue.text = model.rowValue() }
-        repaintVoice(TtsVoicePickerModel(activity, engine = null))
-
-        // No "start the DLNA player to hear these" hint any more: the control service voices
-        // announcements through a pipeline of its own when the media renderer is stopped, so the
-        // only thing that can silence them is having no voice, which the picker says itself.
-
-        // The engine spun up for enumeration; alive only from a SUCCESSFUL init to picker
-        // dismissal (or panel teardown, whichever comes first — the cleanup lambda below covers
-        // a dialog outliving the tab). While init is pending the button itself is disabled, so
-        // that state needs no extra flag.
-        var voiceEngine: TextToSpeech? = null
-        fun shutdownVoiceEngine() {
-            voiceEngine?.let { runCatching { it.shutdown() } }
-            voiceEngine = null
-        }
-        var pickerOpen = false
-
-        changeVoice.setOnClickListener {
-            if (pickerOpen) return@setOnClickListener   // picker already up
-            changeVoice.isEnabled = false
-
-            // Some engines deliver onInit SYNCHRONOUSLY from the constructor (notably the
-            // immediate ERROR when no engine is installed) — before `engine` below is assigned.
-            // The handoff runs the shared handler either from the callback (async init, engine
-            // already set) or right after the constructor (sync init, status parked in
-            // pendingStatus); `handled` makes a double arrival harmless.
-            var engine: TextToSpeech? = null
-            var pendingStatus: Int? = null
-            var handled = false
-
-            fun handleInit(status: Int) {
-                if (handled) return
-                handled = true
-                changeVoice.isEnabled = true
-                // A failed init is NOT a dead end: plenty of devices ship no TTS engine at all,
-                // and neither the default row nor a downloaded Piper voice needs one. The picker
-                // opens with whatever this device really has — system voices only when an engine
-                // answered — and the card itself says why the system list is missing.
-                val e = engine?.takeIf { status == TextToSpeech.SUCCESS }
-                if (e == null) engine?.let { runCatching { it.shutdown() } }
-                // A late async init can outlive the settings dialog; showing a Dialog over a
-                // finishing Activity is a BadTokenException.
-                if (activity.isFinishing || activity.isDestroyed) {
-                    e?.let { runCatching { it.shutdown() } }
-                    return
-                }
-                voiceEngine = e
-                pickerOpen = true
-                val model = TtsVoicePickerModel(activity, e)
-                TtsVoicePickerDialog(activity, model) { repaintVoice(model) }
-                    .show(onDismissed = {
-                        pickerOpen = false
-                        shutdownVoiceEngine()
-                    })
-            }
-
-            engine = TextToSpeech(activity) { status ->
-                // Init callbacks can arrive on a binder thread on some engines.
-                activity.runOnUiThread {
-                    if (engine == null) pendingStatus = status else handleInit(status)
-                }
-            }
-            pendingStatus?.let { handleInit(it) }
-        }
-
-        return {
-            ControlServerStatus.removeListener(serverListener)
-            shutdownVoiceEngine()
-        }
+        return { ControlServerStatus.removeListener(serverListener) }
     }
 
     private companion object {

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the control page asked the device to say, shown while it is saying it. Included by both
+     activities (see AnnouncementCard); never focusable and never clickable — it comes and goes with
+     the speech, so a D-pad user is never left chasing it around the screen.
+
+     wrap_content, not a fixed fraction: a short announcement gets a small card, and the TextView's
+     maxWidth is what stops a long one running the full width of an Echo Show. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/announcementCard"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_announcement_card"
+    android:clickable="false"
+    android:elevation="8dp"
+    android:focusable="false"
+    android:gravity="top"
+    android:orientation="horizontal"
+    android:paddingStart="18dp"
+    android:paddingTop="16dp"
+    android:paddingEnd="20dp"
+    android:paddingBottom="16dp"
+    android:visibility="gone">
+
+    <ImageView
+        android:id="@+id/ivAnnouncementGlyph"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginTop="1dp"
+        android:focusable="false"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_announce"
+        android:tint="@color/accent_fallback" />
+
+    <TextView
+        android:id="@+id/tvAnnouncement"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:focusable="false"
+        android:fontFamily="@font/hanken_medium"
+        android:lineSpacingMultiplier="1.15"
+        android:maxLines="6"
+        android:maxWidth="460dp"
+        android:textColor="@color/ink"
+        android:textSize="20sp" />
+
+</LinearLayout>

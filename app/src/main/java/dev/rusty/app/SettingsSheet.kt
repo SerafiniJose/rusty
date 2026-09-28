@@ -22,7 +22,8 @@ import com.google.android.material.tabs.TabLayout
 
 /**
  * The shell-owned tabbed settings card
- * (General · Screensaver · Slideshow · DLNA Player · Spotify · Home Assistant · Cameras).
+ * (General · Screensaver · Slideshow · Remote Control · Voice · DLNA Player · Spotify ·
+ * Home Assistant · Cameras).
  *
  * Replaces the old flat per-feature sheet. The shell ([HomeActivity]) opens this and lands it on
  * the active feature's tab; each tab inflates its own panel layout and binds the controls that used
@@ -49,6 +50,7 @@ object SettingsSheet {
         SettingsTabKey.SCREENSAVER -> Tab(key, "Screensaver", R.drawable.ic_mdi_weather_night, R.layout.settings_panel_screensaver)
         SettingsTabKey.SLIDESHOW -> Tab(key, "Slideshow", R.drawable.ic_mdi_image, R.layout.settings_panel_slideshow)
         SettingsTabKey.REMOTE_CONTROL -> Tab(key, "Remote Control", R.drawable.ic_mdi_remote, R.layout.settings_panel_remote_control)
+        SettingsTabKey.VOICE -> Tab(key, "Voice", R.drawable.ic_mdi_microphone, R.layout.settings_panel_voice)
         SettingsTabKey.DLNA_PLAYER -> Tab(key, "DLNA Player", R.drawable.ic_mdi_dlna, R.layout.settings_panel_dlna_player)
         SettingsTabKey.SPOTIFY -> Tab(key, "Spotify", R.drawable.ic_music_note, R.layout.settings_panel_spotify)
         SettingsTabKey.HOME_ASSISTANT -> Tab(key, "Home Assistant", R.drawable.ic_mdi_home_assistant, R.layout.settings_panel_home_assistant)
@@ -112,6 +114,7 @@ object SettingsSheet {
                 SettingsTabKey.CAMERA -> CameraFeature.settingsPanel(panelCtx)
                 SettingsTabKey.DLNA_PLAYER -> DlnaPlayerSettingsPanel(panelCtx)
                 SettingsTabKey.REMOTE_CONTROL -> RemoteControlSettingsPanel(panelCtx)
+                SettingsTabKey.VOICE -> VoiceSettingsPanel(panelCtx)
                 SettingsTabKey.SLIDESHOW -> SlideshowSettingsPanel(panelCtx)
                 SettingsTabKey.GENERAL, SettingsTabKey.SCREENSAVER -> null
             }
@@ -325,7 +328,7 @@ object SettingsSheet {
             // for the app to be backgrounded and reopened.
             CameraShareService.syncFromPrefs(activity)
             refreshBrightnessPermissionUi()
-            // The Remote Control settings tab exists exactly while the API does.
+            // The Remote Control and Voice settings tabs exist exactly while the API does.
             onFeatureTabsChanged()
         }
         val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->

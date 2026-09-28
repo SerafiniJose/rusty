@@ -10,7 +10,7 @@ import android.speech.tts.TextToSpeech
  * about what is installed, selected or downloading.
  *
  * [engine] is null on a device with NO system TTS engine installed at all — a normal state, not
- * a failure: it only means [TtsVoices.pickerRows] gets an empty system list. The default row and
+ * a failure: it only means the picker gets an empty system list. The default row and
  * every downloaded Piper voice stay selectable, and Piper announcements never touch
  * [TextToSpeech].
  */
@@ -26,11 +26,23 @@ class TtsVoicePickerModel(
     /** True when a system engine answered init, i.e. when "System default" can actually speak. */
     val hasSystemEngine: Boolean get() = engine != null
 
-    /** Re-read on every call: a download completing mid-dialog adds a row. */
-    fun rows(): List<VoiceInfo> = TtsVoices.pickerRows(
-        piper = store.installedRows(catalog),
-        system = engine?.let { SystemTtsVoices.list(it) } ?: emptyList(),
-    )
+    /** Enumerated once: an engine's voice list does not change while the picker is open, and
+     *  Google's runs to hundreds of entries. */
+    private val systemVoices: List<VoiceInfo> by lazy {
+        engine?.let { SystemTtsVoices.list(it) } ?: emptyList()
+    }
+
+    /** The top list. Re-read on every call: a download completing mid-dialog adds a row. */
+    fun rows(): List<VoiceInfo> =
+        TtsVoices.pickerTopRows(store.installedRows(catalog), systemVoices, selectedId())
+
+    /** The system engine's voices, listed under the picker's System chip. */
+    fun systemRows(): List<VoiceInfo> = TtsVoices.systemCategoryRows(systemVoices, selectedId())
+
+    /** The engine's own name (e.g. "Speech Services by Google"), or null when unknown. */
+    fun systemEngineLabel(): String? = engine?.let { e ->
+        runCatching { e.engines.firstOrNull { it.name == e.defaultEngine }?.label }.getOrNull()
+    }
 
     /** The downloadable catalog with live installed flags, the page's `catalog` member exactly. */
     fun catalogEntries(): List<ControlCatalogVoice> =

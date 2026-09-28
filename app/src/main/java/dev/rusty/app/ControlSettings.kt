@@ -15,6 +15,9 @@ object ControlSettings {
     const val KEY_AUTH_REQUIRED = "control_auth_required"
     /** [SecretStore] entry holding the API password — encrypted storage, like every credential. */
     const val SECRET_PASSWORD = "control_api_password"
+    /** Whether an announcement's words are shown on screen while it is spoken (the Voice tab's
+     *  "Show on screen"). Only the card: the announcement is voiced either way. */
+    const val KEY_ANNOUNCEMENT_CARD = "announcement_card_enabled"
     const val PORT = 8765
 
     fun isEnabled(prefs: SharedPreferences) = prefs.getBoolean(KEY_ENABLED, false)
@@ -24,6 +27,11 @@ object ControlSettings {
     fun isAuthRequired(prefs: SharedPreferences) = prefs.getBoolean(KEY_AUTH_REQUIRED, false)
     fun setAuthRequired(prefs: SharedPreferences, required: Boolean) =
         prefs.edit().putBoolean(KEY_AUTH_REQUIRED, required).apply()
+
+    /** On unless turned off — installs from before the switch existed already show the card. */
+    fun isAnnouncementCardEnabled(prefs: SharedPreferences) = prefs.getBoolean(KEY_ANNOUNCEMENT_CARD, true)
+    fun setAnnouncementCardEnabled(prefs: SharedPreferences, enabled: Boolean) =
+        prefs.edit().putBoolean(KEY_ANNOUNCEMENT_CARD, enabled).apply()
 
     /**
      * The password every `/api/...` request must present, or null when the gate is off.

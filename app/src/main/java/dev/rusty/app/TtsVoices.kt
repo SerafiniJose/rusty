@@ -215,6 +215,27 @@ object TtsVoices {
         listOf(defaultRow()) + piper + system
 
     /**
+     * The on-device picker's top list. Unlike [pickerRows] (the page's wire list), a system
+     * engine's voices move under a System chip of their own: Google's engine alone lists ~470
+     * voices, which put the downloadable catalog hundreds of D-pad presses away on a TV. The
+     * selected system voice stays up here, because a picker must never hide the current choice.
+     */
+    fun pickerTopRows(piper: List<VoiceInfo>, system: List<VoiceInfo>, selectedId: String): List<VoiceInfo> =
+        listOf(defaultRow()) + piper + system.filter { it.id == selectedId }
+
+    /**
+     * What the System chip lists: voices that can speak right away first, so a remote reaches
+     * them soonest, otherwise the engine's own order. The selected voice is left out; it is
+     * already a row on top, and listing it twice would read as two different voices.
+     */
+    fun systemCategoryRows(system: List<VoiceInfo>, selectedId: String): List<VoiceInfo> =
+        system.filter { it.id != selectedId }.sortedBy { !it.installed }
+
+    /** The hint under the chips while System is active: whose voices these are. */
+    fun systemCategoryHint(engineLabel: String?): String =
+        "Voices from ${engineLabel?.takeIf { it.isNotBlank() } ?: "the system speech engine"}"
+
+    /**
      * The settings row's one-line value now that the row is the ONLY entry point to voices:
      * the selection, plus how many voices are on disk — the count is what tells the user the
      * Manage card has content beyond the selection. Zero downloads is just the selection; the

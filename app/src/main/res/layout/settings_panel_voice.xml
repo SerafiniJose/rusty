@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Voice tab: what the device speaks with. Present in the tab strip exactly while the API toggle
+     in General is on (settingsTabsFor) — announcements only arrive through the control API. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Announcements -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/hanken_regular"
+        android:letterSpacing="0.12"
+        android:text="ANNOUNCEMENTS"
+        android:textAllCaps="true"
+        android:textColor="@color/muted_dim"
+        android:textSize="12sp" />
+
+    <!-- Show on screen: the announcement card that holds the words while they are spoken. On by
+         default; off silences only the card, never the voice. The label/switch row pattern of
+         Require password in the Remote Control tab. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Show on screen"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:text="Display the announced text while it is spoken"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchAnnouncementCard"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:contentDescription="Show announcements on screen"
+            android:foreground="@drawable/bg_tv_focus_switch"
+            android:minHeight="0dp"
+            android:theme="@style/ThemeOverlay.Rusty.SwitchNoHalo"
+            app:switchMinWidth="0dp"
+            app:thumbTint="@color/switch_thumb_tint"
+            app:trackTint="@color/switch_track_tint" />
+    </LinearLayout>
+
+    <!-- Announcement voice: the ONE voices row. Manage opens the card that holds everything —
+         the selectable voices, the quality tier (as filter chips over the catalog), and the
+         downloadable Piper catalog. The label sits in a weighted column so a narrow card never
+         squeezes it. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Announcement voice"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvTtsVoiceValue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_regular"
+                android:maxLines="2"
+                android:text="System default"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnChangeTtsVoice"
+            style="@style/Widget.Rusty.Button.Secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:foreground="@drawable/bg_tv_focus"
+            android:text="Manage" />
+    </LinearLayout>
+</LinearLayout>

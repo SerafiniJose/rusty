@@ -161,6 +161,19 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <!-- What the control page asked the device to say, while it is saying it. Declared after
+         screensaverOverlay so it draws over the saver too — an announcement arriving at night is
+         read there, and deliberately does NOT wake the screen. See AnnouncementCard. -->
+    <include
+        layout="@layout/view_announcement_card"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        app:layout_constrainedWidth="true"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <!-- "Someone is watching this camera": visible only while a camera-share viewer is attached.
          Declared last so it draws above the screensaver overlay. Never focusable. -->
     <ImageView
