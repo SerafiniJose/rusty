@@ -18,6 +18,9 @@ URL and never the password; the page asks for that itself. Either way you get a 
   is lit, a strip of your cameras: tap one to show it full screen on the device, or **Grid** to
   go back to the wall. With the password on, the API also serves each camera's latest still at
   `/api/camera/<id>/snapshot`.
+- **Dashboard on screen** — while the Home lamp is lit, a strip of the dashboards on the device's
+  own chip bar, the one on screen highlighted: tap one to put it up. Like the chip bar, it only
+  appears with two or more dashboards.
 - **Camera share** — on a device that can share its own camera, a card to switch the share on or
   off, the lens and quality chips, and the `rtsp://` URL with a copy button for pasting into VLC
   or Home Assistant. Devices without a camera don't show the card at all. Starting the share
@@ -28,9 +31,9 @@ URL and never the password; the page asks for that itself. Either way you get a 
   panel. Both directions need Rusty to hold Android's **"Display over other apps"** permission —
   and the switch is deliberately dead in *both* directions without it, because sending Rusty away
   when it can't come back would leave a touch-free screen with no way home.
-- **Lock screen theme** — pick Clock, OLED, Canvas or Slideshow. This one works even when Rusty
-  isn't in the foreground, because it's a saved preference: a lock screen that appears later
-  uses it, and one that's already up swaps instantly.
+- **Lock screen theme** — while the Lock lamp is lit, pick Clock, OLED, Canvas or Slideshow. This
+  one works even when Rusty isn't in the foreground, because it's a saved preference: a lock
+  screen that appears later uses it, and one that's already up swaps instantly.
 - **Screen** — on/off and a brightness slab you can drag anywhere on. "Off" is a full-screen
   black overlay that keeps the panel awake, so turning it back on is instant; touching the device
   (or pressing any remote key) also wakes it.
@@ -39,18 +42,38 @@ URL and never the password; the page asks for that itself. Either way you get a 
 - **Announce** — type a message and the device says it out loud, in the voice picked from the
   same list as **Settings → Voice** (downloadable voices included). Spotify pauses or
   fades while it speaks and resumes afterwards. Nothing else has to be running for this: no DLNA
-  player, no Home Assistant — Rusty does the speaking itself.
+  player, no Home Assistant — Rusty does the speaking itself. The text also shows in a card at
+  the top of the device's screen for as long as it is spoken; **Settings → Voice → Show on
+  screen** turns the card off and leaves the voice alone.
 - **Slideshow sources** — the same album / person / tag checklists as the in-app picker, so you
   can re-aim the photo frame from the sofa. Collapsed under **Service**, since it's a setup task
   rather than something you do daily.
-- **Software** — see whether a newer Rusty release exists and start the download from your sofa,
-  also under **Service**. The device fetches the APK itself and hands it to Android's installer;
+- **Software** — see whether a newer Rusty release exists, read what's new in it section by
+  section, and start the download from your sofa, also under **Service**. The device checks
+  GitHub once a day on its own; **Check now** asks straight away. The device fetches the APK itself and hands it to Android's installer;
   **Android always asks for confirmation on the device screen** (a sideloaded app can't update
   itself silently), so the last step is one OK on the device — by touch or D-pad. The very first
   time, Android also shows a one-time **"allow installs from this source"** screen for Rusty.
 
 The port is fixed at **8765**. Nothing needs to be installed on the other device — it's one
 self-contained page, no accounts, no cloud.
+
+Everything the page does goes through the JSON API, so scripts and Home Assistant automations
+can do the same. A few calls that have no button of their own, or are handy from an automation:
+
+- `GET /api/state` — what the device is showing, the Spotify track's `elapsedMs` and `durationMs`,
+  and under `panel.homeAssistant` the chip-bar dashboards and the active one.
+- `POST /api/seek` with `{"positionMs": 60000}` — seek the playing Spotify track (409 when
+  nothing is loaded).
+- `POST /api/home_assistant/dashboard` with `{"path": "…"}` — switch to Home Assistant and put
+  that dashboard up, clearing the lock screen if needed. Only dashboards on the device's chip
+  bar are accepted.
+- `POST /api/lockscreen` with `{"theme": …}` — set the lock screen theme, whatever source is
+  showing; `/api/state` lists the valid names under `panel.lockscreen.themes`.
+- `POST /api/update/check` — check GitHub for a new release now.
+
+Writes need `Content-Type: application/json`, and `Authorization: Bearer <password>` once a
+password is set (see [Security](#security--please-read-before-enabling)).
 
 ## The "Allow system brightness" row
 

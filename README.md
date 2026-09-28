@@ -47,7 +47,7 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 > the track, artist, listener and lyrics are placeholders — no copyrighted content. The Home
 > Assistant shot uses the public Home Assistant demo. The Cameras shot shows four illustrated test
 > scenes served from a laptop, not real cameras, and the control page shots were taken in a browser
-> against a tablet running Rusty with those same test cameras.
+> against a tablet running Rusty.
 
 ---
 
@@ -61,14 +61,16 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
   [librespot](https://github.com/librespot-org/librespot) (Rust) and played through Android's
   own `AudioTrack` with a deep ~1 s buffer, at up to 320 kbps. Android routes the output, so
   sound follows a Bluetooth speaker connected or dropped mid-track, and pause is instant.
-- **Crossfade** — optional 1–12 s overlap between tracks, at the end of a track and on a skip,
-  like the Spotify app's own setting. 4 s by default; slide it to Off for gapless playback.
-  Changes apply to the session that is playing, from its next track change. As in the official
-  client, the now-playing screen, the Home Assistant `media_player` and the remote-control page
-  move to the next track when the fade starts, not when the old track has fully faded out.
+- **Crossfade** — a 1–12 s overlap between tracks, at the end of a track and on a skip, like the
+  Spotify app's own setting. 4 s by default; slide it to Off for gapless playback. Changes apply
+  to the session that is playing, from its next track change. The now-playing screen and the
+  Canvas video dissolve across the fade, and as in the official client, the screen, the Home
+  Assistant `media_player` and the remote-control page move to the next track when the fade
+  starts, not when the old track has fully faded out.
 - **Ambient now-playing screen** — album-art colour wash, drifting mesh background, accent-aware
   theming, and time-aligned **lyrics** that scroll with the track, active line highlighted.
-  Optionally the track's looping **Spotify Canvas** video in place of static art.
+  Optionally the track's looping **Spotify Canvas** video in place of static art. Drag the
+  progress bar to seek, or focus it and step through the track with a remote.
 - **Playback takeover** — when a phone or laptop starts playing on this receiver, Rusty can wake
   the screen and bring itself to the front. Both toggles off by default. See
   [Playback takeover](docs/remote-control.md#playback-takeover).
@@ -86,12 +88,15 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 
 - **Home Assistant dashboard** — sign in and Rusty shows your dashboards full-screen and
   kiosk-style, with switcher chips to jump between them and chrome tinted to your theme. It
-  discovers your dashboards and sidebar apps itself.
+  discovers your dashboards and sidebar apps itself, and the control page can put any of them
+  on screen from another room.
 - **Home Assistant media renderer** — Rusty appears as a DLNA `media_player` entity with nothing
   to install on the HA side. Stream internet radio to it, or drive it from automations, scripts
   and dashboard cards.
 - **Spoken announcements** — type a message on the control page or send one from a Home Assistant
-  automation and the device says it out loud, in a downloadable neural voice.  Spotify pauses or fades while it speaks and resumes afterwards.
+  automation and the device says it out loud, in a downloadable neural voice. Spotify pauses or
+  fades while it speaks and resumes afterwards, and a typed message also shows on screen for as
+  long as it is spoken.
 - **Cameras** — a wall of your RTSP cameras as snapshot tiles that refresh on a timer, and a tap
   or OK away a full-screen live view with sound, a sub/main switch and a snapshot button. Add
   them by ONVIF scan, by address or by hand. A Rusty with its own camera can share it to the
@@ -104,19 +109,20 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
   screen on/off, speak a message, and re-aim the Slideshow — from a phone in another room. Scan
   a QR code to open it. See [Remote control](docs/remote-control.md).
 - **Services & status** — one page showing every service and feature at a glance, each with its
-  state, name and address, reachable from the info button on any screen.
+  state, name and address, reachable from the info button on any screen. The chip at its top
+  shows the version, and turns green when an update is out.
 - **Made to sit on a shelf** — start on boot, keep the screen on, hide the system bars, rename
-  the receiver live without a restart, update itself from **About & updates** or from another
-  room, an on-screen launcher between Spotify, Home Assistant and the screensaver, and settings
+  the receiver live without a restart, a green dot on the info button when a new release is out
+  and an update from **About & updates** or from another room, an on-screen launcher between Spotify, Home Assistant and the screensaver, and settings
   tabbed per feature.
 
 ## Install
 
 1. Go to the [**Releases**](https://github.com/SerafiniJose/rusty/releases/latest) page.
-2. Download the `.apk` for the latest release (e.g. `rusty-v2.0.0.apk`).
+2. Download the `.apk` for the latest release (e.g. `rusty-v2.8.0.apk`).
 3. Sideload it onto your device:
    ```bash
-   adb install -r rusty-v2.0.0.apk
+   adb install -r rusty-v2.8.0.apk
    ```
    (Or enable "Install unknown apps" and open the APK directly on the device.)
 4. Launch the app — it begins advertising as a Connect target right away.
