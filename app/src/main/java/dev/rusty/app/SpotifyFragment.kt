@@ -1,12 +1,20 @@
 package dev.rusty.app
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.TransitionDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -17,6 +25,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.view.animation.LinearInterpolator
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
@@ -54,6 +63,8 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     // Ambient / idle
     private lateinit var meshView: AmbientMeshView
     private lateinit var washImage: ImageView
+    /** Darkens the background layers through a dissolve; nothing else ever touches its alpha. */
+    private lateinit var transitionDim: View
     private lateinit var scrimView: View
     private lateinit var clockText: TextView
     private lateinit var idleGroup: View
@@ -83,6 +94,8 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     // Canvas
     private lateinit var canvasPlayer: CanvasPlayerView
     private var canvasController: CanvasController? = null
+    /** Drives the Canvas layer through a track transition; shared with the lockscreen theme. */
+    private var canvasLayer: CanvasLayer? = null
     private var canvasActive = false
     // True while the screensaver overlay covers us. The fragment stays RESUMED underneath it, so
     // without this both this view and the saver's CanvasTheme would hold a video codec at once.
@@ -101,6 +114,22 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     private var dashboardState = ReceiverDashboardState.waiting(DEFAULT_DEVICE_NAME)
     private var loadedCoverUrl: String? = null
     private var artworkRequestId = 0
+
+    // ---- The on-screen crossfade (see TrackTransition) ------------------------------------
+    /** The incoming track's cover, stacked over [albumArtImage] and faded up by the dissolve. */
+    private lateinit var albumArtIncoming: ImageView
+    private var dissolve: ValueAnimator? = null
+    private val accentBlend = ArgbEvaluator()
+    /** True while a dissolve owns the title/artist: renders park the new track's words in
+     *  [heldWords] instead of writing them, and the dissolve swaps them at its midpoint. */
+    private var wordsHeld = false
+    private var heldWords: Pair<String, String>? = null
+    /** The incoming cover's colours, applied at the midpoint of the dissolve or the instant it is
+     *  landed early — so an interrupted dissolve still leaves the new track's palette on screen. */
+    private var pendingAccent: Int? = null
+    private var pendingWash: Bitmap? = null
+    /** Backstop: a cover load that never completes must not keep the outgoing words on screen. */
+    private val wordHoldDeadline = Runnable { releaseWords() }
 
     private var firstRender = true
 
@@ -172,6 +201,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         // Center-crop so the (vertical) Canvas loop fills the square album-art card completely in
         // both orientations — landscape used to FIT, which pillarboxed the 9:16 video inside the card.
         canvasPlayer.setFill(true)
+        canvasLayer = CanvasLayer(canvasPlayer)
 
         val activity = requireActivity() as HomeActivity
         canvasController = CanvasController(
@@ -216,6 +246,8 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     }
 
     override fun onDestroyView() {
+        // Lands any dissolve first: it holds the words and a half-faded cover in THIS view.
+        landDissolve()
         albumArtImage.dispose()
         artworkRequestId++
         // These caches describe what's currently rendered into THIS view's widgets, but the fragment
@@ -229,7 +261,8 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         scrub.reset()
         canvasController?.stop()
         canvasController = null
-        canvasPlayer.animate().cancel()
+        canvasLayer?.reset()
+        canvasLayer = null
         canvasPlayer.release()
         canvasActive = false
         super.onDestroyView()
@@ -260,11 +293,11 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         if (canvasCovered == covered) return
         canvasCovered = covered
         if (covered) {
+            // Nothing of ours is visible under the saver; land the dissolve on its final frame.
+            landDissolve()
             canvasController?.stop()
             if (::canvasPlayer.isInitialized) {
-                canvasPlayer.animate().cancel()
-                canvasPlayer.alpha = 0f
-                canvasPlayer.visibility = View.GONE
+                canvasLayer?.reset()
                 canvasPlayer.release()
             }
             canvasActive = false
@@ -276,28 +309,17 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         }
     }
 
+    /**
+     * Hands the resolver's state to [CanvasLayer] on the dissolve's own window, so the video is part
+     * of the crossfade instead of being torn down before it: the outgoing loop is held and dipped
+     * while the next URL resolves, swapped at the bottom of the dip, and brought back up. A track
+     * with no Canvas fades the loop out over the same window, into the cover that is dissolving
+     * underneath it.
+     */
     private fun renderCanvas(state: CanvasState) {
         if (view == null) return
-        when (state) {
-            is CanvasState.Found -> {
-                canvasPlayer.play(state.url)
-                if (!canvasActive) {
-                    canvasActive = true
-                    canvasPlayer.visibility = View.VISIBLE
-                    canvasPlayer.animate().alpha(1f).setDuration(300L).start()
-                }
-            }
-            CanvasState.Loading, CanvasState.None -> hideCanvas()
-        }
-    }
-
-    private fun hideCanvas() {
-        if (!canvasActive) return
-        canvasActive = false
-        canvasPlayer.animate().alpha(0f).setDuration(300L).withEndAction {
-            canvasPlayer.visibility = View.GONE
-            canvasPlayer.clear()
-        }.start()
+        canvasLayer?.apply(state, TrackTransition.durationMs(shell.currentCrossfadeSeconds))
+        canvasActive = canvasLayer?.isShowing == true
     }
 
     /** Called by the shell after it changes receiver state (start/stop/rename) so this renderer
@@ -332,6 +354,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
 
         meshView = view.findViewById(R.id.viewAmbientMesh)
         washImage = view.findViewById(R.id.ivWash)
+        transitionDim = view.findViewById(R.id.viewTransitionDim)
         scrimView = view.findViewById(R.id.viewScrim)
         // The clock is shell-owned now (it floats above every feature); the fragment only animates it
         // via its BloomController for the morph's lifetime.
@@ -349,6 +372,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         albumArtCard = view.findViewById(R.id.albumArtCard)
         playingInfo = view.findViewById(R.id.playingInfo)
         albumArtImage = view.findViewById(R.id.ivFullAlbumArt)
+        albumArtIncoming = view.findViewById(R.id.ivFullAlbumArtIncoming)
         albumGlyphText = view.findViewById(R.id.tvFullAlbumGlyph)
 
         prevButton = view.findViewById(R.id.btnPrev)
@@ -482,8 +506,6 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         deviceName = state.receiverName
 
         statusName.text = state.receiverName
-        titleText.text = state.trackTitle
-        artistText.text = state.trackArtist
         durationText.text = state.durationLabel
 
         val visual = state.visualState()
@@ -502,6 +524,8 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         )
         renderControlsEnabled(state)
         renderAlbumArt(state)
+        // After renderAlbumArt, which is what arms the word hold when a dissolve starts.
+        renderTrackWords(state)
         renderProgress(state, anchorGeneration)
         schedulePlaybackClockTick(state)
         rootView.keepScreenOn = state.isPlaybackClockRunning
@@ -556,11 +580,19 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         }
     }
 
-    /** Loads cover art (Coil), then derives the accent + wash via ArtworkProcessor. */
+    /**
+     * Loads cover art (Coil), then derives the accent + wash via ArtworkProcessor.
+     *
+     * A cover that replaces one already on screen dissolves over it instead of cutting: the load
+     * goes into [albumArtIncoming] and [startDissolve] runs the blend once the palette is known.
+     */
     private fun renderAlbumArt(state: ReceiverDashboardState) {
         val url = state.coverArtUrl
         if (url == loadedCoverUrl) return
         loadedCoverUrl = url
+        // Two boundaries in quick succession (skip, skip): land the dissolve in flight first, so
+        // its cover is the one the next dissolve fades over.
+        landDissolve()
 
         if (url.isNullOrBlank()) {
             albumArtImage.setImageDrawable(null)
@@ -570,31 +602,164 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
             return
         }
 
+        val dissolving = TrackTransition.shouldDissolve(
+            hasOutgoingArt = albumArtImage.drawable != null,
+            isActive = state.visualState() == VisualState.ACTIVE,
+        )
+        // From here the words on screen belong to the OUTGOING track until the dissolve's midpoint,
+        // but never past the deadline: a cover that never loads must not hold them forever.
+        wordsHeld = dissolving
+        if (dissolving) {
+            handler.postDelayed(
+                wordHoldDeadline,
+                TrackTransition.wordsLandByMs(shell.currentCrossfadeSeconds),
+            )
+        }
+        val target = if (dissolving) albumArtIncoming else albumArtImage
+
         val req = ++artworkRequestId
-        albumArtImage.load(url) {
-            crossfade(true)
+        target.load(url) {
+            // Coil's own fade would race ours; when we dissolve, the dissolve owns the fade.
+            crossfade(!dissolving)
             allowHardware(false)
             listener(
                 onError = { _, _ ->
                     albumGlyphText.visibility = View.VISIBLE
                     washImage.setImageDrawable(null)
                     applyAccent(DEFAULT_ACCENT)
+                    // No incoming cover to blend into: the new track's words go on now.
+                    landDissolve()
                 },
                 onSuccess = { _, result ->
                     albumGlyphText.visibility = View.GONE
-                    val bitmap = (result.drawable as? BitmapDrawable)?.bitmap ?: return@listener
+                    val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
+                    if (bitmap == null) {
+                        // Unreadable cover — never leave the words parked on the old track.
+                        landDissolve()
+                        return@listener
+                    }
                     // Palette runs its pixel histogram on a worker thread and calls back on the
                     // main thread; the remaining accent math + 48px downscale are cheap to apply here.
                     Palette.from(bitmap).generate { palette ->
                         if (req != artworkRequestId) return@generate
                         if (view == null || viewLifecycleOwner.lifecycle.currentState < Lifecycle.State.STARTED) return@generate
                         val artwork = ArtworkProcessor.fromPalette(palette, bitmap, DEFAULT_ACCENT)
-                        washImage.setImageBitmap(artwork.wash)
-                        applyAccent(artwork.accent)
+                        if (dissolving) {
+                            startDissolve(artwork)
+                        } else {
+                            washImage.setImageBitmap(artwork.wash)
+                            applyAccent(artwork.accent)
+                        }
                     }
                 }
             )
         }
+    }
+
+    /** The title/artist pair — or, while a dissolve owns them, the words it will swap in at its
+     *  midpoint. Called after [renderAlbumArt], which is what arms the hold. */
+    private fun renderTrackWords(state: ReceiverDashboardState) {
+        if (wordsHeld) {
+            heldWords = state.trackTitle to state.trackArtist
+            return
+        }
+        titleText.text = state.trackTitle
+        artistText.text = state.trackArtist
+    }
+
+    /**
+     * The on-screen half of the crossfade, on one clock for exactly as long as the native player
+     * overlaps the two tracks: the incoming cover fades up over the outgoing one, the palette wash
+     * cross-fades under it, the accent tweens between the two covers' colours, and the title and
+     * artist trade over the middle third. See [TrackTransition] for the timings.
+     */
+    private fun startDissolve(artwork: Artwork) {
+        val duration = TrackTransition.durationMs(shell.currentCrossfadeSeconds)
+        val fromAccent = AccentHolder.accent
+        val toAccent = artwork.accent
+        pendingAccent = toAccent
+        pendingWash = artwork.wash
+
+        // The wash cross-fades at the DRAWABLE level, so the bloom keeps owning the view's own
+        // alpha (it fades the whole wash in and out on the idle⇄active edge).
+        val outgoingWash = washImage.drawable ?: ColorDrawable(Color.TRANSPARENT)
+        val washFade = TransitionDrawable(
+            arrayOf(outgoingWash, BitmapDrawable(resources, artwork.wash))
+        ).apply { isCrossFadeEnabled = true }
+        washImage.setImageDrawable(washFade)
+        washFade.startTransition(duration.toInt())
+
+        // The words are only ours to animate if the deadline has not already put them on screen.
+        val choreographWords = wordsHeld
+        albumArtIncoming.alpha = 0f
+        albumArtIncoming.visibility = View.VISIBLE
+        dissolve = ValueAnimator.ofFloat(0f, 1f).apply {
+            this.duration = duration
+            // The choreography lives in TrackTransition; the animator only supplies the clock.
+            interpolator = LinearInterpolator()
+            addUpdateListener { animator ->
+                val fraction = animator.animatedValue as Float
+                albumArtIncoming.alpha = TrackTransition.incomingAlpha(fraction)
+                transitionDim.alpha = TrackTransition.dimAlpha(fraction)
+                applyAccent(accentBlend.evaluate(fraction, fromAccent, toAccent) as Int)
+                if (!choreographWords) return@addUpdateListener
+                val wordAlpha = if (TrackTransition.wordsSwapped(fraction)) {
+                    releaseWords()
+                    TrackTransition.incomingWordAlpha(fraction)
+                } else {
+                    TrackTransition.outgoingWordAlpha(fraction)
+                }
+                titleText.alpha = wordAlpha
+                artistText.alpha = wordAlpha
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) = landDissolve()
+            })
+            start()
+        }
+    }
+
+    /**
+     * Lands the dissolve on its final frame: the incoming cover becomes the card's cover, the new
+     * track's words and colours are the ones on screen, and every animated alpha is back at rest.
+     * Idempotent, so it doubles as the cancel path — view teardown, the screensaver covering us, a
+     * second track boundary, a cover that failed to load.
+     */
+    private fun landDissolve() {
+        val running = dissolve
+        dissolve = null
+        running?.removeAllListeners()
+        running?.cancel()
+
+        if (!::albumArtIncoming.isInitialized) return
+        albumArtIncoming.dispose()
+        albumArtIncoming.drawable?.let { incoming ->
+            albumArtImage.setImageDrawable(incoming)
+            albumArtIncoming.setImageDrawable(null)
+        }
+        albumArtIncoming.alpha = 0f
+        albumArtIncoming.visibility = View.INVISIBLE
+        transitionDim.alpha = 0f
+
+        pendingWash?.let { washImage.setImageBitmap(it) }
+        pendingWash = null
+        pendingAccent?.let { applyAccent(it) }
+        pendingAccent = null
+
+        releaseWords()
+        titleText.alpha = 1f
+        artistText.alpha = 1f
+    }
+
+    /** The parked words belong to the incoming track from here on. */
+    private fun releaseWords() {
+        handler.removeCallbacks(wordHoldDeadline)
+        wordsHeld = false
+        heldWords?.let { (title, artist) ->
+            titleText.text = title
+            artistText.text = artist
+        }
+        heldWords = null
     }
 
     /** Tints the accent-driven chrome: progress fill, play button, eyebrow. */

@@ -74,6 +74,21 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <!-- Layer 5: the transition dim. Owned solely by the dissolve (TrackTransition.dimAlpha),
+         which arches it up and back down so the background darkens as the covers cross. It sits
+         above every background layer and below contentLayer, so the art card and the words keep
+         their brightness while the room behind them breathes. -->
+    <View
+        android:id="@+id/viewTransitionDim"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:alpha="0"
+        android:background="@color/bg_base"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <!-- Foreground content. The Activity pads THIS (system-bar insets + base margin), so the
          background layers above stay full-bleed to the window edges (no inset border). -->
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -189,6 +204,20 @@
                 android:background="@drawable/bg_album_art_placeholder"
                 android:contentDescription="Album art"
                 android:scaleType="centerCrop" />
+
+            <!-- The next track's cover, stacked over the current one and faded up by TrackTransition
+                 so a crossfade dissolves on screen too. No placeholder background: it must not
+                 show at rest. INVISIBLE, never GONE: Coil sizes its load from the view, and a
+                 GONE child is skipped by the parent's measure pass, so the request would hang
+                 on a pre-draw listener forever and the dissolve would never start. -->
+            <ImageView
+                android:id="@+id/ivFullAlbumArtIncoming"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:alpha="0"
+                android:contentDescription="@null"
+                android:scaleType="centerCrop"
+                android:visibility="invisible" />
 
             <TextView
                 android:id="@+id/tvFullAlbumGlyph"

@@ -34,6 +34,9 @@ class CanvasTheme : ScreensaverTheme {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var controller: CanvasController? = null
+    /** The same Canvas choreography the now-playing screen uses (hold, dip, swap, undip). */
+    private var canvasLayer: CanvasLayer? = null
+    private var prefs: android.content.SharedPreferences? = null
     private var canvasActive = false
     private var loadedWashUrl: String? = null
 
@@ -42,6 +45,8 @@ class CanvasTheme : ScreensaverTheme {
         wash = root.findViewById(R.id.ssCanvasWash)
         canvasPlayer = root.findViewById(R.id.ssCanvasPlayer)
         canvasPlayer.setFill(true)
+        canvasLayer = CanvasLayer(canvasPlayer)
+        prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         clock = root.findViewById(R.id.ssClock)
         date = root.findViewById(R.id.ssDate)
         status = root.findViewById(R.id.ssStatus)
@@ -89,27 +94,20 @@ class CanvasTheme : ScreensaverTheme {
         wash.load(url) { crossfade(true) }
     }
 
+    /**
+     * Canvas→Canvas on the lockscreen goes through the same [CanvasLayer] as the now-playing screen:
+     * the loop on screen is held and dipped while the next URL resolves instead of cutting to the
+     * wash and back, and the media item is swapped at the bottom of the dip. The window is the audio
+     * crossfade's, so the saver transitions with the music like everything else.
+     */
     private fun renderCanvas(state: CanvasState) {
-        when (state) {
-            is CanvasState.Found -> {
-                canvasPlayer.play(state.url)
-                if (!canvasActive) {
-                    canvasActive = true
-                    canvasPlayer.visibility = View.VISIBLE
-                    canvasPlayer.animate().alpha(1f).setDuration(300L).start()
-                }
-            }
-            CanvasState.Loading, CanvasState.None -> {
-                if (canvasActive) {
-                    canvasActive = false
-                    canvasPlayer.animate().alpha(0f).setDuration(300L).withEndAction {
-                        canvasPlayer.visibility = View.GONE
-                        canvasPlayer.clear()
-                    }.start()
-                }
-            }
-        }
+        canvasLayer?.apply(state, transitionMs())
+        canvasActive = canvasLayer?.isShowing == true
     }
+
+    /** The audio crossfade's length — the saver has no shell to ask, so it reads the same pref. */
+    private fun transitionMs(): Long =
+        TrackTransition.durationMs(prefs?.let { CrossfadeSettings.seconds(it) } ?: 0)
 
     override fun onShown() { controller?.start() }
 
@@ -120,7 +118,7 @@ class CanvasTheme : ScreensaverTheme {
 
     override fun onHidden() {
         controller?.stop()
-        canvasPlayer.animate().cancel()
+        canvasLayer?.reset()
         canvasPlayer.release()
         canvasActive = false
     }
@@ -131,4 +129,9 @@ class CanvasTheme : ScreensaverTheme {
     }
 
     override fun refreshLauncher() = launcher.refresh()
+
+    private companion object {
+        // Same store every other reader of the receiver's settings uses.
+        const val PREFS_NAME = "spotify_receiver_prefs"
+    }
 }

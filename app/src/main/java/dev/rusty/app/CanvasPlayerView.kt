@@ -1,7 +1,9 @@
 package dev.rusty.app
 
 import android.content.Context
+import android.graphics.Color
 import android.util.AttributeSet
+import android.view.View
 import android.widget.FrameLayout
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -23,15 +25,96 @@ class CanvasPlayerView @JvmOverloads constructor(
 ) : FrameLayout(context, attrs) {
 
     private var player: ExoPlayer? = null
+
+    /** The pending [onFirstFrame] watch: the media3 listener and its deadline, or null for none. */
+    private var firstFrameListener: Player.Listener? = null
+    private var firstFrameDeadline: Runnable? = null
+
     private val playerView = PlayerView(context).apply {
         useController = false
         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        // Transparent, so a loop arriving over the album art fades in rather than punching a black
+        // hole in the card while it loads. The dip's scrim is what covers the shutter at a swap.
         setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+    }
+
+    /**
+     * The dip's black scrim, over the video and under nothing. A Canvas layer always sits on top of
+     * the picture it replaces, so a track transition has to darken the loop in place; fading the
+     * view itself would dissolve into the album art behind it instead. See [CanvasSwap].
+     */
+    private val scrim = View(context).apply {
+        setBackgroundColor(Color.BLACK)
+        alpha = 0f
     }
 
     init {
         addView(playerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        addView(scrim, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
+
+    // ---- The two channels a transition moves (see CanvasLayer) --------------------------------
+    //
+    // `opacity` is the loop against the picture behind it: it is what a loop arriving over the album
+    // art fades up, and what a loop leaving fades down. `dim` is the loop against black, inside the
+    // view: it is what a track change rides. They are kept apart deliberately — dipping the opacity
+    // mid-transition uncovers the cover art the on-screen crossfade is dissolving at that instant.
+
+    /** How much of the loop shows against whatever is behind it: 0 = gone, 1 = fully covering. */
+    var opacity: Float
+        get() = alpha
+        set(value) {
+            animate().cancel()
+            val v = value.coerceIn(0f, 1f)
+            alpha = v
+            opacityTargetForTest = v
+        }
+
+    /** How black the loop is right now: 0 = untouched, 1 = nothing of it (or of the card) shows. */
+    var dim: Float
+        get() = scrim.alpha
+        set(value) {
+            scrim.animate().cancel()
+            val v = value.coerceIn(0f, CanvasSwap.DIM_FULL)
+            scrim.alpha = v
+            dimTargetForTest = v
+        }
+
+    /** Fade the loop to [target] over [durationMs], then run [onEnd]. Replaces any fade in flight. */
+    fun animateOpacity(target: Float, durationMs: Long, onEnd: (() -> Unit)? = null) {
+        val v = target.coerceIn(0f, 1f)
+        opacityTargetForTest = v
+        animate().cancel()
+        animate().alpha(v).setDuration(durationMs).withEndAction { onEnd?.invoke() }.start()
+    }
+
+    /** Ride the scrim to [target] over [durationMs], then run [onEnd]. Replaces any dim in flight. */
+    fun animateDim(target: Float, durationMs: Long, onEnd: (() -> Unit)? = null) {
+        val v = target.coerceIn(0f, CanvasSwap.DIM_FULL)
+        dimTargetForTest = v
+        scrim.animate().cancel()
+        scrim.animate().alpha(v).setDuration(durationMs).withEndAction { onEnd?.invoke() }.start()
+    }
+
+    /** Stop a fade in flight, leaving the loop wherever it is. */
+    fun cancelOpacity() {
+        animate().cancel()
+    }
+
+    /** Stop a dim in flight, leaving the scrim wherever it is. */
+    fun cancelDim() {
+        scrim.animate().cancel()
+    }
+
+    /**
+     * Instrumentation: where the last move on each channel was aimed. A ViewPropertyAnimator on a
+     * view that is not attached to a window does not run, so a test asserts the intent rather than
+     * waiting out a frame callback that may never come.
+     */
+    var opacityTargetForTest: Float = 0f
+        private set
+    var dimTargetForTest: Float = 0f
+        private set
 
     private fun ensurePlayer(): ExoPlayer {
         return player ?: buildPlayer().also {
@@ -72,6 +155,7 @@ class CanvasPlayerView @JvmOverloads constructor(
 
     /** Load [url], loop it muted, and start. Replaces any currently-playing loop. */
     fun play(url: String) {
+        cancelFirstFrame()
         val p = ensurePlayer()
         p.setMediaItem(MediaItem.fromUri(url))
         p.volume = 0f
@@ -80,8 +164,43 @@ class CanvasPlayerView @JvmOverloads constructor(
         p.playWhenReady = true
     }
 
+    /**
+     * Run [onReady] once the loop loaded by the most recent [play] has actually drawn a frame, or
+     * at [deadlineMs] from now if it never does. Exactly one of the two fires, on the main thread.
+     * A second call replaces the first; [cancelFirstFrame] drops it.
+     */
+    fun onFirstFrame(deadlineMs: Long, onReady: () -> Unit) {
+        cancelFirstFrame()
+        val p = player ?: run { onReady(); return }
+        var settled = false
+        val settle = {
+            if (!settled) {
+                settled = true
+                cancelFirstFrame()
+                onReady()
+            }
+        }
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() = settle()
+        }
+        firstFrameListener = listener
+        p.addListener(listener)
+        val deadline = Runnable { settle() }
+        firstFrameDeadline = deadline
+        postDelayed(deadline, deadlineMs)
+    }
+
+    /** Drop a pending [onFirstFrame] watch without running it. */
+    fun cancelFirstFrame() {
+        firstFrameListener?.let { player?.removeListener(it) }
+        firstFrameListener = null
+        firstFrameDeadline?.let { removeCallbacks(it) }
+        firstFrameDeadline = null
+    }
+
     /** Stop playback and detach media, keeping the player for reuse. */
     fun clear() {
+        cancelFirstFrame()
         player?.apply {
             playWhenReady = false
             clearMediaItems()
@@ -90,6 +209,7 @@ class CanvasPlayerView @JvmOverloads constructor(
 
     /** Release the ExoPlayer entirely (frees the codec). Safe to call repeatedly. */
     fun release() {
+        cancelFirstFrame()
         playerView.player = null
         player?.release()
         player = null
