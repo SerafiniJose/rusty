@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::{env, thread};
 use std::sync::{Arc, Mutex, Once, OnceLock};
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use std::time::Duration;
 use std::backtrace::Backtrace;
 use std::future::{self, Future};
@@ -142,6 +142,14 @@ static SESSION_HANDLE: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
 /// a session are safe no-ops.
 static DUCK_MIXER: OnceLock<Mutex<Option<Arc<DuckingMixer>>>> = OnceLock::new();
 
+/// Process-wide handle to the active session's `Player`, used by JNI (`setCrossfadeSeconds`) to
+/// change the crossfade on a session that is already playing. `Player::set_crossfade` is a
+/// non-blocking mpsc send, so it is safe from the Android UI thread. Set when a session connects
+/// (a clone of the `Arc` taken before the player moves into `Spirc::new`) and cleared on every
+/// teardown path: `Player::drop` joins the player thread, so an `Arc` that outlived its session
+/// would keep that thread alive past it.
+static PLAYER_HANDLE: OnceLock<Mutex<Option<Arc<Player>>>> = OnceLock::new();
+
 /// Process-wide Tokio runtime handle, set on each `startDevice`. Lets a JNI call made from
 /// outside the runtime (e.g. requestAccessToken) spawn an async task onto it.
 static RUNTIME_HANDLE: OnceLock<Mutex<Option<tokio::runtime::Handle>>> = OnceLock::new();
@@ -168,6 +176,24 @@ fn seek_position_from_jint(position_ms: jint) -> u32 {
     position_ms.max(0) as u32
 }
 
+/// Crossfade length in milliseconds (0 = gapless, librespot's default), capped at 12 s like the
+/// official client. Read when each session's `PlayerConfig` is built, and pushed onto the live
+/// player by `setCrossfadeSeconds` as well, so a change applies at the track boundary currently
+/// being approached — no receiver restart, no session cycle. Seeded by `SpotifyService` before
+/// `startDevice` and by `HomeActivity` on every start.
+static CROSSFADE_MS: AtomicU32 = AtomicU32::new(0);
+
+/// Longest crossfade the player honours; the same value as librespot-playback's `CROSSFADE_MAX`
+/// (upstream PR #1756), which clamps anything larger anyway.
+const CROSSFADE_MAX_SECONDS: i32 = 12;
+
+/// Maps the settings slider's whole seconds onto the player's `Duration`. Out-of-range input is
+/// clamped rather than rejected: this crosses a JNI boundary, and a wrong fade is a far smaller
+/// failure than a panic in the audio core.
+fn crossfade_from_seconds(seconds: i32) -> Duration {
+    Duration::from_secs(seconds.clamp(0, CROSSFADE_MAX_SECONDS) as u64)
+}
+
 /// Returns the process-wide receiver slot, initialising it on first use.
 fn receiver_slot() -> &'static Mutex<Option<ReceiverState>> {
     RECEIVER.get_or_init(|| Mutex::new(None))
@@ -186,6 +212,11 @@ fn session_slot() -> &'static Mutex<Option<Session>> {
 /// Returns the process-wide ducking-mixer slot, initialising it on first use.
 fn duck_slot() -> &'static Mutex<Option<Arc<DuckingMixer>>> {
     DUCK_MIXER.get_or_init(|| Mutex::new(None))
+}
+
+/// Returns the process-wide player-handle slot, initialising it on first use.
+fn player_slot() -> &'static Mutex<Option<Arc<Player>>> {
+    PLAYER_HANDLE.get_or_init(|| Mutex::new(None))
 }
 
 /// Returns the process-wide runtime-handle slot, initialising it on first use.
@@ -526,6 +557,11 @@ async fn start_discovery_loop(
                     Ok(discovery) => discovery,
                     Err(e) => {
                         error!("Failed to re-advertise discovery after rename: {:?}", e);
+                        // Leaving the loop for good: drop the session first so the
+                        // process-wide slots (PLAYER_HANDLE included) don't outlive it.
+                        if let Some(mut current) = active.take() {
+                            teardown_active_session(&mut current);
+                        }
                         return;
                     }
                 };
@@ -564,12 +600,18 @@ async fn start_discovery_loop(
                                 *spirc_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
                                 *session_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
                                 *duck_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
+                                *player_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
                                 active = None;
                             }
                         }
                     }
                     None => {
                         error!("Discovery stream ended unexpectedly");
+                        // Same as the shutdown arm: clear the slots before leaving the
+                        // loop, so PLAYER_HANDLE never keeps an Arc<Player> past its session.
+                        if let Some(mut current) = active.take() {
+                            teardown_active_session(&mut current);
+                        }
                         break;
                     }
                 }
@@ -622,11 +664,17 @@ async fn build_active_session(
     // (it calls session.connect(credentials, true)); connecting twice errors.
     let session = Session::new(session_config, None);
 
+    let crossfade = Duration::from_millis(u64::from(CROSSFADE_MS.load(Ordering::Relaxed)));
     let player_config = PlayerConfig {
         bitrate,
+        crossfade,
         ..PlayerConfig::default()
     };
-    info!("Player configured for bitrate {}kbps", bitrate_label(bitrate));
+    info!(
+        "Player configured for bitrate {}kbps, crossfade {}s",
+        bitrate_label(bitrate),
+        crossfade.as_secs()
+    );
 
     // Duck-aware wrapper around the soft mixer: Spirc volume changes and DLNA ducking
     // serialize behind one lock, and the Connect slider only ever sees the logical volume.
@@ -644,6 +692,11 @@ async fn build_active_session(
             Box::new(audio_sink::AudioTrackSink::new())
         },
     );
+
+    // Keep a handle so `setCrossfadeSeconds` can reach the live player; the Arc itself moves
+    // into Spirc::new below. Cleared in teardown_active_session and the discovery loop's
+    // error path — see PLAYER_HANDLE.
+    *player_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = Some(Arc::clone(&player));
 
     // 0.8: the event channel is pulled from the player (no longer returned by Player::new).
     let event_channel = player.get_player_event_channel();
@@ -705,6 +758,8 @@ fn teardown_active_session(active: &mut ActiveSession) {
     *session_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
     // Duck calls after the session ends become safe no-ops (the next session starts unducked).
     *duck_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
+    // Drop our clone so the player thread can end with the session (Player::drop joins it).
+    *player_slot().lock().unwrap_or_else(|poison| poison.into_inner()) = None;
 }
 
 /// Cached track metadata `(title, artist, duration_ms, cover_url)`.
@@ -1290,6 +1345,40 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_setStartupVolume(
     info!("Startup volume set to {}% (raw {})", percent.clamp(0, 100), raw);
 }
 
+/// Sets the crossfade between tracks (0..=12 whole seconds, 0 = gapless). Applied at once to a
+/// session that is playing — the player honours it at the next track boundary or manual skip —
+/// and remembered for every session after it. Before a session exists only the remembered part
+/// happens, so the call is always safe.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rusty_app_NativeBridge_setCrossfadeSeconds(
+    _env: JNIEnv,
+    _class: JClass,
+    seconds: jint,
+) {
+    let crossfade = crossfade_from_seconds(seconds);
+    CROSSFADE_MS.store(crossfade.as_millis() as u32, Ordering::Relaxed);
+    // Clone the Arc out and release the slot lock before talking to the player.
+    let live = player_slot()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .as_ref()
+        .cloned();
+    match live {
+        Some(player) => {
+            player.set_crossfade(crossfade);
+            info!("Crossfade set to {}s (applied to the live session)", crossfade.as_secs());
+            // Hand the clone to a detached thread to drop. If teardown raced us and this
+            // is the last Arc, `Player::drop` joins the player thread — which must never
+            // happen on the Android main thread that makes this JNI call (ANR).
+            thread::spawn(move || drop(player));
+        }
+        None => info!(
+            "Crossfade set to {}s (no active session; applies to the next one)",
+            crossfade.as_secs()
+        ),
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_rusty_app_NativeBridge_requestAccessToken(
     _env: JNIEnv,
@@ -1386,5 +1475,25 @@ mod seek_tests {
         assert_eq!(seek_position_from_jint(0), 0);
         assert_eq!(seek_position_from_jint(12_345), 12_345);
         assert_eq!(seek_position_from_jint(i32::MAX), i32::MAX as u32);
+    }
+}
+
+#[cfg(test)]
+mod crossfade_tests {
+    use super::crossfade_from_seconds;
+    use std::time::Duration;
+
+    #[test]
+    fn maps_whole_seconds() {
+        assert_eq!(crossfade_from_seconds(0), Duration::ZERO);
+        assert_eq!(crossfade_from_seconds(6), Duration::from_secs(6));
+        assert_eq!(crossfade_from_seconds(12), Duration::from_secs(12));
+    }
+
+    #[test]
+    fn clamps_out_of_range_input() {
+        // Crosses a JNI boundary: a bad value must never panic or exceed the player's 12 s cap.
+        assert_eq!(crossfade_from_seconds(-3), Duration::ZERO);
+        assert_eq!(crossfade_from_seconds(60), Duration::from_secs(12));
     }
 }

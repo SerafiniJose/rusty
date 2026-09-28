@@ -133,6 +133,10 @@ interface ShellHost {
     val currentBitrateKbps: Int
     val currentStartupVolumePercent: Int
 
+    /** Sets the crossfade (0..12 whole seconds, 0 = gapless) — applied to the live session and every later one. */
+    fun applyCrossfadeSeconds(seconds: Int)
+    val currentCrossfadeSeconds: Int
+
     /**
      * Re-arms the shell's input-idle screensaver timer, exactly like a real key/touch would.
      * A feature that keeps rendering without generating any input of its own — the camera live

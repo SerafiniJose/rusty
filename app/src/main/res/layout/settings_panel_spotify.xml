@@ -270,6 +270,64 @@
                 app:trackColorInactive="@color/surface_border" />
         </LinearLayout>
 
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="14dp"
+            android:background="@color/surface_border" />
+
+        <!-- Crossfade: same label + compact slider idiom as Startup volume above. Whole seconds,
+             0 = gapless. Applies to the session playing now (from its next track change). -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_medium"
+                    android:text="Crossfade"
+                    android:textColor="@color/ink"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tvCrossfadeValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_regular"
+                    android:text="Off · gapless"
+                    android:textColor="@color/muted_dim"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderCrossfade"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="16dp"
+                android:value="0"
+                android:valueFrom="0"
+                android:valueTo="12"
+                android:stepSize="1"
+                app:labelBehavior="gone"
+                app:tickVisible="false"
+                app:haloColor="@color/accent_fallback"
+                app:thumbColor="@color/accent_fallback"
+                app:tickColorActive="@color/white"
+                app:tickColorInactive="@color/muted_dim"
+                app:trackColorActive="@color/accent_fallback"
+                app:trackColorInactive="@color/surface_border" />
+        </LinearLayout>
+
         <TextView
             android:id="@+id/tvSettingsFeedback"
             android:layout_width="match_parent"

@@ -87,6 +87,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     private var deviceName = DEFAULT_DEVICE_NAME
     private var bitrateKbps = DEFAULT_BITRATE_KBPS
     private var startupVolumePercent = StartupVolumeSettings.DEFAULT_PERCENT
+    private var crossfadeSeconds = CrossfadeSettings.DEFAULT_SECONDS
     private var fullscreenEnabled = false
     private var keepScreenOnEnabled = false
 
@@ -196,6 +197,10 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         // The native side keeps this in a process-wide slot, so seed it on every Activity start:
         // the receiver may already be running (start-on-boot, or the Activity being recreated).
         NativeBridge.setStartupVolume(startupVolumePercent)
+        crossfadeSeconds = CrossfadeSettings.seconds(prefs)
+        // Same reason as the startup volume: the native slot is process-wide and the receiver
+        // may already be running (boot start, Activity recreation) — re-seed on every start.
+        NativeBridge.setCrossfadeSeconds(crossfadeSeconds)
         fullscreenEnabled = prefs.getBoolean(KEY_FULLSCREEN, false)
         keepScreenOnEnabled = KeepScreenOnSettings.isEnabled(prefs)
 
@@ -568,6 +573,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
     override val currentDeviceName: String get() = deviceName
     override val currentBitrateKbps: Int get() = bitrateKbps
     override val currentStartupVolumePercent: Int get() = startupVolumePercent
+    override val currentCrossfadeSeconds: Int get() = crossfadeSeconds
 
     override fun openSettings(tab: SettingsTabKey?) {
         val active = currentFeatureId()
@@ -707,6 +713,18 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         startupVolumePercent = clamped
         StartupVolumeSettings.setPercent(prefs, clamped)
         NativeBridge.setStartupVolume(clamped)
+    }
+
+    /**
+     * Sets the crossfade between tracks. Like the startup volume this never cycles the native
+     * session — but unlike it the change is pushed onto the session playing right now, so it is
+     * heard at the very next track boundary or skip.
+     */
+    override fun applyCrossfadeSeconds(seconds: Int) {
+        val clamped = CrossfadeSettings.clamp(seconds)
+        crossfadeSeconds = clamped
+        CrossfadeSettings.setSeconds(prefs, clamped)
+        NativeBridge.setCrossfadeSeconds(clamped)
     }
 
     /** Re-renders the active fragment from the shared snapshot after the shell changed state. */

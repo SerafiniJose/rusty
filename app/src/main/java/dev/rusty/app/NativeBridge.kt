@@ -66,6 +66,14 @@ object NativeBridge {
      */
     external fun setStartupVolume(percent: Int)
 
+    /**
+     * Sets the crossfade between tracks (0..=12 whole seconds, 0 = gapless). Unlike the startup
+     * volume this applies to the session playing right now — the native player honours it at the
+     * next track boundary or manual skip — and to every session after it. Safe no-op for the
+     * live part before a session exists; the value is still remembered.
+     */
+    external fun setCrossfadeSeconds(seconds: Int)
+
     // Asynchronously mints a Spotify access token (delivered via SpotifyService.onNativeAccessToken).
     external fun requestAccessToken()
 }

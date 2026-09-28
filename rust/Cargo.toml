@@ -58,6 +58,16 @@ librespot-discovery = { path = "vendor/librespot-discovery" }
 # connects fine from the phone (see issue #9). Drop this once a librespot
 # release newer than 0.8.0 carries the fix.
 librespot-core = { path = "vendor/librespot-core" }
+# Patch librespot-playback with a Spotify-style crossfade from upstream PR #1756
+# (https://github.com/librespot-org/librespot/pull/1756): `PlayerConfig::crossfade`
+# and `Player::set_crossfade()` overlap the ending track with the preloaded next
+# one (equal-power sin/cos ramp, capped at 12 s, on a manual skip too). 0.8.0 has
+# no fade code at all and its second decoder is private to the player, so this
+# cannot be done from outside the crate. The PR applies cleanly except for the
+# `PlayerCommand::SetCrossfade` arm of `handle_command`, which is re-added by
+# hand (its context in the PR is dev-branch-only code). Drop this once a
+# librespot release newer than 0.8.0 carries the feature.
+librespot-playback = { path = "vendor/librespot-playback" }
 
 
 # Release profile. Cargo's stock release settings left ~10.5 MB of dead weight in

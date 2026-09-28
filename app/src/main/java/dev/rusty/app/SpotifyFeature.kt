@@ -38,7 +38,7 @@ object SpotifyFeature : Feature {
 /**
  * Feature-owned settings panel for Spotify Connect.
  *
- * Owns: device name change, bitrate slider, service start/stop toggle.
+ * Owns: device name change, bitrate slider, startup volume, crossfade, service start/stop toggle.
  * Moved verbatim from [SettingsSheet.bindSpotify]; no behavior changes.
  */
 private class SpotifySettingsPanel(
@@ -61,6 +61,8 @@ private class SpotifySettingsPanel(
         val bitrateValue = panel.findViewById<TextView>(R.id.tvBitrateValue)
         val startupVolumeSlider = panel.findViewById<Slider>(R.id.sliderStartupVolume)
         val startupVolumeValue = panel.findViewById<TextView>(R.id.tvStartupVolumeValue)
+        val crossfadeSlider = panel.findViewById<Slider>(R.id.sliderCrossfade)
+        val crossfadeValue = panel.findViewById<TextView>(R.id.tvCrossfadeValue)
         val feedback = panel.findViewById<TextView>(R.id.tvSettingsFeedback)
         val serviceStatusValue = panel.findViewById<TextView>(R.id.tvReceiverStatusValue)
         val toggleServiceButton = panel.findViewById<MaterialButton>(R.id.btnToggleService)
@@ -71,6 +73,8 @@ private class SpotifySettingsPanel(
         bitrateValue.text = bitrateLabel(host.currentBitrateKbps)
         startupVolumeSlider.value = host.currentStartupVolumePercent.toFloat()
         startupVolumeValue.text = StartupVolumeSettings.label(host.currentStartupVolumePercent)
+        crossfadeSlider.value = host.currentCrossfadeSeconds.toFloat()
+        crossfadeValue.text = CrossfadeSettings.label(host.currentCrossfadeSeconds)
 
         // ---- Collapsible sections ------------------------------------------------
         // Same idiom as the Slideshow/HA panels. The receiver is always configured, so there is no
@@ -239,6 +243,29 @@ private class SpotifySettingsPanel(
             override fun onStartTrackingTouch(slider: Slider) {}
             override fun onStopTrackingTouch(slider: Slider) {
                 commitStartupVolume(slider.value.toInt())
+            }
+        })
+
+        // Crossfade: same commit idiom as the startup volume — label tracks the drag, the value
+        // commits on release (touch) or per step (D-pad, which never produces a touch event).
+        // Committing is a pref write plus a non-blocking command to the native player, so a
+        // step that slips through mid-drag costs nothing and interrupts nothing.
+        fun commitCrossfade(seconds: Int) {
+            val selected = CrossfadeSettings.clamp(seconds)
+            if (selected == host.currentCrossfadeSeconds) return
+            host.applyCrossfadeSeconds(selected)
+            val message = if (selected == 0) "✓ Crossfade off — tracks play gapless"
+            else "✓ Crossfade ${CrossfadeSettings.label(selected)} — from the next track change"
+            showFeedback(feedback, message, FEEDBACK_SUCCESS)
+        }
+        crossfadeSlider.addOnChangeListener { slider, value, fromUser ->
+            crossfadeValue.text = CrossfadeSettings.label(value.toInt())
+            if (fromUser && !slider.isPressed) commitCrossfade(value.toInt())
+        }
+        crossfadeSlider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: Slider) {}
+            override fun onStopTrackingTouch(slider: Slider) {
+                commitCrossfade(slider.value.toInt())
             }
         })
 

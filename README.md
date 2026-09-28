@@ -61,6 +61,11 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
   [librespot](https://github.com/librespot-org/librespot) (Rust) and played through Android's
   own `AudioTrack` with a deep ~1 s buffer, at up to 320 kbps. Android routes the output, so
   sound follows a Bluetooth speaker connected or dropped mid-track, and pause is instant.
+- **Crossfade** — optional 1–12 s overlap between tracks, at the end of a track and on a skip,
+  like the Spotify app's own setting. 4 s by default; slide it to Off for gapless playback.
+  Changes apply to the session that is playing, from its next track change. As in the official
+  client, the now-playing screen, the Home Assistant `media_player` and the remote-control page
+  move to the next track when the fade starts, not when the old track has fully faded out.
 - **Ambient now-playing screen** — album-art colour wash, drifting mesh background, accent-aware
   theming, and time-aligned **lyrics** that scroll with the track, active line highlighted.
   Optionally the track's looping **Spotify Canvas** video in place of static art.

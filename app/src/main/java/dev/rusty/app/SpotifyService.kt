@@ -73,6 +73,10 @@ class SpotifyService : Service() {
         // volume of the NEXT Connect session — so every start path, including BootReceiver's,
         // gets the user's value without carrying an extra it doesn't know about.
         val startupVolumePercent = StartupVolumeSettings.percent(prefs)
+        // Same store, same reasoning: not part of the receiver's identity, just a value the native
+        // core must already hold when the first controller connects — including on a boot start,
+        // where no Activity has seeded it yet.
+        val crossfadeSeconds = CrossfadeSettings.seconds(prefs)
         currentDeviceName = deviceName
         currentBitrateKbps = bitrateKbps
         postNotification()   // a start intent may carry a different name than the seed
@@ -112,6 +116,7 @@ class SpotifyService : Service() {
                     ReceiverDashboardStatusEvent.Lifecycle.NATIVE_STARTING,
                     service = ReceiverServiceState.RUNNING,
                 )
+                NativeBridge.setCrossfadeSeconds(crossfadeSeconds)
                 NativeBridge.startDevice(deviceName, deviceId, bitrateKbps, startupVolumePercent)
             } catch (throwable: Throwable) {
                 Log.e("SpotifyService", "Native receiver failed", throwable)
