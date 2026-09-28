@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -25,6 +26,11 @@ object KeyboardDismiss {
  * field is tapped (`STATE_HIDDEN`), the card shrinks rather than being covered while it is up
  * (`ADJUST_RESIZE`, the Immich picker's idiom), and a touch anywhere outside the focused field hides
  * it again — the field keeps its focus and cursor, a second tap on it brings the keyboard back.
+ *
+ * That touch is CONSUMED, down to its last event, when it lands outside the card itself: a Dialog
+ * closes on an outside tap by default (on the finger-UP), so the tap meant to put the keyboard
+ * away also threw away a half-filled form. While a field has focus, only BACK or the card's own
+ * buttons close it.
  */
 open class CardDialog(activity: Activity) : Dialog(activity) {
     init {
@@ -34,7 +40,16 @@ open class CardDialog(activity: Activity) : Dialog(activity) {
         )
     }
 
+    /** True from a swallowed outside DOWN to the end of that gesture. */
+    private var swallowingGesture = false
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (swallowingGesture) {
+            val action = ev.actionMasked
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) swallowingGesture = false
+            if (action != MotionEvent.ACTION_DOWN) return true
+            swallowingGesture = false
+        }
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
             val focused = currentFocus as? EditText
             if (focused != null) {
@@ -47,9 +62,21 @@ open class CardDialog(activity: Activity) : Dialog(activity) {
                 if (outside) {
                     val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                     imm.hideSoftInputFromWindow(focused.windowToken, 0)
+                    if (outsideCard(ev)) {
+                        swallowingGesture = true
+                        return true
+                    }
                 }
             }
         }
         return super.dispatchTouchEvent(ev)
+    }
+
+    /** Whether [ev] misses the card's window, with the same slop Dialog uses to decide an
+     *  outside-tap cancel. */
+    private fun outsideCard(ev: MotionEvent): Boolean {
+        val decor = window?.decorView ?: return false
+        val slop = ViewConfiguration.get(context).scaledWindowTouchSlop
+        return ev.x < -slop || ev.y < -slop || ev.x > decor.width + slop || ev.y > decor.height + slop
     }
 }

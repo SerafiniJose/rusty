@@ -757,6 +757,9 @@ class CameraSettingsPanel(private val ctx: SettingsPanelContext) : SettingsPanel
         val card = CardDialog(activity)
         card.requestWindowFeature(Window.FEATURE_NO_TITLE)
         card.setContentView(root)
+        // A long form of URLs and a password: a stray tap beside it must never discard the
+        // input, keyboard up or not. Cancel and BACK are the ways out.
+        card.setCanceledOnTouchOutside(false)
         card.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         card.followDisplaySize(activity)
         card.matchHostSystemBars(activity)

@@ -192,6 +192,37 @@
             android:orientation="vertical"
             android:visibility="gone">
 
+            <!-- Resolving: shown alone, in place of the results and the address row, while a
+                 camera's login is checked and its streams are looked up after the credentials
+                 card closes. That takes seconds, and without this the card fell back to the
+                 address page with no sign that anything was happening. -->
+            <LinearLayout
+                android:id="@+id/camAddBusy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:layout_marginBottom="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <ProgressBar
+                    style="?android:attr/progressBarStyleSmall"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:indeterminateTint="@color/accent_fallback" />
+
+                <TextView
+                    android:id="@+id/tvCamAddBusy"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:fontFamily="@font/hanken_regular"
+                    android:textColor="@color/ink"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
             <LinearLayout
                 android:id="@+id/camAddResults"
                 android:layout_width="match_parent"
@@ -242,6 +273,7 @@
             <!-- Address lookup: cameras on another subnet, which multicast discovery can never
                  reach. Tries ONVIF on 8000 then 80 unless a port is typed. -->
             <LinearLayout
+                android:id="@+id/camAddAddressRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"

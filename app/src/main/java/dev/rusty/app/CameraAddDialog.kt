@@ -105,7 +105,7 @@ internal class CameraAddCard(
         val scanRow = root.findViewById<View>(R.id.rowCamAddScan)
         val scanSpinner = root.findViewById<ProgressBar>(R.id.camAddScanSpinner)
         val scanChevron = root.findViewById<View>(R.id.tvCamAddScanChevron)
-        val addressRow = root.findViewById<View>(R.id.rowCamAddAddress)
+        val addressChoice = root.findViewById<View>(R.id.rowCamAddAddress)
         val manualRow = root.findViewById<View>(R.id.rowCamAddManual)
         val pane = root.findViewById<View>(R.id.camAddResultsPane)
         val results = root.findViewById<LinearLayout>(R.id.camAddResults)
@@ -113,6 +113,9 @@ internal class CameraAddCard(
         val rustyResults = root.findViewById<LinearLayout>(R.id.camAddRustyResults)
         val empty = root.findViewById<TextView>(R.id.tvCamAddEmpty)
         val divider = root.findViewById<View>(R.id.camAddDivider)
+        val busy = root.findViewById<View>(R.id.camAddBusy)
+        val busyText = root.findViewById<TextView>(R.id.tvCamAddBusy)
+        val addressRow = root.findViewById<View>(R.id.camAddAddressRow)
         val addressField = root.findViewById<EditText>(R.id.etCamAddAddress)
         val lookupButton = root.findViewById<MaterialButton>(R.id.btnCamAddLookup)
         val lookupSpinner = root.findViewById<ProgressBar>(R.id.camAddLookupSpinner)
@@ -126,10 +129,38 @@ internal class CameraAddCard(
             error.isVisible = true
         }
 
-        /** Login prompt → ONVIF resolve → prefilled form. Shared by scan rows and the address path. */
-        fun resolveAndOpen(xaddr: String, displayName: String?, onAuthFailed: () -> Unit) {
+        /** What the resolving state hid, so a failure puts back exactly what was showing. */
+        var hiddenWhileResolving: List<View> = emptyList()
+
+        /** Swaps the pane for a single "signing in" line while the resolve runs. Focus goes to
+         *  Cancel, the only control left, so the D-pad never sits on a hidden view. */
+        fun startResolving(displayName: String?) {
+            error.isVisible = false
+            hiddenWhileResolving = listOf(
+                results, rustyHeading, rustyResults, empty, divider, addressRow, manualButton, rescanButton,
+            ).filter { it.isVisible }
+            hiddenWhileResolving.forEach { it.isVisible = false }
+            busyText.text = "Signing in to ${displayName ?: "the camera"} and finding its streams…"
+            busy.isVisible = true
+            cancelButton.requestFocus()
+        }
+
+        fun stopResolving(returnFocus: View) {
+            busy.isVisible = false
+            hiddenWhileResolving.forEach { it.isVisible = true }
+            hiddenWhileResolving = emptyList()
+            returnFocus.requestFocus()
+        }
+
+        /**
+         * Login prompt → ONVIF resolve → prefilled form. Shared by scan rows and the address path.
+         * [returnFocus] is what the D-pad goes back to when the resolve fails, so a retry is one
+         * OK away.
+         */
+        fun resolveAndOpen(xaddr: String, displayName: String?, returnFocus: View, onAuthFailed: () -> Unit) {
             // null fixed user name: an ONVIF camera's user name is whatever it was set to.
             askCredentials(displayName, null) { user, pass ->
+                startResolving(displayName)
                 dialogScope.launch {
                     val result = withContext(Dispatchers.IO) {
                         OnvifClient(AndroidSoapTransport(), nonceSource = ::randomNonce, canDecode = DeviceDecoders::canDecode)
@@ -155,9 +186,11 @@ internal class CameraAddCard(
                                 ),
                             )
                         }
-                        is OnvifResult.Failed ->
+                        is OnvifResult.Failed -> {
+                            stopResolving(returnFocus)
                             if (result.step == "auth") onAuthFailed()
                             else fail("Couldn't resolve the stream (${result.step}): ${result.detail}")
+                        }
                     }
                 }
             }
@@ -202,7 +235,7 @@ internal class CameraAddCard(
                 row.alpha = if (actionable) 1f else 0.5f
                 if (actionable) {
                     row.setOnClickListener {
-                        resolveAndOpen(xaddr!!, device.name ?: device.hardware) { fail("Wrong username or password for $name") }
+                        resolveAndOpen(xaddr!!, device.name ?: device.hardware, row) { fail("Wrong username or password for $name") }
                     }
                 }
                 results.addView(row)
@@ -307,6 +340,10 @@ internal class CameraAddCard(
                 scanChevron.isVisible = true
                 scanRow.isEnabled = true
                 rescanButton.isEnabled = true
+                // A resolve took over the pane while this scan ran (a scan is not cancelled by
+                // switching to the address path); redrawing now would show results under the
+                // "signing in" line.
+                if (busy.isVisible) return@launch
                 title.text = "Cameras on this network"
                 showPane(scanned = true)
                 renderResults(found, localAddress)
@@ -355,13 +392,13 @@ internal class CameraAddCard(
                     return@launch
                 }
                 val host = xaddr.substringAfter("://").substringBefore('/').substringBefore(':').trim('[', ']')
-                resolveAndOpen(xaddr, host) { fail("Wrong username or password") }
+                resolveAndOpen(xaddr, host, lookupButton) { fail("Wrong username or password") }
             }
         }
 
         scanRow.setOnClickListener { scan() }
         rescanButton.setOnClickListener { scan() }
-        addressRow.setOnClickListener {
+        addressChoice.setOnClickListener {
             title.text = "Add by address"
             showPane(scanned = false)
             addressField.requestFocus()
