@@ -3,6 +3,10 @@ package dev.rusty.app
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.ColorStateList
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -40,6 +44,9 @@ import kotlinx.coroutines.withContext
 object InfoSheet {
 
     private const val PREFS_NAME = "spotify_receiver_prefs"
+    private const val CHIP_CHEVRON_SCALE = 1.35f
+    /** Below this screen width the card is too narrow for the title and the chip side by side. */
+    private const val HEADER_SIDE_BY_SIDE_MIN_WIDTH_DP = 600
 
     fun show(activity: HomeActivity, host: ShellHost) {
         val root = activity.layoutInflater.inflate(R.layout.bottom_sheet_info, null)
@@ -55,8 +62,10 @@ object InfoSheet {
         val featuresContainer = root.findViewById<LinearLayout>(R.id.llInfoFeatures)
         val featuresHeader = root.findViewById<TextView>(R.id.tvInfoFeaturesHeader)
         val featuresDivider = root.findViewById<View>(R.id.viewInfoFeaturesDivider)
-        val updateBadge = root.findViewById<TextView>(R.id.tvUpdateBadge)
-        val aboutRow = root.findViewById<View>(R.id.rowAbout)
+        val versionChip = root.findViewById<TextView>(R.id.tvInfoVersionChip)
+        if (activity.resources.configuration.screenWidthDp < HEADER_SIDE_BY_SIDE_MIN_WIDTH_DP) {
+            stackHeader(root, versionChip)
+        }
 
         // Every listener this page registers is composed into one lambda, invoked by the card's single
         // dismiss callback — the same shape SettingsSheet uses for its panel teardown.
@@ -134,19 +143,44 @@ object InfoSheet {
         haRepo.addListener(haListener)
         SlideshowConfigRelay.addListener(slideshowListener)
 
-        aboutRow.setOnClickListener { AboutSheet.show(activity) }
+        versionChip.setOnClickListener { AboutSheet.show(activity) }
 
-        // The update badge: same cached check as before, so reopening is cheap. Guarded by the
-        // activity's own flags plus isShowing, because the blocking call can outlive the card.
+        // The chip is the only way into About & updates, so a remote must reach it: Up from the first
+        // service row, Down back to it. Named explicitly because the chip sits to the row's upper
+        // right, where focus search is at its least predictable.
+        serviceViews[InfoServiceId.SPOTIFY]?.let { firstRow ->
+            firstRow.id = View.generateViewId()
+            firstRow.nextFocusUpId = versionChip.id
+            versionChip.nextFocusDownId = firstRow.id
+        }
+
+        // "About · v2.8.0 ›", or "● Update 2.9.0 ›" while an update is available: drawn from the day's
+        // cached check at once, then from the (normally cached) check below and any check that lands
+        // while the card is open. Guarded by the activity's own flags plus isShowing, because the
+        // blocking call can outlive the card.
         val version = AboutSheet.appVersionName(activity)
+        fun renderUpdate(check: UpdateRepository.UpdateCheck?) {
+            val latest = check?.latest
+            if (check?.status == UpdateRepository.UpdateStatus.UPDATE_AVAILABLE && latest != null) {
+                versionChip.setBackgroundResource(R.drawable.bg_status_pill)
+                versionChip.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.bg_update_dot, 0, 0, 0)
+                versionChip.text = updateChipText(activity, latest.versionName)
+                versionChip.contentDescription = "Update ${latest.versionName} available. Opens About and updates"
+            } else {
+                versionChip.setBackgroundResource(R.drawable.bg_version_pill)
+                versionChip.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
+                versionChip.text = versionChipText(activity, version)
+                versionChip.contentDescription = "About and updates, version $version"
+            }
+        }
+        renderUpdate(UpdateNotice.current())
+        val updateListener: () -> Unit = { runCatching { renderUpdate(UpdateNotice.current()) } }
+        UpdateNotice.addListener(updateListener)
         activity.lifecycleScope.launch {
             val check = withContext(Dispatchers.IO) { UpdateRepository.check(version) }
             if (activity.isFinishing || activity.isDestroyed || !dialog.isShowing) return@launch
-            if (check.status == UpdateRepository.UpdateStatus.UPDATE_AVAILABLE) {
-                updateBadge.visibility = View.VISIBLE
-            }
+            renderUpdate(check)
         }
-        root.findViewById<TextView>(R.id.tvAboutValue).text = "Version $version"
 
         cleanup = {
             store.removeListener(storeListener)
@@ -156,11 +190,49 @@ object InfoSheet {
             RendererRuntimeHolder.removeListener(rendererUiListener)
             haRepo.removeListener(haListener)
             SlideshowConfigRelay.removeListener(slideshowListener)
+            UpdateNotice.removeListener(updateListener)
         }
 
         dialog.show()
         // D-pad order runs top-to-bottom, so the first service row is the landing target.
-        AboutSheet.requestInitialFocus(serviceViews[InfoServiceId.SPOTIFY] ?: aboutRow)
+        AboutSheet.requestInitialFocus(serviceViews[InfoServiceId.SPOTIFY] ?: versionChip)
+    }
+
+    /** On a narrow card the chip goes under the summary, start-aligned, instead of squeezing the title. */
+    private fun stackHeader(root: View, chip: TextView) {
+        root.findViewById<LinearLayout>(R.id.layInfoHeader).orientation = LinearLayout.VERTICAL
+        root.findViewById<View>(R.id.layInfoTitle).layoutParams =
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        chip.layoutParams = (chip.layoutParams as LinearLayout.LayoutParams).apply {
+            marginStart = 0
+            topMargin = (12 * root.resources.displayMetrics.density).toInt()
+        }
+    }
+
+    /** "Update 2.9.0 ›", the chevron in the brand green. */
+    private fun updateChipText(activity: HomeActivity, version: String): CharSequence {
+        val green = ContextCompat.getColor(activity, R.color.accent_fallback)
+        return SpannableStringBuilder("Update $version  ").apply {
+            appendChevron(green)
+        }
+    }
+
+    /** "About · v2.8.0 ›", the version and chevron dimmed. */
+    private fun versionChipText(activity: HomeActivity, version: String): CharSequence {
+        val dim = ContextCompat.getColor(activity, R.color.muted_dim)
+        return SpannableStringBuilder("About").apply {
+            val start = length
+            append(" · v$version  ")
+            setSpan(ForegroundColorSpan(dim), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            appendChevron(dim)
+        }
+    }
+
+    private fun SpannableStringBuilder.appendChevron(color: Int) {
+        val start = length
+        append("›")
+        setSpan(ForegroundColorSpan(color), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        setSpan(RelativeSizeSpan(CHIP_CHEVRON_SCALE), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
     // ---- Reading the runtime ------------------------------------------------

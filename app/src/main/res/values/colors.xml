@@ -29,4 +29,10 @@
     <color name="dot_amber">#FFE3B341</color>
     <color name="dot_grey">#FF8B949E</color>
     <color name="dot_red">#FFF85149</color>
+
+    <!-- What's new section marks (Added uses accent_fallback). Distinct in lightness as well as
+         hue, so they still tell apart without colour vision. -->
+    <color name="whats_new_changed">#FFE2C069</color>
+    <color name="whats_new_optimized">#FFC4A3FF</color>
+    <color name="whats_new_fixed">#FF7FB0FF</color>
 </resources>

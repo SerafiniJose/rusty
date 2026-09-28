@@ -400,31 +400,43 @@ sealed class ControlLocalSnapshotResult {
 enum class ControlInstallStart { STARTED, NO_UPDATE, BUSY, NO_APK }
 
 /** The newest published release, as the control page needs it. [hasApk]: whether the
- *  release ships an installable APK asset (without one the Update button is pointless). */
+ *  release ships an installable APK asset (without one the Update button is pointless).
+ *  [sections] are [notes] read by [ReleaseNotes], so the page lays out the same sections as the
+ *  device's About card; [publishedAt] (ISO-8601) and [apkSize] (bytes) are null when unknown. */
 data class ControlUpdateLatest(
     val version: String,
     val notes: String,
     val url: String,
     val hasApk: Boolean,
+    val publishedAt: String? = null,
+    val apkSize: Long? = null,
+    val sections: List<ReleaseNotes.Section> = emptyList(),
 )
 
 /**
- * Combined answer for `GET /api/update`: the (cached) GitHub release check plus the live
- * installer state, so one endpoint serves both the initial render and install polling.
- * [status] is the wire string: "up_to_date" | "update_available" | "error".
+ * Combined answer for `GET /api/update` (and `POST /api/update/check`): the once-a-day GitHub
+ * release check plus the live installer state, so one endpoint serves both the initial render and
+ * install polling. [status] is the wire string: "up_to_date" | "update_available" | "error".
+ * [checkedAt] (epoch ms) is when [latest] was fetched; [checkFailed] means the most recent attempt
+ * failed, so a non-error [status] comes from the last good answer.
  */
 data class ControlUpdateCheck(
     val current: String,
     val status: String,
     val latest: ControlUpdateLatest?,
     val install: InstallSnapshot,
+    val checkedAt: Long? = null,
+    val checkFailed: Boolean = false,
 ) {
     /** Encodes as JSON for the `GET /api/update` contract. `latest` is omitted (not null)
-     *  when absent; `install.progress`/`install.error` likewise. */
+     *  when absent; `checkedAt`, `latest.publishedAt`/`apkSize`, `install.progress` and
+     *  `install.error` likewise. */
     fun toJson(): String {
         val root = JSONObject()
         root.put("current", current)
         root.put("status", status)
+        checkedAt?.let { root.put("checkedAt", it) }
+        root.put("checkFailed", checkFailed)
 
         latest?.let {
             val latestObj = JSONObject()
@@ -432,6 +444,17 @@ data class ControlUpdateCheck(
             latestObj.put("notes", it.notes)
             latestObj.put("url", it.url)
             latestObj.put("hasApk", it.hasApk)
+            it.publishedAt?.let { at -> latestObj.put("publishedAt", at) }
+            it.apkSize?.let { size -> latestObj.put("apkSize", size) }
+            val sections = JSONArray()
+            it.sections.forEach { section ->
+                val entries = JSONArray()
+                section.entries.forEach { entry ->
+                    entries.put(JSONObject().put("title", entry.title).put("detail", entry.detail))
+                }
+                sections.put(JSONObject().put("name", section.name).put("entries", entries))
+            }
+            latestObj.put("sections", sections)
             root.put("latest", latestObj)
         }
 

@@ -25,7 +25,7 @@ class ControlPageAssetTest {
         listOf(
             "/api/state", "/api/panel", "/api/foreground", "/api/lockscreen",
             "/api/screen", "/api/volume", "/api/announce/text",
-            "/api/slideshow/filters", "/api/immich/", "/api/update/install",
+            "/api/slideshow/filters", "/api/immich/", "/api/update/install", "/api/update/check",
             "/api/cameras", "\"/api/camera/view\"", "\"/api/camera/grid\"",
             "\"/api/camera/share\"",
         ).forEach { endpoint ->

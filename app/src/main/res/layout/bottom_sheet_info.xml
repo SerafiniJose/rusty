@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Services & status: the app-wide info page. Header + aggregate summary, then four runtime
-     service rows (Spotify Connect, DLNA Player, Remote Control, Camera share) inflated into
-     llInfoServices, then the configured integrations inflated into llInfoFeatures, then the About
-     & updates row.
+<!-- Services & status: the app-wide info page. Header + aggregate summary with the version chip
+     (About & updates) on its right, then four runtime service rows (Spotify Connect, DLNA Player,
+     Remote Control, Camera share) inflated into llInfoServices, then the configured integrations
+     inflated into llInfoFeatures.
      The features divider + header are hidden together when there is no connected feature.
      Height is capped at ~82% of the display by MaxHeightNestedScrollView so the card stays
      dismissible in every orientation. -->
@@ -23,25 +23,63 @@
         android:paddingEnd="24dp"
         android:paddingBottom="24dp">
 
-        <TextView
-            android:id="@+id/tvInfoTitle"
-            android:layout_width="wrap_content"
+        <!-- Title beside the chip; InfoSheet stacks the chip under the title on a narrow screen. -->
+        <LinearLayout
+            android:id="@+id/layInfoHeader"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:fontFamily="@font/bricolage_bold"
-            android:text="Services &amp; status"
-            android:textColor="@color/ink"
-            android:textSize="20sp" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <!-- Aggregate runtime summary, e.g. "2 services running · 1 off". Bound at runtime. -->
-        <TextView
-            android:id="@+id/tvInfoSummary"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:fontFamily="@font/hanken_regular"
-            android:text=""
-            android:textColor="@color/muted_dim"
-            android:textSize="13sp" />
+            <LinearLayout
+                android:id="@+id/layInfoTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvInfoTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/bricolage_bold"
+                    android:text="Services &amp; status"
+                    android:textColor="@color/ink"
+                    android:textSize="20sp" />
+
+                <!-- Aggregate runtime summary, e.g. "2 services running · 1 off". Bound at runtime. -->
+                <TextView
+                    android:id="@+id/tvInfoSummary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:fontFamily="@font/hanken_regular"
+                    android:text=""
+                    android:textColor="@color/muted_dim"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- "About · v2.8.0 ›", or "● Update 2.9.0 ›" while an update is available: the way into
+                 About & updates, always shown. Styled and labelled at runtime. -->
+            <TextView
+                android:id="@+id/tvInfoVersionChip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:background="@drawable/bg_version_pill"
+                android:clickable="true"
+                android:drawablePadding="8dp"
+                android:focusable="true"
+                android:fontFamily="@font/hanken_medium"
+                android:foreground="@drawable/bg_tv_focus"
+                android:gravity="center_vertical"
+                android:minHeight="40dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="12dp"
+                android:singleLine="true"
+                android:textColor="@color/ink"
+                android:textSize="15sp" />
+        </LinearLayout>
 
         <!-- Service rows (item_info_service) are inflated here, in spec order. -->
         <LinearLayout
@@ -77,77 +115,5 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:orientation="vertical" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="16dp"
-            android:background="@color/surface_border" />
-
-        <!-- About & updates: tappable row showing the running version + an "Update" badge
-             when a newer release is found; opens the About sheet. -->
-        <LinearLayout
-            android:id="@+id/rowAbout"
-            android:paddingHorizontal="@dimen/tv_focus_ring_gap"
-            android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:background="?android:attr/selectableItemBackground"
-            android:foreground="@drawable/bg_tv_focus"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:orientation="horizontal"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="@font/hanken_medium"
-                    android:text="About &amp; updates"
-                    android:textColor="@color/ink"
-                    android:textSize="16sp" />
-
-                <TextView
-                    android:id="@+id/tvAboutValue"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="@font/hanken_regular"
-                    android:text="Version 1.1.0"
-                    android:textColor="@color/muted_dim"
-                    android:textSize="13sp" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/tvUpdateBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:background="@drawable/bg_update_badge"
-                android:fontFamily="@font/hanken_medium"
-                android:paddingStart="8dp"
-                android:paddingTop="2dp"
-                android:paddingEnd="8dp"
-                android:paddingBottom="2dp"
-                android:text="Update"
-                android:textColor="@color/white"
-                android:textSize="11sp"
-                android:visibility="gone" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="@font/hanken_regular"
-                android:text="›"
-                android:textColor="@color/muted_dim"
-                android:textSize="18sp" />
-        </LinearLayout>
     </LinearLayout>
 </dev.rusty.app.MaxHeightNestedScrollView>

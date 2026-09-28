@@ -24,9 +24,12 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.commitNow
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -261,6 +264,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         shellChrome.launcher.onOpenChanged = { open -> launcherBackCallback.isEnabled = open }
         onBackPressedDispatcher.addCallback(this, launcherBackCallback)
         setupChrome()
+        watchForUpdates()
 
         // Resolve the persisted start id (or SPOTIFY as the safe default).
         val storedName = prefs.getString(KEY_CURRENT_FEATURE, FeatureId.SPOTIFY.name) ?: FeatureId.SPOTIFY.name
@@ -815,8 +819,10 @@ class HomeActivity : AppCompatActivity(), ShellHost {
      */
     private fun setupChrome() {
         btnSettings.setOnClickListener { openSettings(null) }      // null → active feature's tab
-        findViewById<android.widget.ImageButton>(R.id.btnInfo)
-            .setOnClickListener { openInfo() }
+        findViewById<android.widget.ImageButton>(R.id.btnInfo).apply {
+            setOnClickListener { openInfo() }
+            UpdateDot.attach(this)
+        }
         tvClock.setOnClickListener { showScreensaver() }
         // The clock shrinks to ~0.22 scale in the corner, so a foreground focus ring all but vanishes
         // there — recolor the digits to the brand green on focus instead (reads at any scale).
@@ -824,6 +830,23 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         val clockFocused = androidx.core.content.ContextCompat.getColor(this, R.color.accent_fallback)
         tvClock.setOnFocusChangeListener { _, hasFocus ->
             tvClock.setTextColor(if (hasFocus) clockFocused else clockInk)
+        }
+    }
+
+    /**
+     * Keeps the update check current while Rusty is on screen: an hourly look at the once-a-day
+     * cache, which only reaches GitHub when the day's answer has expired. A receiver that stays in
+     * the foreground for weeks therefore still notices a release the day it ships, and the dot on
+     * the info buttons follows through [UpdateNotice].
+     */
+    private fun watchForUpdates() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    withContext(Dispatchers.IO) { UpdateRepository.check(BuildConfig.VERSION_NAME) }
+                    delay(UPDATE_WATCH_INTERVAL_MS)
+                }
+            }
         }
     }
 
@@ -1334,6 +1357,7 @@ class HomeActivity : AppCompatActivity(), ShellHost {
         // Mirrors SpotifyFragment.BASE_PAD_DP so the floating shell chrome sits in the same safe box
         // the Spotify content used (keeps the clock's corner-park position consistent across the move).
         private const val CHROME_BASE_PAD_DP = 22
+        private const val UPDATE_WATCH_INTERVAL_MS = 60 * 60 * 1000L
         private val SUPPORTED_BITRATES_KBPS = setOf(96, 160, 320)
 
         private const val AUTO_HIDE_MS = 4_000L

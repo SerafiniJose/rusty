@@ -234,6 +234,49 @@ class ControlModelsTest {
         )
     }
 
+    @Test fun updateCheckJson_releaseDetailsAndSections() {
+        val check = ControlUpdateCheck(
+            current = "2.6.0",
+            status = "update_available",
+            latest = ControlUpdateLatest(
+                version = "2.7.0", notes = "Added\n• Share this camera. Over RTSP.", url = "https://x/rel",
+                hasApk = true, publishedAt = "2026-09-20T22:18:19Z", apkSize = 75_370_564,
+                sections = listOf(
+                    ReleaseNotes.Section("Added", listOf(ReleaseNotes.Entry("Share this camera.", "Over RTSP."))),
+                ),
+            ),
+            install = InstallSnapshot(InstallPhase.IDLE, null, null),
+            checkedAt = 1_790_000_000_000L,
+            checkFailed = true,
+        )
+        val o = JSONObject(check.toJson())
+        assertEquals(1_790_000_000_000L, o.getLong("checkedAt"))
+        assertEquals(true, o.getBoolean("checkFailed"))
+        val latest = o.getJSONObject("latest")
+        assertEquals("2026-09-20T22:18:19Z", latest.getString("publishedAt"))
+        assertEquals(75_370_564L, latest.getLong("apkSize"))
+        val section = latest.getJSONArray("sections").getJSONObject(0)
+        assertEquals("Added", section.getString("name"))
+        val entry = section.getJSONArray("entries").getJSONObject(0)
+        assertEquals("Share this camera.", entry.getString("title"))
+        assertEquals("Over RTSP.", entry.getString("detail"))
+    }
+
+    @Test fun updateCheckJson_unknownDetailsAreOmitted() {
+        val check = ControlUpdateCheck(
+            current = "2.6.0", status = "update_available",
+            latest = ControlUpdateLatest("2.7.0", "", "https://x/rel", hasApk = false),
+            install = InstallSnapshot(InstallPhase.IDLE, null, null),
+        )
+        val o = JSONObject(check.toJson())
+        assertEquals(false, o.has("checkedAt"))
+        assertEquals(false, o.getBoolean("checkFailed"))
+        val latest = o.getJSONObject("latest")
+        assertEquals(false, latest.has("publishedAt"))
+        assertEquals(false, latest.has("apkSize"))
+        assertEquals(0, latest.getJSONArray("sections").length())
+    }
+
     // ---- cameraShare block ----------------------------------------------------
 
     /** A runtime that reports no share (the default for every fake) must still emit the block,

@@ -478,13 +478,84 @@
   .status { margin: 0; color: var(--accent); font-size: 0.83rem; }
   .error-text { margin: 0; color: var(--error); font-size: 0.83rem; }
 
-  /* Release notes arrive as plain text with newline-separated bullets; keep them a <pre>
-     so the line structure survives, but wrap like body text on narrow screens. */
+  /* Fallback for release notes with no sections to read: plain text in a <pre> so the line
+     structure survives, wrapped like body text on narrow screens. */
   .update-notes {
     font-family: inherit;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+
+  /* ================================================================
+     Software: the update on offer. The device reads the release notes into sections
+     (latest.sections); each entry shows its first sentence, the rest behind Show details.
+     ================================================================ */
+  #dock { flex-wrap: wrap; }
+  .update-strip {
+    flex: 1 0 100%;
+    display: flex; align-items: center; gap: 10px;
+    min-height: 44px; padding: 0 14px;
+    border-radius: 12px;
+    background: rgba(69, 212, 131, 0.08);
+    border: 1px solid rgba(69, 212, 131, 0.22);
+    color: var(--text); text-decoration: none; font-size: 0.88rem;
+  }
+  .update-strip .grow { flex: 1; min-width: 0; }
+  .update-strip .go { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .live-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex: none;
+    background: var(--accent); box-shadow: 0 0 8px 1px var(--accent-glow);
+  }
+  details.service summary .hint.available { color: var(--accent); font-weight: 500;
+    display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px; }
+
+  .release-panel {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
+    padding: 14px; border-radius: 12px;
+    background: var(--slab); border: 1px solid var(--card-border);
+  }
+  .release-panel .lab { margin-bottom: 2px; }
+  .release-version { font-size: 1.1rem; white-space: nowrap; }
+  .release-version .from { color: var(--muted); }
+  .release-version .to { font-weight: 600; }
+  .release-meta { margin: 0; color: var(--muted); font-size: 0.8rem; text-align: right; white-space: pre-line; }
+  /* A phone has no room for the meta beside the versions: stack them. */
+  @media (max-width: 480px) {
+    .release-panel { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .release-meta { text-align: left; }
+  }
+  #update-button { flex: none; white-space: nowrap; }
+
+  /* CSS columns rather than a grid: the browser balances the sections' heights across the two
+     columns, the way the device's About card splits them, and never breaks a section. */
+  .release-sections { display: block; }
+  @media (min-width: 720px) { .release-sections { columns: 2; column-gap: 28px; } }
+  .release-section { display: flex; flex-direction: column; gap: 10px; break-inside: avoid; margin-bottom: 18px; }
+  .release-heading {
+    margin: 0; display: flex; align-items: center; gap: 8px;
+    font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600;
+    color: var(--muted);
+  }
+  .release-heading::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: currentColor; }
+  .release-heading .count { color: var(--muted); font-weight: 400; letter-spacing: 0; }
+  .release-heading.added { color: var(--accent); }
+  .release-heading.changed { color: #e2c069; }
+  .release-heading.optimizations { color: #c4a3ff; }
+  .release-heading.fixed { color: #7fb0ff; }
+  .release-section ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  .release-section li { display: flex; gap: 10px; align-items: flex-start; }
+  .release-section li::before {
+    content: ""; width: 5px; height: 5px; border-radius: 50%; background: #565e68;
+    flex: none; margin-top: 9px;
+  }
+  .release-entry { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .release-title { font-size: 0.9rem; line-height: 1.4; color: #e6e9e8; }
+  .release-detail { font-size: 0.83rem; line-height: 1.45; color: var(--muted); }
+  .release-sections:not(.details) .release-detail { display: none; }
+
+  .btn.ghost { background: var(--slab); color: var(--text); border: 1px solid var(--card-border); font-weight: 500; }
+  .release-link { color: var(--accent); font-size: 0.83rem; text-decoration: none; }
+  .checked-line { margin: 0; color: var(--muted); font-size: 0.8rem; }
 
   #toast {
     position: fixed;
@@ -559,6 +630,11 @@
       <p><span id="dev-state">Idle</span></p>
     </div>
     <div id="eq" class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    <a id="update-strip" class="update-strip" href="#update-card" hidden>
+      <span class="live-dot" aria-hidden="true"></span>
+      <span id="update-strip-text" class="grow"></span>
+      <span class="go">What's new &rsaquo;</span>
+    </a>
   </section>
 
   <!-- Source -->
@@ -732,13 +808,29 @@
         <span class="chev" aria-hidden="true">&rsaquo;</span>
       </summary>
       <div class="body">
-        <p class="status">Installed <span id="dev-version" class="mono"></span></p>
+        <p id="update-installed" class="status">Installed <span id="dev-version" class="mono"></span></p>
+        <div id="update-release" class="release-panel" hidden>
+          <div>
+            <p class="lab">New version</p>
+            <span id="update-version" class="mono release-version"></span>
+          </div>
+          <p id="update-meta" class="release-meta"></p>
+        </div>
+        <div id="update-sections" class="release-sections" hidden></div>
         <pre id="update-notes" class="notice update-notes" hidden></pre>
+        <div id="update-notes-actions" class="switch-row" hidden>
+          <button id="update-details" type="button" class="btn ghost small" aria-expanded="false">Show details</button>
+          <a id="update-link" class="release-link" href="#" target="_blank" rel="noopener">Release page &#8599;</a>
+        </div>
         <div id="update-progress" class="progress" hidden><i id="update-progress-bar"></i></div>
         <p id="update-error" class="error-text" hidden></p>
         <div class="switch-row">
           <p id="update-status" class="status" role="status" aria-live="polite">Checking for updates&hellip;</p>
           <button id="update-button" type="button" class="btn" hidden>Update</button>
+        </div>
+        <div class="switch-row">
+          <p id="update-checked" class="checked-line"></p>
+          <button id="update-check" type="button" class="btn ghost small">Check now</button>
         </div>
       </div>
     </details>
@@ -850,7 +942,9 @@
       "albums-list", "albums-error", "people-list", "people-error", "tags-list", "tags-error",
       "filters-save", "filters-status", "filters-summary",
       "update-status", "update-notes", "update-error", "update-button", "update-summary",
-      "update-progress", "update-progress-bar",
+      "update-progress", "update-progress-bar", "update-card", "update-strip", "update-strip-text",
+      "update-release", "update-version", "update-meta", "update-sections", "update-notes-actions",
+      "update-details", "update-link", "update-checked", "update-check", "update-installed",
       "camera-strip", "camera-chips", "camera-error",
       "camshare-card", "camshare-pwr", "camshare-status", "camshare-notice", "camshare-error",
       "camshare-lens", "camshare-chips", "camshare-url", "camshare-url-text", "camshare-copy",
@@ -1898,7 +1992,7 @@
       el["update-status"].textContent = typeof install.progress === "number"
         ? "Downloading… " + install.progress + "%"
         : "Downloading…";
-      el["update-summary"].textContent = "Downloading…";
+      setSummary("Downloading…", false);
       el["update-button"].hidden = false;
       el["update-button"].disabled = true;
       paintUpdateProgress(install.progress);
@@ -1908,7 +2002,7 @@
     }
     if (install.phase === "awaiting_confirm") {
       el["update-status"].textContent = "Confirm the install on the device screen.";
-      el["update-summary"].textContent = "Confirm on device";
+      setSummary("Confirm on device", false);
       el["update-button"].hidden = false;
       el["update-button"].disabled = true;
       paintUpdateProgress(null);
@@ -1920,29 +2014,196 @@
     stopUpdatePolling();
     paintUpdateProgress(null);
     setNotice(el["update-error"], install.phase === "error" ? (install.error || "Install failed.") : null);
+    paintChecked(data);
 
-    if (data.status === "update_available" && data.latest) {
-      el["update-status"].textContent = "Update available · " + data.latest.version;
-      el["update-summary"].textContent = data.latest.version + " available";
-      if (data.latest.notes) {
-        el["update-notes"].textContent = data.latest.notes;
-        el["update-notes"].hidden = false;
-      }
+    var available = data.status === "update_available" && data.latest;
+    el["update-strip"].hidden = !available;
+    el["update-summary"].classList.toggle("available", !!available);
+    if (available) {
+      var latest = data.latest;
+      el["update-status"].textContent = latest.hasApk
+        ? sizeText(latest.apkSize, "download, then confirm the install on the device.")
+        : "Update available · " + latest.version;
+      setSummary(latest.version + " available", true);
+      el["update-strip-text"].textContent = "Rusty " + latest.version + " is available";
+      paintRelease(data);
       // Without an APK asset there is nothing the device could install — leave only the
       // status text; the release still shows up in the app's About sheet with a link.
-      el["update-button"].hidden = !data.latest.hasApk;
+      el["update-button"].hidden = !latest.hasApk;
       el["update-button"].disabled = false;
-    } else if (data.status === "up_to_date") {
-      el["update-status"].textContent = "Up to date.";
-      el["update-summary"].textContent = "Up to date";
-      el["update-notes"].hidden = true;
-      el["update-button"].hidden = true;
+      el["update-button"].textContent = "Update to " + latest.version;
     } else {
-      el["update-status"].textContent = "Couldn't check for updates.";
-      el["update-summary"].textContent = "Check failed";
-      el["update-notes"].hidden = true;
+      hideRelease();
       el["update-button"].hidden = true;
+      if (data.status === "up_to_date") {
+        el["update-status"].textContent = "Up to date.";
+        setSummary("Up to date", false);
+      } else {
+        el["update-status"].textContent = "Couldn't check for updates.";
+        setSummary("Check failed", false);
+      }
     }
+  }
+
+  /** "75 MB download, then …", or just the sentence's tail capitalised when the size is unknown. */
+  function sizeText(bytes, tail) {
+    if (typeof bytes === "number" && bytes > 0) {
+      return Math.max(1, Math.round(bytes / 1e6)) + " MB " + tail;
+    }
+    return tail.charAt(0).toUpperCase() + tail.slice(1);
+  }
+
+  /** The summary hint keeps a leading dot when an update is on offer; textContent would drop it. */
+  function setSummary(text, withDot) {
+    var hint = el["update-summary"];
+    hint.textContent = "";
+    if (withDot) {
+      var dot = document.createElement("span");
+      dot.className = "live-dot";
+      dot.setAttribute("aria-hidden", "true");
+      hint.appendChild(dot);
+    }
+    hint.appendChild(document.createTextNode(text));
+  }
+
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  /** "21 Sep", or "3 Dec 2025" outside this year — the device's About card wording. */
+  function dayLabel(date, now) {
+    var label = date.getDate() + " " + MONTHS[date.getMonth()];
+    return date.getFullYear() === now.getFullYear() ? label : label + " " + date.getFullYear();
+  }
+
+  /** "Checked today at 09:14" — and whether the last attempt got through. */
+  function paintChecked(data) {
+    var line = "";
+    if (typeof data.checkedAt === "number") {
+      var at = new Date(data.checkedAt);
+      var now = new Date();
+      var yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      var day = at.toDateString() === now.toDateString() ? "today"
+        : at.toDateString() === yesterday.toDateString() ? "yesterday"
+        : dayLabel(at, now);
+      line = "Checked " + day + " at " + at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+    if (data.checkFailed && typeof data.checkedAt === "number") {
+      line += " · the last check couldn't reach GitHub";
+    }
+    el["update-checked"].textContent = line;
+  }
+
+  function sectionClass(name) {
+    var key = String(name || "").toLowerCase();
+    return ["added", "changed", "optimizations", "fixed"].indexOf(key) >= 0 ? key : "";
+  }
+
+  function paintRelease(data) {
+    var latest = data.latest;
+    el["update-version"].textContent = "";
+    var from = document.createElement("span");
+    from.className = "from";
+    from.textContent = data.current + " → ";
+    var to = document.createElement("span");
+    to.className = "to";
+    to.textContent = latest.version;
+    el["update-version"].appendChild(from);
+    el["update-version"].appendChild(to);
+
+    var sections = Array.isArray(latest.sections) ? latest.sections : [];
+    var meta = [];
+    if (latest.publishedAt) {
+      var published = new Date(latest.publishedAt);
+      if (!isNaN(published.getTime())) meta.push("Released " + dayLabel(published, new Date()));
+    }
+    var counts = sections.filter(function (s) { return s.name; }).map(function (s) {
+      return s.entries.length + " " + s.name.toLowerCase();
+    }).join(" · ");
+    el["update-meta"].textContent = meta.concat(counts ? [counts] : []).join("\n");
+    el["update-release"].hidden = false;
+    // The panel shows "installed → new", so the plain Installed line would only repeat it.
+    el["update-installed"].hidden = true;
+
+    var host = el["update-sections"];
+    host.textContent = "";
+    var hasDetail = false;
+    sections.forEach(function (section) {
+      var wrap = document.createElement("div");
+      wrap.className = "release-section";
+      if (section.name) {
+        var heading = document.createElement("p");
+        heading.className = "release-heading " + sectionClass(section.name);
+        heading.appendChild(document.createTextNode(section.name));
+        var count = document.createElement("span");
+        count.className = "count";
+        count.textContent = String(section.entries.length);
+        heading.appendChild(count);
+        wrap.appendChild(heading);
+      }
+      var list = document.createElement("ul");
+      section.entries.forEach(function (entry) {
+        var item = document.createElement("li");
+        var body = document.createElement("div");
+        body.className = "release-entry";
+        var title = document.createElement("span");
+        title.className = "release-title";
+        title.textContent = entry.title;
+        body.appendChild(title);
+        if (entry.detail) {
+          hasDetail = true;
+          var detail = document.createElement("span");
+          detail.className = "release-detail";
+          detail.textContent = entry.detail;
+          body.appendChild(detail);
+        }
+        item.appendChild(body);
+        list.appendChild(item);
+      });
+      wrap.appendChild(list);
+      host.appendChild(wrap);
+    });
+
+    // Sections are the device's reading of the notes; without any, show the notes as they are.
+    host.hidden = sections.length === 0;
+    el["update-notes"].hidden = sections.length > 0 || !latest.notes;
+    el["update-notes"].textContent = sections.length > 0 ? "" : (latest.notes || "");
+    el["update-details"].hidden = !hasDetail;
+    el["update-link"].href = latest.url;
+    el["update-notes-actions"].hidden = false;
+  }
+
+  function hideRelease() {
+    el["update-installed"].hidden = false;
+    el["update-release"].hidden = true;
+    el["update-sections"].hidden = true;
+    el["update-notes"].hidden = true;
+    el["update-notes-actions"].hidden = true;
+  }
+
+  function onToggleDetails() {
+    var open = el["update-sections"].classList.toggle("details");
+    el["update-details"].textContent = open ? "Hide details" : "Show details";
+    el["update-details"].setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function onUpdateStripClick(event) {
+    event.preventDefault();
+    el["update-card"].open = true;
+    el["update-card"].scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  /** Check now: the device asks GitHub straight away instead of waiting for tomorrow's check. */
+  function onCheckClick() {
+    el["update-check"].disabled = true;
+    el["update-check"].textContent = "Checking…";
+    writeJSON("/api/update/check", "POST", {})
+      .then(renderUpdate)
+      .catch(function (err) {
+        setNotice(el["update-error"], "Couldn't check: " + err.message);
+      })
+      .then(function () {
+        el["update-check"].disabled = false;
+        el["update-check"].textContent = "Check now";
+      });
   }
 
   function refreshUpdate() {
@@ -1951,7 +2212,7 @@
       .catch(function (err) {
         stopUpdatePolling();
         el["update-status"].textContent = "Couldn't check for updates: " + err.message;
-        el["update-summary"].textContent = "Check failed";
+        setSummary("Check failed", false);
         el["update-button"].hidden = true;
       });
   }
@@ -2324,6 +2585,9 @@
     el["vol-range"].addEventListener("input", paintVolume);
     el["filters-save"].addEventListener("click", onSaveFilters);
     el["update-button"].addEventListener("click", onUpdateClick);
+    el["update-check"].addEventListener("click", onCheckClick);
+    el["update-details"].addEventListener("click", onToggleDetails);
+    el["update-strip"].addEventListener("click", onUpdateStripClick);
     el["camshare-pwr"].addEventListener("click", onToggleShare);
     el["camshare-copy"].addEventListener("click", onCopyShareUrl);
     setupAnnounce();

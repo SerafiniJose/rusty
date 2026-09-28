@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One What's new entry: its first sentence, and the rest below it once details are shown.
+     Focusable only while details are shown (set at runtime), so a remote can step through a list
+     taller than the screen — plain text is otherwise unreachable by D-pad scrolling. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+    android:layout_marginHorizontal="@dimen/tv_focus_ring_gap_offset"
+    android:paddingVertical="3dp"
+    android:foreground="@drawable/bg_tv_focus"
+    android:focusable="false"
+    android:orientation="horizontal">
+
+    <View
+        android:layout_width="5dp"
+        android:layout_height="5dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="10dp"
+        android:background="@drawable/bg_whats_new_bullet" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvEntryTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_regular"
+            android:lineSpacingMultiplier="1.1"
+            android:textColor="@color/ink"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tvEntryDetail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:fontFamily="@font/hanken_regular"
+            android:lineSpacingMultiplier="1.15"
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp"
+            android:visibility="gone" />
+    </LinearLayout>
+</LinearLayout>

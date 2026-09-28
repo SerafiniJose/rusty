@@ -49,6 +49,9 @@ class RustyApp : Application() {
             SecretStore.of(this)
         }
 
+        // Before anything can check for updates: the once-a-day answer is persisted through it.
+        UpdateNotice.init(this)
+
         val mainHandler = Handler(mainLooper)
         receiverStore = ReceiverStateStore(
             initial = ReceiverDashboardState.waiting(deviceName),

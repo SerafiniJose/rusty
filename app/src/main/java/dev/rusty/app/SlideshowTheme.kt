@@ -158,7 +158,10 @@ class SlideshowTheme : ScreensaverTheme {
         clockGroup.setOnClickListener { this.host?.requestExit() }
         btnExit.setOnClickListener { this.host?.requestExit() }
         root.findViewById<ImageButton>(R.id.ssBtnSettings).setOnClickListener { host.openSettings() }
-        root.findViewById<ImageButton>(R.id.ssBtnInfo).setOnClickListener { host.openInfo() }
+        root.findViewById<ImageButton>(R.id.ssBtnInfo).apply {
+            setOnClickListener { host.openInfo() }
+            UpdateDot.attach(this)
+        }
         launcher = FeatureLauncher(
             toggle = root.findViewById(R.id.ssBtnLauncher),
             menu = root.findViewById<LinearLayout>(R.id.ssLauncherMenu),

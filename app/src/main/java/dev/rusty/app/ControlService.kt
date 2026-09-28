@@ -1694,10 +1694,15 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
     // -- update check / install ----------------------------------------------------------
 
     /** Blocking GitHub fetch on a server pool thread — same cost class as the Immich proxy
-     *  routes, and bounded by [UpdateRepository]'s 15-minute cache. */
-    override fun updateCheck(): ControlUpdateCheck {
-        val check = UpdateRepository.check(BuildConfig.VERSION_NAME)
-        return ControlUpdateCheck(
+     *  routes, and normally answered from [UpdateRepository]'s once-a-day cache. */
+    override fun updateCheck(): ControlUpdateCheck =
+        toControlCheck(UpdateRepository.check(BuildConfig.VERSION_NAME))
+
+    override fun refreshUpdateCheck(): ControlUpdateCheck =
+        toControlCheck(UpdateRepository.check(BuildConfig.VERSION_NAME, force = true))
+
+    private fun toControlCheck(check: UpdateRepository.UpdateCheck): ControlUpdateCheck =
+        ControlUpdateCheck(
             current = check.currentVersion,
             status = when (check.status) {
                 UpdateRepository.UpdateStatus.UP_TO_DATE -> "up_to_date"
@@ -1705,11 +1710,20 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
                 UpdateRepository.UpdateStatus.ERROR -> "error"
             },
             latest = check.latest?.let {
-                ControlUpdateLatest(it.versionName, it.notes, it.releaseUrl, hasApk = it.apkUrl != null)
+                ControlUpdateLatest(
+                    version = it.versionName,
+                    notes = it.notes,
+                    url = it.releaseUrl,
+                    hasApk = it.apkUrl != null,
+                    publishedAt = it.publishedAt,
+                    apkSize = it.apkSizeBytes,
+                    sections = ReleaseNotes.parse(it.notes),
+                )
             },
             install = ApkInstall.installer(context).snapshot(),
+            checkedAt = check.checkedAtMs,
+            checkFailed = check.lastCheckFailed,
         )
-    }
 
     override fun startUpdateInstall(): ControlInstallStart {
         // Normally answered from cache (the page GETs /api/update right before POSTing), but a

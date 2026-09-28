@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One section of the About card's What's new ("ADDED 4"), its entries appended below the
+     heading at runtime. The square and label take the section's colour. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="16dp"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/rowSectionHeading"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="6dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <View
+            android:id="@+id/viewSectionMark"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_whats_new_mark" />
+
+        <TextView
+            android:id="@+id/tvSectionName"
+            style="@style/Widget.Rusty.SectionHeader"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/hanken_medium" />
+
+        <TextView
+            android:id="@+id/tvSectionCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:fontFamily="@font/hanken_regular"
+            android:textColor="@color/muted_dim"
+            android:textSize="12sp" />
+    </LinearLayout>
+</LinearLayout>

@@ -15,7 +15,8 @@
         android:paddingEnd="24dp"
         android:paddingBottom="24dp">
 
-        <!-- Header: app name + running version, centered. -->
+        <!-- Header: app name + running version, centered. With an update the version line reads
+             "Version 2.6.0 → 2.7.0" and the release line below it appears. -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -36,32 +37,19 @@
             android:textColor="@color/muted_dim"
             android:textSize="14sp" />
 
-        <!-- Update banner: hidden until a check finds a newer release. -->
-        <LinearLayout
-            android:id="@+id/cardUpdateBanner"
+        <!-- "Released 21 Sep · 75 MB download": shown only with an update. -->
+        <TextView
+            android:id="@+id/tvReleaseMeta"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:background="@drawable/bg_status_pill"
+            android:layout_marginTop="2dp"
+            android:fontFamily="@font/hanken_regular"
             android:gravity="center"
-            android:orientation="horizontal"
-            android:paddingStart="14dp"
-            android:paddingTop="8dp"
-            android:paddingEnd="14dp"
-            android:paddingBottom="8dp"
-            android:visibility="gone">
+            android:textColor="@color/muted_dim"
+            android:textSize="13sp"
+            android:visibility="gone" />
 
-            <TextView
-                android:id="@+id/tvUpdateBannerText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="@font/hanken_medium"
-                android:text="Update available · 1.2.0"
-                android:textColor="@color/ink"
-                android:textSize="14sp" />
-        </LinearLayout>
-
-        <!-- Status line shown while checking, or when up to date / unavailable. -->
+        <!-- Status line: checking, up to date, couldn't check, or an install failure. -->
         <TextView
             android:id="@+id/tvUpdateStatus"
             android:layout_width="match_parent"
@@ -73,45 +61,115 @@
             android:textColor="@color/muted_dim"
             android:textSize="13sp" />
 
-        <!-- What's new: title + notes, shown only when an update is available. -->
-        <TextView
-            android:id="@+id/tvWhatsNewTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:fontFamily="@font/hanken_medium"
-            android:text="What's new"
-            android:textColor="@color/ink"
-            android:textSize="15sp"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/tvWhatsNew"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:fontFamily="@font/hanken_regular"
-            android:lineSpacingMultiplier="1.15"
-            android:textColor="@color/muted_dim"
-            android:textSize="13sp"
-            android:visibility="gone" />
-
-        <!-- Download: opens the release page in a browser. Shown only when an update exists. -->
+        <!-- Update: installs in-app (or opens the release page). Shown only when an update exists,
+             and first in the card so a remote lands on it. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnDownload"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
+            android:layout_marginTop="14dp"
             android:foreground="@drawable/bg_tv_focus"
-            android:text="Download on GitHub"
+            android:fontFamily="@font/hanken_medium"
+            android:text="Update"
+            android:letterSpacing="0"
+            android:textAllCaps="false"
             android:textColor="@color/white"
+            android:textSize="16sp"
             app:backgroundTint="@color/accent_fallback"
             android:visibility="gone" />
+
+        <!-- What's new: the release's sections (built at runtime into llWhatsNew), or the notes as
+             plain text when they have no structure to read. Shown only with an update. -->
+        <LinearLayout
+            android:id="@+id/layWhatsNew"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="@font/hanken_medium"
+                    android:text="What's new"
+                    android:textColor="@color/ink"
+                    android:textSize="15sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnWhatsNewDetails"
+                    style="@style/Widget.Rusty.Button.Secondary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:foreground="@drawable/bg_tv_focus"
+                    android:text="Show details"
+                    android:letterSpacing="0"
+            android:textAllCaps="false"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/llWhatsNew"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal" />
+
+            <TextView
+                android:id="@+id/tvWhatsNew"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:fontFamily="@font/hanken_regular"
+                android:lineSpacingMultiplier="1.15"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- When the answer is from, and Check now to ask GitHub again straight away (the app
+             otherwise checks once a day). -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tvCheckedAt"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="12dp"
+                android:fontFamily="@font/hanken_regular"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCheckNow"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:foreground="@drawable/bg_tv_focus"
+                android:text="Check now"
+                android:letterSpacing="0"
+            android:textAllCaps="false"
+                android:textSize="13sp" />
+        </LinearLayout>
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="18dp"
+            android:layout_marginTop="16dp"
             android:background="@color/surface_border" />
 
         <!-- Source & releases: always available, opens the repo. -->

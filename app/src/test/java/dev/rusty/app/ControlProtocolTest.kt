@@ -132,6 +132,16 @@ private class FakeControlRuntime : ControlRuntime {
         return updateCheckResult
     }
 
+    var refreshResult = ControlUpdateCheck(
+        current = "2.3.0", status = "up_to_date", latest = null,
+        install = InstallSnapshot(InstallPhase.IDLE, null, null),
+    )
+    var refreshCalls = 0
+    override fun refreshUpdateCheck(): ControlUpdateCheck {
+        refreshCalls++
+        return refreshResult
+    }
+
     var installStartResult = ControlInstallStart.STARTED
     var installStartCalls = 0
     override fun startUpdateInstall(): ControlInstallStart {
@@ -926,6 +936,36 @@ class ControlProtocolTest {
         val res = route(req("GET", "/api/update", host = "evil.example.com"), rt)
         assertEquals(403, res.status)
         assertEquals(0, rt.updateCheckCalls)
+    }
+
+    // -- POST /api/update/check (Check now) --------------------------------------
+
+    @Test fun postCheck_forcesACheckAndReturnsItsJson() {
+        val rt = FakeControlRuntime()
+        rt.refreshResult = ControlUpdateCheck(
+            current = "2.6.0", status = "update_available",
+            latest = ControlUpdateLatest("2.7.0", "", "https://x/rel", hasApk = true),
+            install = InstallSnapshot(InstallPhase.IDLE, null, null),
+            checkedAt = 42L,
+        )
+        val res = route(req("POST", "/api/update/check", body = "{}"), rt)
+        assertEquals(200, res.status)
+        assertEquals(rt.refreshResult.toJson(), res.body)
+        assertEquals(1, rt.refreshCalls)
+        assertEquals(0, rt.updateCheckCalls)
+    }
+
+    @Test fun postCheck_withoutJsonContentType_415_notChecked() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/update/check", body = "{}", contentType = "text/plain"), rt)
+        assertEquals(415, res.status)
+        assertEquals(0, rt.refreshCalls)
+    }
+
+    @Test fun getOnCheckPath_404() {
+        val rt = FakeControlRuntime()
+        assertEquals(404, route(req("GET", "/api/update/check"), rt).status)
+        assertEquals(0, rt.refreshCalls)
     }
 
     // -- POST /api/update/install ------------------------------------------------

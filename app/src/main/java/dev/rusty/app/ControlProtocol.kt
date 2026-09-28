@@ -108,8 +108,12 @@ interface ControlRuntime {
      *  when it named the deleted voice. */
     fun deleteTtsVoice(voiceId: String): ControlVoiceDeleteResult
 
-    /** May block on a (TTL-cached) GitHub fetch — pool threads only, like [immichList]. */
+    /** May block on a (once-a-day cached) GitHub fetch — pool threads only, like [immichList]. */
     fun updateCheck(): ControlUpdateCheck
+
+    /** "Check now": asks GitHub again whatever the cache says. Blocks like [updateCheck].
+     *  Defaulted to the cached answer so fakes that don't care need not implement it. */
+    fun refreshUpdateCheck(): ControlUpdateCheck = updateCheck()
 
     /** Kicks off the async APK download+install; returns immediately with the outcome class. */
     fun startUpdateInstall(): ControlInstallStart
@@ -405,6 +409,10 @@ object ControlProtocol {
 
             req.method == "POST" && path == "/api/update/install" ->
                 writeGuarded(req) { handleUpdateInstall(rt) }
+
+            // A POST, not a GET: it spends a GitHub request, so it takes the write guards.
+            req.method == "POST" && path == "/api/update/check" ->
+                writeGuarded(req) { jsonOk(rt.refreshUpdateCheck().toJson()) }
 
             req.method == "GET" && path == "/" ->
                 HttpResponse(200, "OK", listOf("Content-Type" to HTML_CONTENT_TYPE), rt.controlPageHtml())

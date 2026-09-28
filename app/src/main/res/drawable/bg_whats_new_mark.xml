@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What's new section mark; tinted per section at runtime (backgroundTintList). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/muted_dim" />
+    <corners android:radius="2dp" />
+</shape>

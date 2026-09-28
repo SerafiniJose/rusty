@@ -64,7 +64,10 @@ class OledTheme : ScreensaverTheme {
         track = root.findViewById(R.id.ssOledTrack)
         chrome = root.findViewById(R.id.ssOledChrome)
         root.findViewById<ImageButton>(R.id.ssOledBtnSettings).setOnClickListener { host.openSettings() }
-        root.findViewById<ImageButton>(R.id.ssOledBtnInfo).setOnClickListener { host.openInfo() }
+        root.findViewById<ImageButton>(R.id.ssOledBtnInfo).apply {
+            setOnClickListener { host.openInfo() }
+            UpdateDot.attach(this)
+        }
         launcher = FeatureLauncher(
             toggle = root.findViewById(R.id.ssOledBtnLauncher),
             menu = root.findViewById<LinearLayout>(R.id.ssOledLauncherMenu),

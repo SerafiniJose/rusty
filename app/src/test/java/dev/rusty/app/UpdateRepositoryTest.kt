@@ -154,4 +154,212 @@ class UpdateRepositoryTest {
         assertFalse(UpdateRepository.isNewer(current = "1.1.0", latest = "banana"))
         assertFalse(UpdateRepository.isNewer(current = "", latest = ""))
     }
+
+    // ---- published date + APK size ---------------------------------------------
+
+    @Test
+    fun parsesPublishedAtAndApkSize() {
+        val json = """
+            {"tag_name":"v2.7.0","published_at":"2026-09-20T22:18:19Z","assets":[
+              {"name":"rusty-v2.7.0.apk","size":75370564,"browser_download_url":"https://x/rusty-v2.7.0.apk"}
+            ]}
+        """.trimIndent()
+        val info = UpdateRepository.parseRelease(json)!!
+        assertEquals("2026-09-20T22:18:19Z", info.publishedAt)
+        assertEquals(75_370_564L, info.apkSizeBytes)
+    }
+
+    @Test
+    fun missingPublishedAtAndSizeAreNull() {
+        val info = UpdateRepository.parseRelease("""{"tag_name":"v2.7.0"}""")!!
+        assertNull(info.publishedAt)
+        assertNull(info.apkSizeBytes)
+    }
+
+    // ---- persisted cache --------------------------------------------------------
+
+    private val release = UpdateRepository.ReleaseInfo(
+        versionName = "2.7.0", notes = "Added\n• A thing.", releaseUrl = "https://x/rel",
+        apkUrl = "https://x/rusty.apk", publishedAt = "2026-09-20T22:18:19Z", apkSizeBytes = 75_370_564,
+    )
+
+    @Test
+    fun cacheRoundTrips() {
+        val cached = UpdateRepository.Cached(release, 1_790_000_000_000L)
+        assertEquals(cached, UpdateRepository.decodeCache(UpdateRepository.encodeCache(cached)))
+    }
+
+    @Test
+    fun cacheWithoutOptionalFieldsRoundTrips() {
+        val bare = UpdateRepository.Cached(UpdateRepository.ReleaseInfo("2.7.0", "", "https://x/rel"), 5L)
+        assertEquals(bare, UpdateRepository.decodeCache(UpdateRepository.encodeCache(bare)))
+    }
+
+    @Test
+    fun garbageCacheIsNull() {
+        assertNull(UpdateRepository.decodeCache(null))
+        assertNull(UpdateRepository.decodeCache(""))
+        assertNull(UpdateRepository.decodeCache("not json"))
+        assertNull(UpdateRepository.decodeCache("""{"checkedAt":5}"""))
+        assertNull(UpdateRepository.decodeCache("""{"release":{"version":"2.7.0"}}"""))
+    }
+
+    // ---- Checker: once a day, persisted, forced by Check now ---------------------
+
+    private class FakeStore(var json: String? = null) : UpdateRepository.CacheStore {
+        var saves = 0
+        override fun load(): String? = json
+        override fun save(json: String) { this.json = json; saves++ }
+    }
+
+    private class Harness(store: FakeStore = FakeStore()) {
+        val store = store
+        var now = 1_000_000_000L
+        var fetches = 0
+        var next: UpdateRepository.FetchResult = UpdateRepository.FetchResult.Failed
+        val checker = UpdateRepository.Checker({ store }, { fetches++; next }, { now })
+    }
+
+    @Test
+    fun firstCheckFetchesAndPersists() {
+        val h = Harness()
+        h.next = UpdateRepository.FetchResult.Ok(release)
+        val result = h.checker.check("2.6.0", force = false)
+        assertEquals(UpdateRepository.UpdateStatus.UPDATE_AVAILABLE, result.status)
+        assertEquals(h.now, result.checkedAtMs)
+        assertFalse(result.lastCheckFailed)
+        assertEquals(1, h.fetches)
+        assertEquals(1, h.store.saves)
+    }
+
+    @Test
+    fun aSecondCheckTheSameDayDoesNotFetch() {
+        val h = Harness()
+        h.next = UpdateRepository.FetchResult.Ok(release)
+        h.checker.check("2.6.0", force = false)
+        h.now += UpdateRepository.CACHE_TTL_MS - 1
+        h.checker.check("2.6.0", force = false)
+        assertEquals(1, h.fetches)
+    }
+
+    @Test
+    fun aDayLaterItFetchesAgain() {
+        val h = Harness()
+        h.next = UpdateRepository.FetchResult.Ok(release)
+        h.checker.check("2.6.0", force = false)
+        h.now += UpdateRepository.CACHE_TTL_MS
+        h.checker.check("2.6.0", force = false)
+        assertEquals(2, h.fetches)
+    }
+
+    @Test
+    fun forceFetchesEvenWhenFresh() {
+        val h = Harness()
+        h.next = UpdateRepository.FetchResult.Ok(release)
+        h.checker.check("2.6.0", force = false)
+        h.checker.check("2.6.0", force = true)
+        assertEquals(2, h.fetches)
+    }
+
+    @Test
+    fun aRestartReadsThePersistedAnswerInsteadOfFetching() {
+        val first = Harness()
+        first.next = UpdateRepository.FetchResult.Ok(release)
+        first.checker.check("2.6.0", force = false)
+
+        val restarted = Harness(FakeStore(first.store.json))
+        restarted.now = first.now + 60_000
+        val result = restarted.checker.check("2.6.0", force = false)
+        assertEquals(0, restarted.fetches)
+        assertEquals(UpdateRepository.UpdateStatus.UPDATE_AVAILABLE, result.status)
+        assertEquals("2.7.0", result.latest?.versionName)
+    }
+
+    @Test
+    fun statusFollowsTheRunningVersion() {
+        val h = Harness()
+        h.next = UpdateRepository.FetchResult.Ok(release)
+        h.checker.check("2.6.0", force = false)
+        // 2.7.0 got installed: the same cached release now means up to date.
+        assertEquals(UpdateRepository.UpdateStatus.UP_TO_DATE, h.checker.check("2.7.0", force = false).status)
+    }
+
+    @Test
+    fun aFailureWithNothingCachedIsAnError() {
+        val h = Harness()
+        val result = h.checker.check("2.6.0", force = false)
+        assertEquals(UpdateRepository.UpdateStatus.ERROR, result.status)
+        assertTrue(result.lastCheckFailed)
+        assertNull(result.checkedAtMs)
+    }
+
+    @Test
+    fun aFailureKeepsServingTheLastGoodAnswer() {
+        val h = Harness()
+        h.next = UpdateRepository.FetchResult.Ok(release)
+        h.checker.check("2.6.0", force = false)
+        val checkedAt = h.now
+        h.now += UpdateRepository.CACHE_TTL_MS
+        h.next = UpdateRepository.FetchResult.Failed
+        val result = h.checker.check("2.6.0", force = false)
+        assertEquals(UpdateRepository.UpdateStatus.UPDATE_AVAILABLE, result.status)
+        assertTrue(result.lastCheckFailed)
+        assertEquals(checkedAt, result.checkedAtMs)
+    }
+
+    @Test
+    fun aFailureWaitsAnHourBeforeRetrying() {
+        val h = Harness()
+        h.checker.check("2.6.0", force = false)
+        h.now += UpdateRepository.ERROR_RETRY_MS - 1
+        h.checker.check("2.6.0", force = false)
+        assertEquals(1, h.fetches)
+        h.now += 1
+        h.checker.check("2.6.0", force = false)
+        assertEquals(2, h.fetches)
+    }
+
+    @Test
+    fun forceIgnoresTheRetryWait() {
+        val h = Harness()
+        h.checker.check("2.6.0", force = false)
+        h.next = UpdateRepository.FetchResult.Ok(release)
+        val result = h.checker.check("2.6.0", force = true)
+        assertEquals(2, h.fetches)
+        assertFalse(result.lastCheckFailed)
+    }
+
+    @Test
+    fun peekNeverFetches() {
+        val h = Harness()
+        assertNull(h.checker.peek("2.6.0"))
+        h.next = UpdateRepository.FetchResult.Ok(release)
+        h.checker.check("2.6.0", force = false)
+        assertEquals("2.7.0", h.checker.peek("2.6.0")?.latest?.versionName)
+        assertEquals(1, h.fetches)
+    }
+
+    // ---- the info-button dot ------------------------------------------------------
+
+    private fun checkOf(status: UpdateRepository.UpdateStatus, latest: String?) = UpdateRepository.UpdateCheck(
+        status, "2.6.0", latest?.let { UpdateRepository.ReleaseInfo(it, "", "https://x") },
+    )
+
+    @Test
+    fun dotShowsForAnUnseenUpdate() {
+        assertTrue(UpdateRepository.shouldShowDot(checkOf(UpdateRepository.UpdateStatus.UPDATE_AVAILABLE, "2.7.0"), null))
+        assertTrue(UpdateRepository.shouldShowDot(checkOf(UpdateRepository.UpdateStatus.UPDATE_AVAILABLE, "2.7.0"), "2.6.1"))
+    }
+
+    @Test
+    fun dotHidesOnceThatVersionWasSeen() {
+        assertFalse(UpdateRepository.shouldShowDot(checkOf(UpdateRepository.UpdateStatus.UPDATE_AVAILABLE, "2.7.0"), "2.7.0"))
+    }
+
+    @Test
+    fun noDotWithoutAnUpdate() {
+        assertFalse(UpdateRepository.shouldShowDot(null, null))
+        assertFalse(UpdateRepository.shouldShowDot(checkOf(UpdateRepository.UpdateStatus.UP_TO_DATE, "2.6.0"), null))
+        assertFalse(UpdateRepository.shouldShowDot(checkOf(UpdateRepository.UpdateStatus.ERROR, null), null))
+    }
 }
