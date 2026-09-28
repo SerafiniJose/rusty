@@ -18,6 +18,14 @@ data class PlaybackAnchor(
     val elapsedMs: Long,
     val capturedRealtimeMs: Long,
     val playing: Boolean,
+    /**
+     * Bumped every time a playback event re-anchors the position — a seek, a pause/resume, a drift
+     * correction, a track change. Lets a renderer tell "the anchor moved" from "the 1 Hz clock
+     * ticked", which the seek UI needs: it holds an optimistic position until the receiver
+     * confirms the seek with a new anchor. Compare generations, never elapsed values (a seek back
+     * to the current position is still a confirmation).
+     */
+    val generation: Long = 0L,
 ) {
     companion object {
         val IDLE = PlaybackAnchor(elapsedMs = 0L, capturedRealtimeMs = 0L, playing = false)

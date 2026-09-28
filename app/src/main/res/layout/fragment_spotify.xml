@@ -231,24 +231,22 @@
             android:textColor="@color/muted"
             android:textSize="21sp" />
 
-        <FrameLayout
-            android:id="@+id/progressRow"
+        <!-- Drawn bar (no per-tick layout). 32dp tall with the 6dp bar centred: the extra 13dp
+             above/below is the touch target, so the margins below subtract it to keep the bar
+             itself where the old 6dp row sat (28dp below the artist, 10dp above the times). -->
+        <dev.rusty.app.ProgressBarView
+            android:id="@+id/viewFullProgress"
             android:layout_width="match_parent"
-            android:layout_height="6dp"
-            android:layout_marginTop="28dp"
-            android:background="@drawable/bg_progress_track_ambient">
-
-            <View
-                android:id="@+id/viewFullProgressFill"
-                android:layout_width="120dp"
-                android:layout_height="match_parent"
-                android:background="@drawable/bg_progress_fill" />
-        </FrameLayout>
+            android:layout_height="32dp"
+            android:layout_marginTop="15dp"
+            android:contentDescription="Track position"
+            android:focusable="true"
+            android:nextFocusDown="@id/btnPlayPause" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="0dp"
             android:orientation="horizontal">
 
             <TextView

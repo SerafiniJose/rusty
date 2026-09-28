@@ -29,6 +29,13 @@ interface ControlRuntime {
     fun setVolume(percent: Int): ControlSnapshot?
 
     /**
+     * Seeks the Spotify track to [positionMs] (clamped to the track by the implementation; Spirc
+     * would drop a target past the end). Defaulted to [ControlSeekResult.NoTrack] for the same
+     * reason [requiredPassword] is: the test fakes that don't care about seeking stay unchanged.
+     */
+    fun seek(positionMs: Long): ControlSeekResult = ControlSeekResult.NoTrack
+
+    /**
      * Asks the shell to put [id] on screen. Like [setScreen] this is applied asynchronously (the
      * fragment transaction must run on the main thread), so the returned snapshot reports the
      * panel that is CURRENTLY showing — usually still the old one. The control page treats the
@@ -316,6 +323,9 @@ object ControlProtocol {
             req.method == "POST" && path == "/api/volume" ->
                 writeGuarded(req) { handleSetVolume(req, rt) }
 
+            req.method == "POST" && path == "/api/seek" ->
+                writeGuarded(req) { handleSeek(req, rt) }
+
             req.method == "POST" && path == "/api/panel" ->
                 writeGuarded(req) { handleSetPanel(req, rt) }
 
@@ -458,6 +468,27 @@ object ControlProtocol {
 
         val result = rt.setVolume(percent) ?: return errorResponse(409, "Conflict", "volume is fixed")
         return jsonOk(result.toJson())
+    }
+
+    // -------------------------------------------------------------------
+    // /api/seek
+    // -------------------------------------------------------------------
+
+    private fun handleSeek(req: HttpRequest, rt: ControlRuntime): HttpResponse {
+        val obj = parseJsonObject(req.body) ?: return errorResponse(400, "Bad Request", "malformed JSON")
+
+        val raw = obj.opt("positionMs")
+        val positionMs = (raw as? Number)?.toLong()
+        if (raw !is Number || positionMs == null || positionMs.toDouble() != raw.toDouble()) {
+            return errorResponse(400, "Bad Request", "'positionMs' must be an integer")
+        }
+        if (positionMs < 0L) return errorResponse(400, "Bad Request", "'positionMs' must be >= 0")
+        // No upper bound here: the router knows no duration; the runtime clamps to the track.
+
+        return when (val result = rt.seek(positionMs)) {
+            is ControlSeekResult.Ok -> jsonOk(result.snapshot.toJson())
+            ControlSeekResult.NoTrack -> errorResponse(409, "Conflict", "no Spotify track is loaded")
+        }
     }
 
     // -------------------------------------------------------------------

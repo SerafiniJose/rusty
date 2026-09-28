@@ -66,6 +66,13 @@ private class FakeControlRuntime : ControlRuntime {
         return volumeResult
     }
 
+    val seekCalls = mutableListOf<Long>()
+    var seekResult: ControlSeekResult? = null
+    override fun seek(positionMs: Long): ControlSeekResult {
+        seekCalls.add(positionMs)
+        return seekResult ?: ControlSeekResult.Ok(snap)
+    }
+
     var filtersValue = ImmichFilters(emptyList(), emptyList(), emptyList())
     override fun filters(): ImmichFilters = filtersValue
 
@@ -511,6 +518,67 @@ class ControlProtocolTest {
         val resNegative = route(req("POST", "/api/volume", body = """{"value":-1}"""), rtNegative)
         assertEquals(400, resNegative.status)
         assertTrue(rtNegative.volumeCalls.isEmpty())
+    }
+
+    // -- POST /api/seek -------------------------------------------------------
+
+    @Test fun postSeek_valid_200_returnsSnapshot() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/seek", body = """{"positionMs":12345}"""), rt)
+        assertEquals(200, res.status)
+        assertEquals(listOf(12_345L), rt.seekCalls)
+        assertEquals(rt.snap.toJson(), res.body)
+    }
+
+    @Test fun postSeek_noTrack_409() {
+        val rt = FakeControlRuntime()
+        rt.seekResult = ControlSeekResult.NoTrack
+        val res = route(req("POST", "/api/seek", body = """{"positionMs":0}"""), rt)
+        assertEquals(409, res.status)
+        assertEquals("no Spotify track is loaded", JSONObject(res.body).getString("error"))
+    }
+
+    @Test fun postSeek_pastTheEndIsTheRuntimesCall_notARouterError() {
+        // The router knows no duration; the runtime clamps. A huge value is still a valid request.
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/seek", body = """{"positionMs":99999999}"""), rt)
+        assertEquals(200, res.status)
+        assertEquals(listOf(99_999_999L), rt.seekCalls)
+    }
+
+    @Test fun postSeek_negative_400_notCalled() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/seek", body = """{"positionMs":-1}"""), rt)
+        assertEquals(400, res.status)
+        assertTrue(rt.seekCalls.isEmpty())
+    }
+
+    @Test fun postSeek_fractionalOrStringOrMissing_400_notCalled() {
+        for (body in listOf("""{"positionMs":10.5}""", """{"positionMs":"10"}""", """{}""")) {
+            val rt = FakeControlRuntime()
+            val res = route(req("POST", "/api/seek", body = body), rt)
+            assertEquals(body, 400, res.status)
+            assertTrue(body, rt.seekCalls.isEmpty())
+        }
+    }
+
+    @Test fun postSeek_malformedJson_400() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/seek", body = "{not json"), rt)
+        assertEquals(400, res.status)
+        assertTrue(rt.seekCalls.isEmpty())
+    }
+
+    @Test fun postSeek_requiresJsonContentType_415() {
+        val rt = FakeControlRuntime()
+        val res = route(req("POST", "/api/seek", body = """{"positionMs":1}""", contentType = "text/plain"), rt)
+        assertEquals(415, res.status)
+        assertTrue(rt.seekCalls.isEmpty())
+    }
+
+    @Test fun getSeek_isNotARoute_404() {
+        val res = route(req("GET", "/api/seek"))
+        assertEquals(404, res.status)
     }
 
     // -- Content-Type / body-size guards --------------------------------------

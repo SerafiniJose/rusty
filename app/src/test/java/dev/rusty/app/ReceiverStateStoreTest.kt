@@ -285,4 +285,54 @@ class ReceiverStateStoreTest {
         s.dispatch(stoppedEvent())
         assertEquals(sizeAfterOne, seen.size)
     }
+
+    // ---- live elapsed on subscribe + anchor generation (progress bar / seek) ----
+
+    @Test fun addListenerDeliversTheLiveElapsedWhilePlaying() {
+        var now = 1_000L
+        val s = store(clock = { now })
+        s.dispatch(playbackEvent(elapsedMs = 5_000L, playing = true))
+        now = 4_000L
+        val seen = mutableListOf<ReceiverSnapshot>()
+        s.addListener { seen.add(it) }
+        assertEquals(1, seen.size)
+        // 5 s anchored + 3 s of wall clock: the position the bar must show right now, not the
+        // stale anchor it used to get (which made the bar jump back for a second on every onStart).
+        assertEquals(8_000L, seen[0].state.elapsedMs)
+        // Same revision — the same state read later, not a new commit…
+        assertEquals(1L, seen[0].revision)
+        assertEquals(1L, s.snapshot.revision)
+        // …and the stored snapshot keeps the anchored value (the tick extrapolates from the anchor).
+        assertEquals(5_000L, s.snapshot.state.elapsedMs)
+    }
+
+    @Test fun addListenerWhilePausedDeliversTheAnchoredElapsed() {
+        var now = 1_000L
+        val s = store(clock = { now })
+        s.dispatch(playbackEvent(elapsedMs = 5_000L, playing = false))
+        now = 9_000L
+        val seen = mutableListOf<ReceiverSnapshot>()
+        s.addListener { seen.add(it) }
+        assertEquals(5_000L, seen[0].state.elapsedMs)
+    }
+
+    @Test fun playbackEventsBumpTheAnchorGeneration() {
+        val s = store()
+        assertEquals(0L, s.snapshot.anchor.generation)
+        s.dispatch(playbackEvent(elapsedMs = 5_000L))
+        assertEquals(1L, s.snapshot.anchor.generation)
+        // The same position again is still a NEW anchor (a seek back to where we were, a
+        // pause/resume): the renderer keys "the receiver re-anchored" off this, not off the value.
+        s.dispatch(playbackEvent(elapsedMs = 5_000L))
+        assertEquals(2L, s.snapshot.anchor.generation)
+    }
+
+    @Test fun statusAndServiceChangesKeepTheAnchorGeneration() {
+        val s = store()
+        s.dispatch(playbackEvent(elapsedMs = 5_000L))
+        s.dispatch(connectedEvent())
+        s.transitionService(ReceiverServiceState.RUNNING)
+        assertEquals(1L, s.snapshot.anchor.generation)
+        assertEquals(5_000L, s.snapshot.anchor.elapsedMs)
+    }
 }

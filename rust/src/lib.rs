@@ -161,6 +161,13 @@ fn startup_volume_from_percent(percent: i32) -> u16 {
     ((percent * u16::MAX as u32) / 100) as u16
 }
 
+/// A UI/API seek target as `Spirc::set_position_ms` wants it: never negative. Spirc itself drops
+/// a target past the track's end (`handle_seek` warns and returns), so only the lower bound is
+/// enforced here; Kotlin callers clamp to the duration they know before calling.
+fn seek_position_from_jint(position_ms: jint) -> u32 {
+    position_ms.max(0) as u32
+}
+
 /// Returns the process-wide receiver slot, initialising it on first use.
 fn receiver_slot() -> &'static Mutex<Option<ReceiverState>> {
     RECEIVER.get_or_init(|| Mutex::new(None))
@@ -1211,6 +1218,20 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_previousTrack(
     dispatch_spirc("previous", |spirc| spirc.prev());
 }
 
+/// Seeks the current track. Goes through `Spirc` rather than the `Player` directly so the connect
+/// state is updated too (the controlling Spotify app follows) and librespot emits `Seeked`, which
+/// `consume_player_events` republishes as PLAYING/PAUSED at the new position — the confirmation
+/// the now-playing bar waits for. A logged no-op when no session is active.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rusty_app_NativeBridge_seek(
+    _env: JNIEnv,
+    _class: JClass,
+    position_ms: jint,
+) {
+    let target = seek_position_from_jint(position_ms);
+    dispatch_spirc("seek", |spirc| spirc.set_position_ms(target));
+}
+
 /// Renames the running receiver in place: signals the discovery loop to re-advertise
 /// the mDNS service under `device_name_java` (keeping the same device id) without
 /// restarting the runtime, foreground service, or UI. If a session is actively
@@ -1346,5 +1367,24 @@ mod startup_volume_tests {
     fn clamps_out_of_range_input() {
         assert_eq!(startup_volume_from_percent(-40), 0);
         assert_eq!(startup_volume_from_percent(1000), u16::MAX);
+    }
+}
+
+#[cfg(test)]
+mod seek_tests {
+    use super::seek_position_from_jint;
+
+    #[test]
+    fn negative_targets_become_zero() {
+        // A UI cannot produce one, but a control-API caller can; Spirc wants a u32.
+        assert_eq!(seek_position_from_jint(-1), 0);
+        assert_eq!(seek_position_from_jint(i32::MIN), 0);
+    }
+
+    #[test]
+    fn non_negative_targets_pass_through() {
+        assert_eq!(seek_position_from_jint(0), 0);
+        assert_eq!(seek_position_from_jint(12_345), 12_345);
+        assert_eq!(seek_position_from_jint(i32::MAX), i32::MAX as u32);
     }
 }

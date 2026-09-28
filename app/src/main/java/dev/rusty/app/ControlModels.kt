@@ -23,11 +23,15 @@ data class ControlVolume(
 )
 
 /**
- * Immutable snapshot of playback source state (which player is active).
+ * Immutable snapshot of playback source state (which player is active), plus Spotify's live
+ * position and the track length in ms — 0/0 when nothing is loaded. [elapsedMs] is the store's
+ * extrapolated position at snapshot time, not the last event's, so a poll mid-track reads true.
  */
 data class ControlPlaying(
     val spotify: Boolean,
-    val dlna: Boolean
+    val dlna: Boolean,
+    val elapsedMs: Long = 0L,
+    val durationMs: Long = 0L,
 )
 
 /**
@@ -144,6 +148,16 @@ sealed class ControlCameraShareResult {
     object PermissionNeeded : ControlCameraShareResult()
 }
 
+/** Outcome of `POST /api/seek`. */
+sealed class ControlSeekResult {
+    /** Accepted; [snapshot] is the PRE-seek state (the receiver republishes the position
+     *  asynchronously), like every other asynchronously applied command. */
+    data class Ok(val snapshot: ControlSnapshot) : ControlSeekResult()
+
+    /** No Spotify track is loaded (duration unknown), so there is nothing to seek in (409). */
+    object NoTrack : ControlSeekResult()
+}
+
 /**
  * Immutable snapshot of the entire device control state.
  * Serializes to a nested JSON structure for the HTTP API.
@@ -195,6 +209,8 @@ data class ControlSnapshot(
         val playingObj = JSONObject()
         playingObj.put("spotify", playing.spotify)
         playingObj.put("dlna", playing.dlna)
+        playingObj.put("elapsedMs", playing.elapsedMs)
+        playingObj.put("durationMs", playing.durationMs)
         root.put("playing", playingObj)
 
         // Slideshow state

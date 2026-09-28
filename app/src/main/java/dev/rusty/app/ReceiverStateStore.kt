@@ -79,18 +79,23 @@ class ReceiverStateStore(
     }
 
     /** The true current playback position, extrapolated from the last anchor while playing. */
-    fun liveElapsedMs(): Long {
-        val anchor = synchronized(lock) { currentAnchor }
-        return if (anchor.playing) {
+    fun liveElapsedMs(): Long = liveElapsedOf(synchronized(lock) { currentAnchor })
+
+    private fun liveElapsedOf(anchor: PlaybackAnchor): Long =
+        if (anchor.playing) {
             anchor.elapsedMs + (clock.nowMs() - anchor.capturedRealtimeMs)
         } else {
             anchor.elapsedMs
         }
-    }
 
     /**
      * Registers [l] and schedules an INITIAL-delivery snapshot through the SAME [pending] queue, so
      * its first delivery cannot overtake a concurrent dispatch.
+     *
+     * The initial snapshot carries the LIVE elapsed position (see [liveSnapshotLocked]): a renderer
+     * that (re)subscribes mid-track — the now-playing screen returning from Home Assistant, lyrics
+     * or the screensaver — used to be handed the anchored value from seconds ago and drew the
+     * progress bar there until its own first tick.
      */
     fun addListener(l: Listener) {
         val shouldPost = synchronized(lock) {
@@ -99,12 +104,24 @@ class ReceiverStateStore(
             // by the wrapper's revision guard. The new listener only ever sees the current snapshot
             // (enqueued just below) and future ones — never replayed pre-registration history.
             listeners.add(Wrapper(l, seedRevision = currentSnapshot.revision - 1))
-            pending.addLast(currentSnapshot)
+            pending.addLast(liveSnapshotLocked())
             val wasScheduled = drainScheduled
             drainScheduled = true
             !wasScheduled
         }
         if (shouldPost) poster.post(drainRunnable)
+    }
+
+    /**
+     * Must be called under [lock]. The current snapshot with its display elapsed advanced to the
+     * live position — the same revision, because it is the same state read later, not a new
+     * commit. Existing listeners already at this revision drop it (their wrapper's guard), so only
+     * the newly registered listener sees it. Idle/paused anchors pass the snapshot through as is.
+     */
+    private fun liveSnapshotLocked(): ReceiverSnapshot {
+        val snap = currentSnapshot
+        if (!snap.anchor.playing) return snap
+        return snap.copy(state = snap.state.copy(elapsedMs = liveElapsedOf(snap.anchor)))
     }
 
     fun removeListener(l: Listener) {
@@ -129,11 +146,13 @@ class ReceiverStateStore(
 
     // --- internals ---
 
-    /** Builds the anchor for a playback event exactly as the old `anchorPlayback` did. */
+    /** Builds the anchor for a playback event exactly as the old `anchorPlayback` did, one
+     *  generation past the current anchor. Must be called under [lock] (it reads [currentAnchor]). */
     private fun anchorFor(event: ReceiverDashboardPlaybackEvent): PlaybackAnchor = PlaybackAnchor(
         elapsedMs = event.elapsedMs.coerceAtLeast(0L),
         capturedRealtimeMs = clock.nowMs(),
         playing = event.playbackState == ReceiverDashboardPlaybackEvent.PlaybackState.PLAYING,
+        generation = currentAnchor.generation + 1,
     )
 
     /**

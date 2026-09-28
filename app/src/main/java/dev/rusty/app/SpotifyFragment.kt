@@ -7,11 +7,11 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.ColorStateList
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
@@ -66,8 +66,13 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     private lateinit var artistText: TextView
     private lateinit var elapsedText: TextView
     private lateinit var durationText: TextView
-    private lateinit var progressFillView: View
-    private lateinit var progressFill: GradientDrawable
+    private lateinit var progressBar: ProgressBarView
+
+    /** Seek gestures + the optimistic position; Android-free and unit-tested, see its KDoc. */
+    private val scrub = ProgressScrubModel { SystemClock.elapsedRealtime() }
+
+    /** The debounced D-pad seek ([ProgressScrubModel.Effect.ArmCommit] re-arms it per press). */
+    private val stepCommit = Runnable { runScrubEffect(scrub.onCommitTimer()) }
     private lateinit var albumArtCard: MaterialCardView
     private lateinit var playingInfo: View
     private lateinit var albumArtImage: ImageView
@@ -199,6 +204,9 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
 
     override fun onStop() {
         handler.removeCallbacks(playbackClockTick)
+        // A D-pad seek still waiting out its debounce is committed now rather than lost.
+        handler.removeCallbacks(stepCommit)
+        runScrubEffect(scrub.onCommitTimer())
         store.removeListener(storeListener)
         requireContext().unregisterReceiver(clockTickReceiver)
         bloom.onHidden()    // pauses the mesh while off-screen
@@ -218,6 +226,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         loadedCoverUrl = null
         lastFocusVisual = null
         firstRender = true
+        scrub.reset()
         canvasController?.stop()
         canvasController = null
         canvasPlayer.animate().cancel()
@@ -336,8 +345,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         artistText = view.findViewById(R.id.tvFullArtist)
         elapsedText = view.findViewById(R.id.tvFullElapsed)
         durationText = view.findViewById(R.id.tvFullDuration)
-        progressFillView = view.findViewById(R.id.viewFullProgressFill)
-        progressFill = (progressFillView.background as GradientDrawable).mutate() as GradientDrawable
+        progressBar = view.findViewById(R.id.viewFullProgress)
         albumArtCard = view.findViewById(R.id.albumArtCard)
         playingInfo = view.findViewById(R.id.playingInfo)
         albumArtImage = view.findViewById(R.id.ivFullAlbumArt)
@@ -362,6 +370,18 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         nextButton.setOnClickListener { NativeBridge.nextTrack() }
         playPauseButton.setOnClickListener { togglePlayPause() }
         albumArtCard.setOnClickListener { openLyrics() }
+
+        // Seeking. The view reports ratios; the model decides what they mean; runScrubEffect does
+        // the one Android thing (the native seek / the debounce timer) and redraws.
+        progressBar.scrubListener = object : ProgressBarView.ScrubListener {
+            override fun onScrubStart(ratio: Float) = runScrubEffect(scrub.onDragStart(ratio))
+            override fun onScrubMove(ratio: Float) = runScrubEffect(scrub.onDragMove(ratio))
+            override fun onScrubEnd(ratio: Float) = runScrubEffect(scrub.onDragEnd(ratio))
+            override fun onScrubCancel() = runScrubEffect(scrub.onDragCancel())
+        }
+        progressBar.stepListener = ProgressBarView.StepListener { direction, repeatCount ->
+            runScrubEffect(scrub.onStep(direction, repeatCount, store.liveElapsedMs()))
+        }
 
         // The album-art card is the only way into the lyrics screen, so it must be reachable and
         // visibly focusable by a D-pad. MaterialCardView manages its own foreground (ripple), so a
@@ -403,9 +423,13 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     /**
      * The clock is animated into the top-right corner via scale + translation, so its layout rect
      * stays centered and the framework's focus search (even an explicit `nextFocus`) won't land on
-     * it. Route it by hand: D-pad UP from any transport button moves focus onto the clock; DOWN off
-     * it returns to play/pause. Center is left native, so OK on the focused clock toggles the
-     * clock-face overlay (and OK again, on the now-large clock, returns to now-playing).
+     * it. Route it by hand. Vertical order on the active face, bottom to top: transport row →
+     * progress bar → clock. UP from any transport button lands on the bar (this routing used to
+     * jump straight to the clock, which would skip the bar now that it is focusable); UP from the
+     * bar lands on the clock; DOWN off the clock returns to play/pause (DOWN off the bar is the
+     * layout's `nextFocusDown`). LEFT/RIGHT on the bar are seek steps, consumed by the view.
+     * Center is left native, so OK on the focused clock toggles the clock-face overlay (and OK
+     * again, on the now-large clock, returns to now-playing).
      */
     private fun routeClockFocus(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return false
@@ -414,14 +438,14 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         val transportVisible = playingInfo.visibility == View.VISIBLE
         when (event.keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> {
-                // UP lands on the (corner) clock from the transport row on the active face, and
-                // from settings/info while the clock-overlay is showing (transport hidden, so the
-                // framework would otherwise lose focus trying to reach the transform-moved clock).
                 val fromTransport = focusedId == R.id.btnPrev ||
                     focusedId == R.id.btnPlayPause || focusedId == R.id.btnNext
+                if (fromTransport && transportVisible) return progressBar.requestFocus()
+                // From settings/info while the clock-overlay is showing (transport hidden, so the
+                // framework would otherwise lose focus trying to reach the transform-moved clock).
                 val fromChromeInOverlay = !transportVisible &&
                     (focusedId == R.id.btnSettings || focusedId == R.id.btnInfo)
-                if (fromTransport || fromChromeInOverlay) return clockText.requestFocus()
+                if (focusedId == R.id.viewFullProgress || fromChromeInOverlay) return clockText.requestFocus()
             }
             KeyEvent.KEYCODE_DPAD_DOWN ->
                 // Active face: DOWN off the clock returns to play/pause. In overlay mode the
@@ -443,7 +467,15 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
 
     // ---- Rendering ----------------------------------------------------------
 
-    private fun renderDashboardState(state: ReceiverDashboardState) {
+    /**
+     * [anchorGeneration] tells the scrub model whether this render carries a NEW anchor (the
+     * receiver confirmed a seek, changed track, paused…) or just the current one again (a 1 Hz
+     * tick, a status change); it defaults to the store's, which is right for every caller.
+     */
+    private fun renderDashboardState(
+        state: ReceiverDashboardState,
+        anchorGeneration: Long = store.snapshot.anchor.generation,
+    ) {
         dashboardState = state
         // Read-only renderer (Task 12): the fragment observes the store and never writes back, so a
         // stale render — including the 1 Hz tick's extrapolated elapsed — can never clobber the store.
@@ -452,7 +484,6 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         statusName.text = state.receiverName
         titleText.text = state.trackTitle
         artistText.text = state.trackArtist
-        elapsedText.text = state.elapsedLabel
         durationText.text = state.durationLabel
 
         val visual = state.visualState()
@@ -471,7 +502,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         )
         renderControlsEnabled(state)
         renderAlbumArt(state)
-        renderProgress(state)
+        renderProgress(state, anchorGeneration)
         schedulePlaybackClockTick(state)
         rootView.keepScreenOn = state.isPlaybackClockRunning
 
@@ -569,7 +600,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     /** Tints the accent-driven chrome: progress fill, play button, eyebrow. */
     private fun applyAccent(color: Int) {
         AccentHolder.accent = color
-        progressFill.setColor(color)
+        progressBar.fillColor = color
         playPauseButton.backgroundTintList = ColorStateList.valueOf(color)
         eyebrowText.setTextColor(color)
     }
@@ -581,18 +612,43 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         }
     }
 
-    private fun renderProgress(state: ReceiverDashboardState) {
-        val ratio = if (state.durationMs > 0L) {
-            (state.elapsedMs.toFloat() / state.durationMs.toFloat()).coerceIn(0f, 1f)
+    /**
+     * Draws the store's position unless the scrub model says a gesture or an unconfirmed seek
+     * owns the bar right now — then its preview wins. Either way this is a repaint, not a layout.
+     */
+    private fun renderProgress(state: ReceiverDashboardState, anchorGeneration: Long) {
+        scrub.durationMs = state.durationMs
+        val shownMs = if (scrub.acceptSnapshot(anchorGeneration)) {
+            state.elapsedMs
         } else {
-            0f
+            scrub.previewMs ?: state.elapsedMs
         }
-        progressFillView.post {
-            val parentWidth = (progressFillView.parent as? View)?.width ?: 0
-            progressFillView.layoutParams = progressFillView.layoutParams.apply {
-                width = (parentWidth * ratio).toInt().coerceAtLeast(0)
+        renderPosition(shownMs)
+    }
+
+    /** The bar fill and the elapsed label for [elapsedMs] (duration from the scrub model). */
+    private fun renderPosition(elapsedMs: Long) {
+        elapsedText.text = ReceiverDashboardState.formatDuration(elapsedMs)
+        progressBar.progress = scrub.msToRatio(elapsedMs)
+    }
+
+    /**
+     * Executes what the scrub model asked for, then redraws the bar and label from its preview.
+     * The seek goes to the native core; the store confirms it later through a re-anchored
+     * PLAYING/PAUSED snapshot (a new [PlaybackAnchor.generation]), which releases the model's
+     * optimistic hold in [renderProgress].
+     */
+    private fun runScrubEffect(effect: ProgressScrubModel.Effect) {
+        when (effect) {
+            is ProgressScrubModel.Effect.Seek ->
+                NativeBridge.seek(effect.positionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+            is ProgressScrubModel.Effect.ArmCommit -> {
+                handler.removeCallbacks(stepCommit)
+                handler.postDelayed(stepCommit, effect.delayMs)
             }
+            ProgressScrubModel.Effect.None -> Unit
         }
+        renderPosition(scrub.previewMs ?: store.liveElapsedMs())
     }
 
     /** Maps receiver state to a (status label, dot color) pair for the now-playing header. */

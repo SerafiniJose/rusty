@@ -33,6 +33,14 @@ object NativeBridge {
     external fun previousTrack()
 
     /**
+     * Seeks the current track to [positionMs]. Routed through Spirc, so the controlling Spotify
+     * app follows and the receiver confirms by republishing the position (a PLAYING/PAUSED event
+     * with a new [PlaybackAnchor.generation]). Spirc silently ignores a target past the track's
+     * end — clamp to the duration you know before calling. Safe no-op without a session.
+     */
+    external fun seek(positionMs: Int)
+
+    /**
      * Fades the audible Spotify volume to [factor] (1.0 = full, 0.0 = silence) over [fadeMs].
      * The Connect volume slider never sees the attenuation. Safe no-op without a session.
      */

@@ -825,6 +825,9 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
         val systemBrightness = ScreenControlModel.systemBrightnessUsable(canWriteSystem)
         val max = maxVolume()
         val fixed = volumeFixed(max)
+        // One read of the receiver store so the playing flag, position and duration agree.
+        val receiverStore = runCatching { RustyApp.from(context) }.getOrNull()
+        val receiver = receiverStore?.snapshot
 
         return ControlSnapshot(
             deviceId = deviceId,
@@ -849,8 +852,10 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
                 // The explicit ground truth for each player, never a display string: the anchor is
                 // what the receiver itself reports, and an absent/stopped renderer service yields
                 // a null state, i.e. false — never a stale "still playing".
-                spotify = runCatching { RustyApp.from(context).snapshot.anchor.playing }.getOrDefault(false),
+                spotify = receiver?.anchor?.playing ?: false,
                 dlna = RendererRuntimeHolder.current().state?.transport == RendererTransport.PLAYING,
+                elapsedMs = receiverStore?.liveElapsedMs() ?: 0L,
+                durationMs = receiver?.state?.durationMs ?: 0L,
             ),
             slideshowEnabled = SlideshowSettings.isEnabled(prefs),
             panel = panelSnapshot(),
@@ -972,6 +977,18 @@ private class ControlServiceRuntime(private val context: Context) : ControlRunti
         // Read back rather than echo: the device quantizes to its own step count, so the caller is
         // told the percentage it actually got (e.g. 55 -> 53 on a 15-step stream).
         snapshot()
+    }
+
+    override fun seek(positionMs: Long): ControlSeekResult = synchronized(commandLock) {
+        val duration = runCatching { RustyApp.from(context).snapshot.state.durationMs }.getOrDefault(0L)
+        // A STOPPED receiver reports duration 0 (publish_track_event passes 0 for STOPPED), so
+        // this is the same "nothing loaded" fact the now-playing bar keys off.
+        if (duration <= 0L) return ControlSeekResult.NoTrack
+        // Clamp to the track: Spirc drops a target past the end outright instead of seeking to
+        // the end, which would turn "seek to 99:99" into a silent no-op.
+        NativeBridge.seek(positionMs.coerceIn(0L, duration).toInt())
+        // Pre-seek snapshot by design; the native core republishes the new position shortly.
+        ControlSeekResult.Ok(snapshot())
     }
 
     override fun setPanel(id: ControlPanelId): ControlPanelResult = synchronized(commandLock) {

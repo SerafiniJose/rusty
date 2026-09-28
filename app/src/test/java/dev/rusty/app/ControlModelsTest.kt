@@ -14,7 +14,7 @@ class ControlModelsTest {
         deviceId = "abc", deviceName = "Rusty Speaker", version = "2.3.0",
         screen = ControlScreen(on = true, brightness = 80, mode = "system", writable = true, available = true),
         volume = ControlVolume(value = 47, fixed = false),
-        playing = ControlPlaying(spotify = true, dlna = false),
+        playing = ControlPlaying(spotify = true, dlna = false, elapsedMs = 12_345L, durationMs = 200_000L),
         slideshowEnabled = true,
         panel = panel,
         app = app,
@@ -49,6 +49,9 @@ class ControlModelsTest {
         assertEquals(false, o.getJSONObject("volume").getBoolean("fixed"))
         assertEquals(true, o.getJSONObject("playing").getBoolean("spotify"))
         assertEquals(false, o.getJSONObject("playing").getBoolean("dlna"))
+        // Position + length feed a media-player entity's progress; integers in ms, never labels.
+        assertEquals(12_345L, o.getJSONObject("playing").getLong("elapsedMs"))
+        assertEquals(200_000L, o.getJSONObject("playing").getLong("durationMs"))
         assertEquals(true, o.getJSONObject("slideshow").getBoolean("enabled"))
         assertEquals("spotify", o.getJSONObject("panel").getString("active"))
     }

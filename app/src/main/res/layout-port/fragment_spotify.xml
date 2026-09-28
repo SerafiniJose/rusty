@@ -250,24 +250,21 @@
                 android:textColor="@color/muted"
                 android:textSize="18sp" />
 
-            <FrameLayout
-                android:id="@+id/progressRow"
+            <!-- Drawn bar, see layout/fragment_spotify.xml: 24dp/10dp of the old 6dp row minus
+                 the 13dp of touch padding the 32dp view adds above and below the bar. -->
+            <dev.rusty.app.ProgressBarView
+                android:id="@+id/viewFullProgress"
                 android:layout_width="match_parent"
-                android:layout_height="6dp"
-                android:layout_marginTop="24dp"
-                android:background="@drawable/bg_progress_track_ambient">
-
-                <View
-                    android:id="@+id/viewFullProgressFill"
-                    android:layout_width="120dp"
-                    android:layout_height="match_parent"
-                    android:background="@drawable/bg_progress_fill" />
-            </FrameLayout>
+                android:layout_height="32dp"
+                android:layout_marginTop="11dp"
+                android:contentDescription="Track position"
+                android:focusable="true"
+                android:nextFocusDown="@id/btnPlayPause" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="0dp"
                 android:orientation="horizontal">
 
                 <TextView
