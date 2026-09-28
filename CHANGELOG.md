@@ -5,8 +5,49 @@ All notable changes to Rusty are documented here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The section matching each release tag is published as that release's notes and is
-what the app shows under **About & updates → What's new**, so keep entries short and
-user-facing.
+what the app shows under **About & updates → What's new**.
+
+## [2.8.0] - 2026-09-29
+
+### Added
+- Crossfade between tracks, on at 4 s by default: set it from 0 to 12 s in
+  Settings → Spotify, or Off for gapless playback. The now-playing screen and
+  Canvas video dissolve across it.
+- Seek within a track on Rusty's own screen: drag the progress bar, or focus
+  it and press left or right on a TV remote to step 10 s (30 s held).
+- Announcements from the control page show their text on screen while they're
+  spoken. Switch it off in Settings → Voice.
+- Settings → Voice, a tab of its own for announcements, with system voices
+  under their own chip.
+- Pick the Home Assistant dashboard on screen from the control page: the
+  dashboards on Rusty's chip bar show under Home. /api/home_assistant/dashboard
+  does the same for automations.
+- A green dot on the info button when an update is available. About & updates
+  has Check now, and /api/update/check does the same.
+
+### Changed
+- The control page shows the lock screen theme only when Lock is the selected
+  source.
+- Rusty checks for updates once a day and remembers the answer across
+  restarts.
+- About & updates moved to a chip at the top of Services & status that shows
+  the version, and turns green with Update when there is one.
+- What's new, in About & updates and on the control page, lists each change on
+  one line under its section, with Show details for the rest.
+
+### Optimizations
+- Spotify audio plays through Android's AudioTrack: steadier on a busy device,
+  instant pause, exact resume. Thanks to pculebras (PR #13).
+- Smaller install: the old native audio libraries are gone.
+- androidx.media3 1.11: a stalled camera stream recovers instead of freezing.
+
+### Fixed
+- Restarting the Spotify receiver no longer leaves the old player behind or
+  hangs the service.
+- Tapping outside a camera form while typing only hides the keyboard.
+- A settings tab at the strip's edge shows its whole TV focus ring.
+- Adding a camera shows "Signing in…" after you enter its credentials, instead
+  of the address lookup screen again.
 
 ## [2.7.0] - 2026-09-20
 
@@ -24,7 +65,7 @@ user-facing.
   it. Touch only.
 - Seek within a track from Spotify. Dragging the progress bar in a Spotify
   client now moves playback on Rusty, and the position it shows stays
-  right after a correction. Thanks to HazZelnutz.
+  right after a correction. Thanks to HazZelnutz (PR #11).
 
 ### Changed
 - Spoken announcements no longer need the DLNA player running.
