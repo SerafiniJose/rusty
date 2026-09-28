@@ -286,6 +286,38 @@ class SdpRepairProxyTest {
     }
 
     @Test
+    fun `describe with the Accept header media3 1_11 sends reaches the camera and is still repaired`() {
+        Upstream().use { up ->
+            SdpRepairProxy("127.0.0.1", up.port, sps, pps).use { proxy ->
+                val port = proxy.start()!!
+                Socket("127.0.0.1", port).use { c ->
+                    c.soTimeout = 5_000
+                    val input = DataInputStream(BufferedInputStream(c.getInputStream()))
+                    // Exactly the head media3 1.11.0's RtspClient.sendDescribeRequest builds.
+                    c.send(
+                        "DESCRIBE rtsp://127.0.0.1:$port/h264Preview_01_sub RTSP/1.0\r\nCSeq: 1\r\n" +
+                            "User-Agent: AndroidXMedia3/1.11.0\r\nAccept: application/sdp\r\n\r\n",
+                    )
+                    val r = RtspClientMessages.readResponse(input)!!
+                    assertEquals(200, r.status)
+                    assertTrue(String(r.body).contains("\r\n$FIXED_FMTP\r\n"))
+                    // The Accept line went upstream verbatim, in its original position.
+                    assertEquals(
+                        listOf(
+                            "DESCRIBE rtsp://127.0.0.1:$port/h264Preview_01_sub RTSP/1.0",
+                            "CSeq: 1",
+                            "User-Agent: AndroidXMedia3/1.11.0",
+                            "Accept: application/sdp",
+                        ),
+                        up.lastHead,
+                    )
+                }
+            }
+            assertNull(up.failure)
+        }
+    }
+
+    @Test
     fun `a non-ascii digest realm survives the head rewrite`() {
         // RTSP header text is latin-1: re-encoding the head as ASCII would turn the 0xE9 into '?',
         // media3 would hash the mangled realm and Digest auth would fail with no visible cause.

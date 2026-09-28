@@ -499,7 +499,8 @@ class AndroidSnapshotIo(context: Context) : SnapshotIo {
         val texture = SurfaceTexture(false)
         texture.setDefaultBufferSize(MAX_TILE_WIDTH, DEFAULT_TILE_HEIGHT)
         val surface = Surface(texture)
-        val player = ExoPlayer.Builder(appContext).build()
+        // A one-frame grab must not take the wake lock media3 >= 1.9 holds by default.
+        val player = ExoPlayer.Builder(appContext).setWakeMode(C.WAKE_MODE_NONE).build()
         try {
             return suspendCancellableCoroutine { cont ->
                 val done = AtomicBoolean(false)

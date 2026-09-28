@@ -3,6 +3,7 @@ package dev.rusty.app
 import android.content.Context
 import android.util.AttributeSet
 import android.widget.FrameLayout
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -62,6 +63,10 @@ class CanvasPlayerView @JvmOverloads constructor(
             .build()
         return ExoPlayer.Builder(context)
             .setLoadControl(loadControl)
+            // A muted screen-bound loop never needs to keep the CPU awake: with the screen off
+            // nobody sees it, and media3 >= 1.9 would otherwise hold a partial wake lock for
+            // every Canvas on an always-on device.
+            .setWakeMode(C.WAKE_MODE_NONE)
             .build()
     }
 

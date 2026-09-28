@@ -1,6 +1,6 @@
 [versions]
 agp = "8.13.2"
-kotlin = "2.0.21"
+kotlin = "2.2.10"
 coreKtx = "1.17.0"
 junit = "4.13.2"
 # androidTest infra pinned to the set fragment-testing:1.8.5 forces onto the debug runtime
@@ -19,7 +19,7 @@ palette = "1.0.0"
 orgJson = "20231013"
 coroutines = "1.8.1"
 lifecycleRuntime = "2.8.7"
-media3 = "1.4.1"
+media3 = "1.11.0"
 protobuf = "3.25.5"
 protobufPlugin = "0.9.4"
 securityCrypto = "1.1.0"

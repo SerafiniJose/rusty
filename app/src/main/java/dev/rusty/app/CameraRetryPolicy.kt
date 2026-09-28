@@ -17,6 +17,11 @@ enum class StreamErrorKind { TRANSIENT, FATAL_AUTH, FATAL_NOT_FOUND, FATAL_UNSUP
  */
 object CameraRetryPolicy {
 
+    /** media3's `PlaybackException.ERROR_CODE_TIMEOUT`: since 1.9 the player raises it itself when
+     *  playback looks stuck (READY without progress for 10 s, buffering for 10 min). Pinned as a
+     *  number so this class stays free of media3 imports. */
+    const val ERROR_CODE_TIMEOUT = 1003
+
     /**
      * Classifies a media3 `PlaybackException` (by [errorCode] and its flattened [message]) into a
      * [StreamErrorKind].
@@ -24,6 +29,10 @@ object CameraRetryPolicy {
      * - regardless of [errorCode]: a message containing media3's "missing attribute fmtp" or
      *   "missing sprop parameter" phrase -> [StreamErrorKind.FATAL_NO_CODEC_PARAMS], checked before
      *   any code range below.
+     * - [ERROR_CODE_TIMEOUT] (`1003`, media3's own stuck-player detection) ->
+     *   [StreamErrorKind.TRANSIENT]: a camera that froze mid-stream is a disconnect, exactly like
+     *   `STATE_ENDED`, and the reconnect ladder is the right answer. The message is NOT scanned for
+     *   RTSP status markers (it carries the detector's millisecond counts, which would false-positive).
      * - `2000..2008` (io, including the unspecified 2000 code seen on-device): the message is
      *   matched case-insensitively for RTSP status markers — "401"/"unauthorized" or "403" ->
      *   [StreamErrorKind.FATAL_AUTH]; "404"/"454"/"not found" -> [StreamErrorKind.FATAL_NOT_FOUND];
@@ -39,6 +48,9 @@ object CameraRetryPolicy {
         // parse failure in disguise, and no code range tells the two apart.
         if (message != null && isMissingCodecParams(message.lowercase())) return StreamErrorKind.FATAL_NO_CODEC_PARAMS
         return when (errorCode) {
+            // Explicit, not left to `else`: the live view must keep reconnecting on a stall even if
+            // the 1000-series codes are ever routed somewhere fatal.
+            ERROR_CODE_TIMEOUT -> StreamErrorKind.TRANSIENT
             in 2000..2008 -> classifyIoMessage(message)
             in 3001..3004 -> StreamErrorKind.FATAL_UNSUPPORTED
             in 4001..4005 -> StreamErrorKind.FATAL_UNSUPPORTED

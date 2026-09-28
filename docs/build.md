@@ -1,6 +1,6 @@
 # Build from source
 
-**Toolchain:** JDK 17, Android SDK (compileSdk 36), Gradle 8.13 (via the wrapper), AGP 8.13.2, Kotlin 2.0.21.
+**Toolchain:** JDK 17, Android SDK (compileSdk 36), Gradle 8.13 (via the wrapper), AGP 8.13.2, Kotlin 2.2.10, androidx.media3 1.11.0 (ExoPlayer + RTSP).
 
 ```bash
 git clone https://github.com/SerafiniJose/rusty.git

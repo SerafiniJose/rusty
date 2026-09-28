@@ -198,6 +198,45 @@ class CameraRetryPolicyTest {
         assertEquals(StreamErrorKind.TRANSIENT, CameraRetryPolicy.classify(1000, "whatever"))
     }
 
+    // ---- classify: media3 >= 1.9 stuck-player detection (ERROR_CODE_TIMEOUT = 1003) ----
+
+    @Test
+    fun errorCodeTimeoutConstantIsMedia3sPlaybackExceptionValue() {
+        // PlaybackException.ERROR_CODE_TIMEOUT; pinned here so this pure class never imports media3.
+        assertEquals(1003, CameraRetryPolicy.ERROR_CODE_TIMEOUT)
+    }
+
+    @Test
+    fun classifyStuckPlayerTimeoutIsTransient() {
+        // media3's StuckPlayerException message shape: no RTSP status, just the detector's own text.
+        assertEquals(
+            StreamErrorKind.TRANSIENT,
+            CameraRetryPolicy.classify(CameraRetryPolicy.ERROR_CODE_TIMEOUT, "Playback stuck: playing without progress for 10000 ms"),
+        )
+    }
+
+    @Test
+    fun classifyStuckPlayerTimeoutWithNullMessageIsTransient() {
+        assertEquals(StreamErrorKind.TRANSIENT, CameraRetryPolicy.classify(1003, null))
+    }
+
+    @Test
+    fun classifyStuckPlayerTimeoutIgnoresStatusLookingDigits() {
+        // The io-range status matching must not apply to 1003: "401" here is a duration, not an RTSP status.
+        assertEquals(
+            StreamErrorKind.TRANSIENT,
+            CameraRetryPolicy.classify(1003, "stuck for 401 ms"),
+        )
+    }
+
+    @Test
+    fun classifyFmtpMarkerStillWinsOverStuckPlayerTimeout() {
+        assertEquals(
+            StreamErrorKind.FATAL_NO_CODEC_PARAMS,
+            CameraRetryPolicy.classify(1003, "Source error | missing attribute fmtp"),
+        )
+    }
+
     // ---- nextDelayMs backoff sequence ----
 
     @Test

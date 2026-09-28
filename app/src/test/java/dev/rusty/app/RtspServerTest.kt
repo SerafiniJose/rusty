@@ -286,4 +286,28 @@ class RtspServerTest {
             }
         } finally { server.stop() }
     }
+
+    @Test fun `describe with the Accept header media3 1_11 sends is answered with sdp`() {
+        val pipeline = FakePipeline()
+        val hub = CameraShareHub(pipeline, { CameraShareSettings.Lens.FRONT }, { encoding }, { _, _ -> {} }, {}, clock = { 0L })
+        val port = freePort(); val server = RtspServer(port, hub, { null }); assertTrue(server.start())
+        try {
+            Conn(Socket("127.0.0.1", port)).use { s ->
+                s.socket.soTimeout = 5_000
+                val base = "rtsp://127.0.0.1:$port/live"
+                // Exactly the head media3 1.11.0's RtspClient.sendDescribeRequest builds: CSeq,
+                // User-Agent, then Accept. 1.4.1 sent no Accept at all.
+                val (status, headers) = s.rtsp(
+                    "DESCRIBE $base RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: AndroidXMedia3/1.11.0\r\nAccept: application/sdp\r\n\r\n",
+                )
+                assertEquals(200, status)
+                assertEquals("application/sdp", headers["CONTENT-TYPE"])
+                assertTrue(headers["CONTENT-LENGTH"]!!.toInt() > 0)
+                // A lower-case header name is the same header (RFC 2326 §4.2): still answered.
+                val (status2, headers2) = s.rtsp("DESCRIBE $base RTSP/1.0\r\nCSeq: 2\r\naccept: application/sdp\r\n\r\n")
+                assertEquals(200, status2)
+                assertEquals("application/sdp", headers2["CONTENT-TYPE"])
+            }
+        } finally { server.stop() }
+    }
 }

@@ -969,7 +969,10 @@ data class ProbeResult(val ok: Boolean, val format: VideoFormatInfo?, val errorK
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 private object RtspProbe {
     suspend fun run(context: Context, uri: String, forceTcp: Boolean): ProbeResult {
-        val player = androidx.media3.exoplayer.ExoPlayer.Builder(context).build()
+        // An 8 s probe must not take the wake lock media3 >= 1.9 holds by default.
+        val player = androidx.media3.exoplayer.ExoPlayer.Builder(context)
+            .setWakeMode(androidx.media3.common.C.WAKE_MODE_NONE)
+            .build()
         return try {
             kotlinx.coroutines.suspendCancellableCoroutine { cont ->
                 val done = java.util.concurrent.atomic.AtomicBoolean(false)

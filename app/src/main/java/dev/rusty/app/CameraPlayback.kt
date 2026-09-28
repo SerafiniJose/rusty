@@ -35,7 +35,9 @@ sealed interface LiveState {
     data class Fatal(val kind: StreamErrorKind) : LiveState
 }
 
-/** The two connect-phase watchdogs. media3 1.4.1's RTSP stack has no connect timeout of its own. */
+/** The two connect-phase watchdogs. media3's RTSP stack (1.4.1, still true on 1.11.0) has no
+ *  connect timeout of its own: `RtspMediaSource.Factory.setTimeoutMs` only covers RTP silence after
+ *  PLAY, and the 1.9+ stuck-player detection arms far later (10 min buffering / 10 s once READY). */
 enum class Watchdog { HANDSHAKE, FIRST_FRAME }
 
 /** Which of a camera's two RTSP streams a session is playing: the required sub stream, or the
@@ -70,11 +72,14 @@ sealed interface PlaybackEffect {
 /**
  * The pure core of the live view: watchdogs, error classification and the reconnect ladder.
  *
- * Why the watchdogs are load-bearing (Task 1 de-risk run, on-device): media3 1.4.1's RTSP client
- * has **no connect timeout**. A TCP peer that accepts the socket and then never answers DESCRIBE
- * leaves the player buffering forever with no error and no state change — the
- * [HANDSHAKE][Watchdog.HANDSHAKE] (8s) and [FIRST_FRAME][Watchdog.FIRST_FRAME] (12s) timers here
- * are the only thing that ever notices. The same run showed a camera that vanishes mid-stream
+ * Why the watchdogs are load-bearing (Task 1 de-risk run, on-device, media3 1.4.1; unchanged in
+ * 1.11.0): media3's RTSP client has **no connect timeout**. A TCP peer that accepts the socket and
+ * then never answers DESCRIBE leaves the player buffering forever with no error and no state change
+ * — the [HANDSHAKE][Watchdog.HANDSHAKE] (8s) and [FIRST_FRAME][Watchdog.FIRST_FRAME] (12s) timers
+ * here are the only thing that ever notices before media3's own 10-minute stuck-buffering timer.
+ * Once READY, media3 >= 1.9 adds a 10 s no-progress detector that surfaces as
+ * `ERROR_CODE_TIMEOUT` (1003); [CameraRetryPolicy] classifies it TRANSIENT, so a frozen stream
+ * takes the same reconnect ladder as a vanished one. The same run showed a camera that vanishes mid-stream
  * surfaces `STATE_ENDED` rather than an error, which is why [onStreamEnded] exists and behaves
  * exactly like a transient failure.
  *
@@ -654,7 +659,13 @@ class CameraPlayback(
             // Live video: a small buffer keeps latency down and recovers fast after a rebuffer.
             .setBufferDurationsMs(1_000, 3_000, 500, 500)
             .build()
-        val p = ExoPlayer.Builder(appContext).setLoadControl(loadControl).build()
+        // media3 >= 1.9 holds a partial wake lock by default while playing; say so explicitly, and
+        // add the Wi-Fi lock a live network stream the user is watching wants (RendererPlayer does
+        // the same for announcements).
+        val p = ExoPlayer.Builder(appContext)
+            .setLoadControl(loadControl)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .build()
         if (!cam.audioEnabled) {
             p.trackSelectionParameters = p.trackSelectionParameters
                 .buildUpon()
