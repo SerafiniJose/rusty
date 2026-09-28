@@ -6,7 +6,7 @@ import android.content.Context
 object NativeBridge {
     init {
         try {
-            System.loadLibrary("c++_shared")
+            // The core NEEDs only liblog/libdl/libm/libc (no libc++, no libaaudio) — see docs/build.md.
             System.loadLibrary("spotify_receiver_core")
             Log.d("NativeBridge", "Library loaded successfully")
         } catch (e: UnsatisfiedLinkError) {

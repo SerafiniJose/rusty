@@ -1,359 +1,440 @@
-//! Android `AudioTrack` audio sink.
+//! AudioTrack-backed audio sink.
 //!
 //! ## Why this exists
 //!
-//! The previous sink drove `rodio` (and therefore cpal, and therefore **AAudio**).
-//! That path has two Android-specific problems:
+//! Until 2.7.0 the player fed rodio → cpal → AAudio. That path had no knob for buffer depth,
+//! performance mode or underrun accounting; rodio silently inserted ~11.6 ms silence fillers
+//! when its ~0.5 s queue ran dry (a literal micro-cut), and a hand-rolled reopen state machine
+//! chased AAudio's disconnect-on-route-change behaviour.
 //!
-//! 1. **Route changes.** An AAudio stream binds to one device at open time. When
-//!    that device stops being the highest-priority output (headset plugged in, BT
-//!    connected) Android *disconnects* the stream rather than migrating it, and a
-//!    disconnected stream silently swallows writes. This module's cpal-based
-//!    predecessor worked around that by watching cpal's error callback and
-//!    rebuilding the stream by hand.
-//! 2. **No control over stream attributes.** cpal pins `ndk` to `api-level-26`, so
-//!    `AAudioStreamBuilder_setUsage`/`setContentType`/`setPerformanceMode` are
-//!    compiled out — the stream is tagged `CONTENT_TYPE_UNKNOWN` and cannot be fixed
-//!    from outside cpal.
+//! The AAudio path also had two Android-specific problems of its own (analysis by Pablo
+//! Culebras, PR #13, who hit continuous micro-cuts on an Echo Show 5 / MT8163):
 //!
-//! `android.media.AudioTrack` has neither problem. AudioFlinger owns device
-//! selection and migrates an existing track across a route change without telling
-//! the app, which is why `MediaPlayer`-based players (and Spotify itself) need no
-//! route handling at all. Attributes are set at construction.
+//! 1. **Route changes.** An AAudio stream binds to one device at open time. When that device
+//!    stops being the highest-priority output (headset plugged in, BT connected) Android
+//!    *disconnects* the stream rather than migrating it, and a disconnected stream silently
+//!    swallows writes — hence the hand-rolled reopen state machine above.
+//! 2. **No control over stream attributes.** cpal 0.16 reaches AAudio through `ndk` 0.9 pinned
+//!    to `api-level-26`, which compiles out `AAudioStreamBuilder_setUsage` / `setContentType` /
+//!    `setPerformanceMode`, so the stream was opened as `CONTENT_TYPE_UNKNOWN` and could not be
+//!    fixed from outside cpal.
 //!
-//! ## Shape
+//! The exact failure inside cpal/AAudio was never isolated, so this removes a layer rather than
+//! fixing a diagnosed bug in one. `AudioTrack` has neither problem: AudioFlinger owns device
+//! selection and migrates a track across a route change without telling the app (which is why
+//! `MediaPlayer`-based players, and Spotify itself, need no route handling), and the attributes
+//! are set at construction. It has also existed since API 1, so it has been exercised by far
+//! more vendor audio HALs than AAudio has.
 //!
-//! Only **framework** classes are touched (`android.media.*`), never app classes, so
-//! `FindClass` works from any thread without a cached ClassLoader. The librespot
-//! player thread is attached to the JVM permanently on first use.
+//! ## What this does
 //!
-//! `AudioTrack.write(..., WRITE_BLOCKING)` blocks until the track has room, which is
-//! exactly the backpressure the rodio sink emulated with a `sleep(10ms)` poll loop.
+//! `AudioTrackSink` implements librespot's [`Sink`] and pushes every packet into one
+//! `dev.rusty.app.audio.PcmOutput` (a Kotlin wrapper around `android.media.AudioTrack`) over
+//! JNI. `AudioTrack.write` in blocking mode IS the backpressure: the player thread simply
+//! blocks until the ~1 s buffer has room, so there is no polling loop. A normal shared track is
+//! re-routed by Android on Bluetooth connect/disconnect, so there is no reopen logic either.
+//!
+//! ## Threading
+//!
+//! librespot builds the sink inside the player thread (`Player::new` calls the sink builder
+//! from the spawned thread) and calls `start`/`stop`/`write` from that same thread, so the
+//! thread is attached to the JVM permanently on first use (a cheap `GetEnv` afterwards).
+//! `FindClass` from a bare Rust thread would go through the system class loader and miss app
+//! classes, so [`init`] resolves the class and method IDs once on a Java-attached thread
+//! (`initAndroidContext`) and keeps them in a process-wide slot.
+//!
+//! Volume and ducking are NOT here: the player applies them in the sample domain before
+//! `write` (see `duck.rs`), so this sink only ever sees the final samples.
 
-use jni::objects::{GlobalRef, JShortArray, JValue};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
+use jni::objects::{GlobalRef, JFloatArray, JMethodID};
+use jni::signature::{Primitive, ReturnType};
+use jni::sys::{jint, jsize, jvalue};
 use jni::{JNIEnv, JavaVM};
+
 use librespot::playback::audio_backend::{Sink, SinkError, SinkResult};
 use librespot::playback::convert::Converter;
 use librespot::playback::decoder::AudioPacket;
+
 use log::{info, warn};
 
-/// librespot decodes and normalises to interleaved stereo at 44.1 kHz.
-const SAMPLE_RATE: i32 = 44_100;
-const NUM_CHANNELS: i32 = 2;
+const PCM_OUTPUT_CLASS: &str = "dev/rusty/app/audio/PcmOutput";
 
-// android.media.AudioFormat
-const CHANNEL_OUT_STEREO: i32 = 12;
-const ENCODING_PCM_16BIT: i32 = 2;
-// android.media.AudioAttributes
-const USAGE_MEDIA: i32 = 1;
-const CONTENT_TYPE_MUSIC: i32 = 2;
-// android.media.AudioTrack
-const MODE_STREAM: i32 = 1;
-const WRITE_BLOCKING: i32 = 0;
+/// Capacity of the reused `float[]`, in samples. A librespot packet is one decoder frame — at
+/// most 2048 stereo frames = 4096 samples for Vorbis — so a packet normally goes in one JNI
+/// call; anything larger is chunked.
+const ARRAY_CAPACITY: usize = 8192;
 
-/// Multiple of `getMinBufferSize` to request. The HAL runs a 1536-frame period on
-/// this class of device (~32 ms); a few bursts of slack keeps a late decode from
-/// being audible without adding meaningful latency to a Connect receiver.
-const BUFFER_BURSTS: i32 = 4;
+/// How often `AudioTrack.getUnderrunCount()` is read and logged from the write path.
+pub const UNDERRUN_REPORT_PERIOD: Duration = Duration::from_secs(30);
 
-fn err<E: std::fmt::Display>(e: E) -> String {
-    e.to_string()
+/// JNI handles for `PcmOutput`, resolved once by [`init`]. Method IDs are process-stable and
+/// `Send + Sync`; the class `GlobalRef` keeps them valid.
+struct PcmOutputJni {
+    vm: JavaVM,
+    class: GlobalRef,
+    ctor: JMethodID,
+    write: JMethodID,
+    play: JMethodID,
+    pause: JMethodID,
+    release: JMethodID,
+    underrun_count: JMethodID,
 }
 
-/// Attach the calling thread to the JVM and hand back a `JNIEnv`.
-///
-/// librespot calls `write` from a single long-lived player thread, so the
-/// attachment is made permanent: repeated calls are then just a TLS lookup.
-fn jni_env() -> Result<JNIEnv<'static>, String> {
-    // The `JavaVM` must outlive every `JNIEnv` handed out, so it is cached rather
-    // than rebuilt per call.
-    static VM: std::sync::OnceLock<JavaVM> = std::sync::OnceLock::new();
-    if VM.get().is_none() {
-        let ctx = ndk_context::android_context();
-        let vm = unsafe { JavaVM::from_raw(ctx.vm().cast()) }.map_err(err)?;
-        let _ = VM.set(vm);
+static JNI: OnceLock<PcmOutputJni> = OnceLock::new();
+
+/// Resolves the `PcmOutput` class and its method IDs. Must run on a Java-attached thread
+/// whose class loader can see app classes (`initAndroidContext` on the service's main
+/// thread). On `Err` a Java exception may be pending: the caller clears it.
+pub fn init(env: &mut JNIEnv) -> Result<(), String> {
+    let class = env
+        .find_class(PCM_OUTPUT_CLASS)
+        .map_err(|e| format!("find_class {PCM_OUTPUT_CLASS}: {e}"))?;
+    let mut method = |name: &str, sig: &str| -> Result<JMethodID, String> {
+        env.get_method_id(&class, name, sig)
+            .map_err(|e| format!("{PCM_OUTPUT_CLASS}.{name}{sig}: {e}"))
+    };
+    let ctor = method("<init>", "()V")?;
+    let write = method("write", "([FI)I")?;
+    let play = method("play", "()V")?;
+    let pause = method("pause", "()V")?;
+    let release = method("release", "()V")?;
+    let underrun_count = method("underrunCount", "()I")?;
+    let class = env
+        .new_global_ref(&class)
+        .map_err(|e| format!("new_global_ref({PCM_OUTPUT_CLASS}): {e}"))?;
+    let vm = env.get_java_vm().map_err(|e| format!("get_java_vm: {e}"))?;
+    JNI.set(PcmOutputJni {
+        vm,
+        class,
+        ctor,
+        write,
+        play,
+        pause,
+        release,
+        underrun_count,
+    })
+    .map_err(|_| "PcmOutput JNI handles already initialised".to_string())
+}
+
+/// Decides when the underrun counter is read and what a reading means. Pure, so the schedule
+/// and delta maths are unit-tested on the host; the sink only supplies `Instant::now()` and
+/// the JNI reading.
+pub struct UnderrunReporter {
+    period: Duration,
+    next_due: Option<Instant>,
+    last_total: u32,
+}
+
+impl UnderrunReporter {
+    pub fn new(period: Duration) -> Self {
+        Self {
+            period,
+            next_due: None,
+            last_total: 0,
+        }
     }
-    VM.get()
-        .ok_or_else(|| "JavaVM unavailable".to_string())?
-        .attach_current_thread_permanently()
-        .map_err(err)
+
+    /// True when the counter should be read now (always true before the first reading).
+    pub fn is_due(&self, now: Instant) -> bool {
+        self.next_due.map_or(true, |due| now >= due)
+    }
+
+    /// Records a reading; returns `(new underruns since the previous reading, total)`.
+    pub fn record(&mut self, now: Instant, total: u32) -> (u32, u32) {
+        let delta = total.wrapping_sub(self.last_total);
+        self.last_total = total;
+        self.next_due = Some(now + self.period);
+        (delta, total)
+    }
+
+    /// The reading failed: try again one period from now, baseline unchanged.
+    pub fn defer(&mut self, now: Instant) {
+        self.next_due = Some(now + self.period);
+    }
+
+    /// A freshly opened track counts from zero.
+    pub fn reset(&mut self) {
+        self.last_total = 0;
+        self.next_due = None;
+    }
+}
+
+/// Describes and clears any pending Java exception (so the next JNI call is legal) and
+/// renders the failure for a `SinkError`.
+fn describe_and_clear(env: &mut JNIEnv, what: &str, e: jni::errors::Error) -> String {
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+    format!("PcmOutput.{what}: {e}")
 }
 
 pub struct AudioTrackSink {
-    /// `android.media.AudioTrack`, `None` until the first successful build.
+    /// The `PcmOutput` instance; `None` until the first `start()` and after a write failure.
     track: Option<GlobalRef>,
-    /// Reused `short[]` staging array handed to `AudioTrack.write`.
-    staging: Option<GlobalRef>,
-    staging_len: usize,
-    playing: bool,
+    /// The reused `float[ARRAY_CAPACITY]` — a global ref, because local refs made on this
+    /// permanently attached Rust thread would never be released.
+    buffer: Option<GlobalRef>,
+    underruns: UnderrunReporter,
 }
 
 impl AudioTrackSink {
     pub fn new() -> Self {
         Self {
             track: None,
-            staging: None,
-            staging_len: 0,
-            playing: false,
+            buffer: None,
+            underruns: UnderrunReporter::new(UNDERRUN_REPORT_PERIOD),
         }
     }
 
-    /// Builds the `AudioTrack` if it is not up yet. Failures are logged and retried
-    /// on the next write rather than killing the player thread.
-    fn ensure_track(&mut self) {
-        if self.track.is_some() {
-            return;
-        }
-        match Self::build_track() {
-            Ok(track) => {
-                info!("AudioTrack sink opened ({SAMPLE_RATE} Hz, {NUM_CHANNELS} ch, PCM16)");
-                self.track = Some(track);
-                self.playing = false;
-            }
-            Err(e) => warn!("AudioTrack build failed ({e}); retrying on next write"),
-        }
+    fn jni() -> SinkResult<&'static PcmOutputJni> {
+        JNI.get().ok_or_else(|| {
+            SinkError::NotConnected(
+                "PcmOutput JNI handles not initialised (did initAndroidContext fail?)".to_string(),
+            )
+        })
     }
 
-    fn build_track() -> Result<GlobalRef, String> {
-        let mut env = jni_env()?;
+    /// The player thread's `JNIEnv`. The first call attaches the thread for its lifetime
+    /// (it detaches itself on exit); later calls are a cheap `GetEnv`.
+    fn env(jni: &'static PcmOutputJni) -> SinkResult<JNIEnv<'static>> {
+        jni.vm
+            .attach_current_thread_permanently()
+            .map_err(|e| SinkError::NotConnected(format!("attach player thread to JVM: {e}")))
+    }
 
-        // AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-        let track_cls = env.find_class("android/media/AudioTrack").map_err(err)?;
-        let min = env
-            .call_static_method(
-                &track_cls,
-                "getMinBufferSize",
-                "(III)I",
-                &[
-                    JValue::Int(SAMPLE_RATE),
-                    JValue::Int(CHANNEL_OUT_STEREO),
-                    JValue::Int(ENCODING_PCM_16BIT),
-                ],
-            )
-            .and_then(|v| v.i())
-            .map_err(err)?;
-        if min <= 0 {
-            return Err(format!("getMinBufferSize returned {min}"));
-        }
-        let buffer_bytes = min * BUFFER_BURSTS;
+    /// Creates the reusable array first, then the `PcmOutput` (whose constructor opens the
+    /// AudioTrack), so a failure never leaves an orphaned track behind.
+    fn open(&mut self, jni: &'static PcmOutputJni, env: &mut JNIEnv) -> SinkResult<()> {
+        let array = env
+            .new_float_array(ARRAY_CAPACITY as jsize)
+            .map_err(|e| SinkError::ConnectionRefused(describe_and_clear(env, "new_float_array", e)))?;
+        let buffer = env
+            .new_global_ref(&array)
+            .map_err(|e| SinkError::ConnectionRefused(describe_and_clear(env, "new_global_ref(array)", e)))?;
+        let _ = env.delete_local_ref(array);
 
-        // new AudioAttributes.Builder().setUsage(MEDIA).setContentType(MUSIC).build()
-        let attrs = {
-            let cls = env
-                .find_class("android/media/AudioAttributes$Builder")
-                .map_err(err)?;
-            let b = env.new_object(&cls, "()V", &[]).map_err(err)?;
-            let b = env
-                .call_method(
-                    &b,
-                    "setUsage",
-                    "(I)Landroid/media/AudioAttributes$Builder;",
-                    &[JValue::Int(USAGE_MEDIA)],
-                )
-                .and_then(|v| v.l())
-                .map_err(err)?;
-            let b = env
-                .call_method(
-                    &b,
-                    "setContentType",
-                    "(I)Landroid/media/AudioAttributes$Builder;",
-                    &[JValue::Int(CONTENT_TYPE_MUSIC)],
-                )
-                .and_then(|v| v.l())
-                .map_err(err)?;
-            env.call_method(&b, "build", "()Landroid/media/AudioAttributes;", &[])
-                .and_then(|v| v.l())
-                .map_err(err)?
-        };
-
-        // new AudioFormat.Builder().setEncoding(..).setSampleRate(..).setChannelMask(..).build()
-        let format = {
-            let cls = env
-                .find_class("android/media/AudioFormat$Builder")
-                .map_err(err)?;
-            let b = env.new_object(&cls, "()V", &[]).map_err(err)?;
-            let b = env
-                .call_method(
-                    &b,
-                    "setEncoding",
-                    "(I)Landroid/media/AudioFormat$Builder;",
-                    &[JValue::Int(ENCODING_PCM_16BIT)],
-                )
-                .and_then(|v| v.l())
-                .map_err(err)?;
-            let b = env
-                .call_method(
-                    &b,
-                    "setSampleRate",
-                    "(I)Landroid/media/AudioFormat$Builder;",
-                    &[JValue::Int(SAMPLE_RATE)],
-                )
-                .and_then(|v| v.l())
-                .map_err(err)?;
-            let b = env
-                .call_method(
-                    &b,
-                    "setChannelMask",
-                    "(I)Landroid/media/AudioFormat$Builder;",
-                    &[JValue::Int(CHANNEL_OUT_STEREO)],
-                )
-                .and_then(|v| v.l())
-                .map_err(err)?;
-            env.call_method(&b, "build", "()Landroid/media/AudioFormat;", &[])
-                .and_then(|v| v.l())
-                .map_err(err)?
-        };
-
-        // new AudioTrack.Builder()... .build()
-        let cls = env
-            .find_class("android/media/AudioTrack$Builder")
-            .map_err(err)?;
-        let b = env.new_object(&cls, "()V", &[]).map_err(err)?;
-        let b = env
-            .call_method(
-                &b,
-                "setAudioAttributes",
-                "(Landroid/media/AudioAttributes;)Landroid/media/AudioTrack$Builder;",
-                &[JValue::Object(&attrs)],
-            )
-            .and_then(|v| v.l())
-            .map_err(err)?;
-        let b = env
-            .call_method(
-                &b,
-                "setAudioFormat",
-                "(Landroid/media/AudioFormat;)Landroid/media/AudioTrack$Builder;",
-                &[JValue::Object(&format)],
-            )
-            .and_then(|v| v.l())
-            .map_err(err)?;
-        let b = env
-            .call_method(
-                &b,
-                "setBufferSizeInBytes",
-                "(I)Landroid/media/AudioTrack$Builder;",
-                &[JValue::Int(buffer_bytes)],
-            )
-            .and_then(|v| v.l())
-            .map_err(err)?;
-        let b = env
-            .call_method(
-                &b,
-                "setTransferMode",
-                "(I)Landroid/media/AudioTrack$Builder;",
-                &[JValue::Int(MODE_STREAM)],
-            )
-            .and_then(|v| v.l())
-            .map_err(err)?;
+        // SAFETY: `ctor` was resolved from this exact class with signature "()V" in `init`.
+        let object = unsafe { env.new_object_unchecked(&jni.class, jni.ctor, &[]) }
+            .map_err(|e| SinkError::ConnectionRefused(describe_and_clear(env, "<init>", e)))?;
         let track = env
-            .call_method(&b, "build", "()Landroid/media/AudioTrack;", &[])
-            .and_then(|v| v.l())
-            .map_err(err)?;
+            .new_global_ref(&object)
+            .map_err(|e| SinkError::ConnectionRefused(describe_and_clear(env, "new_global_ref(track)", e)))?;
+        let _ = env.delete_local_ref(object);
 
-        info!("AudioTrack buffer {buffer_bytes} bytes (min {min} x {BUFFER_BURSTS})");
-        env.new_global_ref(track).map_err(err)
-    }
-
-    /// Calls a no-arg void method on the track, logging rather than propagating.
-    fn track_call(&mut self, name: &'static str) {
-        let Some(track) = self.track.as_ref() else {
-            return;
-        };
-        let Ok(mut env) = jni_env() else { return };
-        if let Err(e) = env.call_method(track.as_obj(), name, "()V", &[]) {
-            warn!("AudioTrack.{name}() failed: {e}");
-            let _ = env.exception_clear();
-        }
-    }
-
-    /// Grows the reused `short[]` when a packet needs more room.
-    fn ensure_staging(&mut self, env: &mut JNIEnv, len: usize) -> Result<(), String> {
-        if self.staging.is_some() && self.staging_len >= len {
-            return Ok(());
-        }
-        let arr = env.new_short_array(len as i32).map_err(err)?;
-        self.staging = Some(env.new_global_ref(&arr).map_err(err)?);
-        self.staging_len = len;
+        self.buffer = Some(buffer);
+        self.track = Some(track);
+        self.underruns.reset();
+        info!("AudioTrack output opened");
         Ok(())
+    }
+
+    /// Releases the AudioTrack (if any). Never fails: a broken release is logged and forgotten.
+    fn close(&mut self, jni: &'static PcmOutputJni, env: &mut JNIEnv) {
+        if let Some(track) = self.track.take() {
+            // SAFETY: method ID resolved from the object's class in `init`; no args, void return.
+            if let Err(e) = unsafe {
+                env.call_method_unchecked(&track, jni.release, ReturnType::Primitive(Primitive::Void), &[])
+            } {
+                warn!("{}", describe_and_clear(env, "release", e));
+            }
+            info!("AudioTrack output released");
+        }
+        self.buffer = None;
+    }
+
+    fn call_void(env: &mut JNIEnv, track: &GlobalRef, id: JMethodID, what: &str) -> Result<(), String> {
+        // SAFETY: `id` is one of the "()V" methods resolved from the object's class in `init`.
+        unsafe { env.call_method_unchecked(track, id, ReturnType::Primitive(Primitive::Void), &[]) }
+            .map(|_| ())
+            .map_err(|e| describe_and_clear(env, what, e))
+    }
+
+    /// Reads and logs the underrun counter when a report is due (every
+    /// [`UNDERRUN_REPORT_PERIOD`]). Cheap on the hot path: one `Instant::now()` per packet.
+    fn report_underruns(&mut self, jni: &'static PcmOutputJni, env: &mut JNIEnv, track: &GlobalRef) {
+        let now = Instant::now();
+        if !self.underruns.is_due(now) {
+            return;
+        }
+        // SAFETY: "()I" method resolved from the object's class in `init`.
+        let reading = unsafe {
+            env.call_method_unchecked(track, jni.underrun_count, ReturnType::Primitive(Primitive::Int), &[])
+        }
+        .and_then(|v| v.i());
+        match reading {
+            Ok(total) if total >= 0 => {
+                let (new, total) = self.underruns.record(now, total as u32);
+                let secs = UNDERRUN_REPORT_PERIOD.as_secs();
+                if new > 0 {
+                    warn!("AudioTrack underruns: +{new} in the last {secs} s (total {total})");
+                } else {
+                    info!("AudioTrack underruns: none in the last {secs} s (total {total})");
+                }
+            }
+            Ok(_) => self.underruns.defer(now), // -1: the Kotlin side says the track is gone
+            Err(e) => {
+                warn!("{}", describe_and_clear(env, "underrunCount", e));
+                self.underruns.defer(now);
+            }
+        }
+    }
+}
+
+impl Default for AudioTrackSink {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl Sink for AudioTrackSink {
     fn start(&mut self) -> SinkResult<()> {
-        self.ensure_track();
-        if !self.playing {
-            self.track_call("play");
-            self.playing = true;
+        let jni = Self::jni()?;
+        let mut env = Self::env(jni)?;
+        if self.track.is_none() {
+            self.open(jni, &mut env)?;
         }
-        Ok(())
+        let Some(track) = self.track.clone() else {
+            return Err(SinkError::NotConnected("AudioTrack output not open".to_string()));
+        };
+        Self::call_void(&mut env, &track, jni.play, "play").map_err(SinkError::StateChange)
     }
 
+    /// Pause + flush on the Kotlin side (instant silence; the unplayed tail is replayed by the
+    /// next `start`). Deliberately never returns `Err`: librespot's `ensure_sink_stopped`
+    /// answers a stop error with `exit(1)`, which would kill the whole app process.
     fn stop(&mut self) -> SinkResult<()> {
-        if self.playing {
-            self.track_call("pause");
-            self.track_call("flush");
-            self.playing = false;
+        let Some(track) = self.track.clone() else {
+            return Ok(());
+        };
+        let jni = match Self::jni() {
+            Ok(jni) => jni,
+            Err(e) => {
+                warn!("stop: {e}");
+                return Ok(());
+            }
+        };
+        let mut env = match Self::env(jni) {
+            Ok(env) => env,
+            Err(e) => {
+                warn!("stop: {e}");
+                return Ok(());
+            }
+        };
+        if let Err(e) = Self::call_void(&mut env, &track, jni.pause, "pause") {
+            warn!("stop: {e}");
         }
         Ok(())
     }
 
     fn write(&mut self, packet: AudioPacket, converter: &mut Converter) -> SinkResult<()> {
-        self.ensure_track();
-        if self.track.is_none() {
-            // No output right now; drop the packet rather than erroring so the
-            // player keeps running and we retry on the next write.
-            return Ok(());
-        }
-
         let samples = packet
             .samples()
             .map_err(|e| SinkError::OnWrite(e.to_string()))?;
-        // Straight to the HAL's native format, with librespot's TPDF dither, instead
-        // of f32 -> AudioFlinger's undithered s16 conversion.
-        let pcm: Vec<i16> = converter.f64_to_s16(samples);
-        if pcm.is_empty() {
-            return Ok(());
-        }
+        let samples: Vec<f32> = converter.f64_to_f32(samples);
 
-        let mut env = jni_env().map_err(SinkError::OnWrite)?;
-        self.ensure_staging(&mut env, pcm.len())
-            .map_err(SinkError::OnWrite)?;
+        let jni = Self::jni()?;
+        let mut env = Self::env(jni)?;
+        let (track, buffer) = match (&self.track, &self.buffer) {
+            (Some(track), Some(buffer)) => (track.clone(), buffer.clone()),
+            _ => return Err(SinkError::NotConnected("AudioTrack output not open".to_string())),
+        };
+        let array: &JFloatArray = <&JFloatArray>::from(buffer.as_obj());
 
-        let staging = self.staging.as_ref().expect("staging just ensured").clone();
-        let arr: &JShortArray = staging.as_obj().into();
-        env.set_short_array_region(arr, 0, &pcm)
-            .map_err(|e| SinkError::OnWrite(e.to_string()))?;
-
-        let track = self.track.as_ref().expect("track checked above").clone();
-        let written = env
-            .call_method(
-                track.as_obj(),
-                "write",
-                "([SIII)I",
-                &[
-                    JValue::Object(staging.as_obj()),
-                    JValue::Int(0),
-                    JValue::Int(pcm.len() as i32),
-                    JValue::Int(WRITE_BLOCKING),
-                ],
-            )
+        for chunk in samples.chunks(ARRAY_CAPACITY) {
+            env.set_float_array_region(array, 0, chunk)
+                .map_err(|e| SinkError::OnWrite(describe_and_clear(&mut env, "SetFloatArrayRegion", e)))?;
+            let args = [jvalue { l: array.as_raw() }, jvalue { i: chunk.len() as jint }];
+            // SAFETY: "([FI)I" resolved from the object's class in `init`; args match the descriptor.
+            let written = unsafe {
+                env.call_method_unchecked(&track, jni.write, ReturnType::Primitive(Primitive::Int), &args)
+            }
             .and_then(|v| v.i())
-            .map_err(|e| SinkError::OnWrite(e.to_string()))?;
-
-        if written < 0 {
-            // Negative return values are AudioTrack error codes (ERROR_INVALID_OPERATION,
-            // ERROR_DEAD_OBJECT, …). Drop the track so the next write rebuilds it.
-            warn!("AudioTrack.write returned {written}; rebuilding track");
-            self.track = None;
-            self.playing = false;
+            .map_err(|e| SinkError::OnWrite(describe_and_clear(&mut env, "write", e)))?;
+            if written < 0 {
+                // ERROR_DEAD_OBJECT (audioserver restart) or ERROR_INVALID_OPERATION (track
+                // released under us). Drop the track; the player pauses on this error and the
+                // next start() opens a fresh one.
+                self.close(jni, &mut env);
+                return Err(SinkError::OnWrite(format!(
+                    "AudioTrack.write returned {written}; output closed, reopens on the next start"
+                )));
+            }
         }
+
+        self.report_underruns(jni, &mut env, &track);
         Ok(())
     }
 }
 
 impl Drop for AudioTrackSink {
+    /// Runs on the player thread when `PlayerInternal` is dropped (session teardown, account
+    /// takeover, bitrate change). Releases the AudioTrack so no track outlives its session.
     fn drop(&mut self) {
-        self.track_call("stop");
-        self.track_call("release");
+        if self.track.is_none() {
+            return;
+        }
+        if let Ok(jni) = Self::jni() {
+            if let Ok(mut env) = Self::env(jni) {
+                self.close(jni, &mut env);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UnderrunReporter;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn first_reading_is_due_and_reports_the_baseline() {
+        let mut r = UnderrunReporter::new(Duration::from_secs(30));
+        let t0 = Instant::now();
+        assert!(r.is_due(t0));
+        assert_eq!(r.record(t0, 3), (3, 3));
+    }
+
+    #[test]
+    fn not_due_again_until_the_period_elapsed() {
+        let mut r = UnderrunReporter::new(Duration::from_secs(30));
+        let t0 = Instant::now();
+        r.record(t0, 0);
+        assert!(!r.is_due(t0 + Duration::from_secs(29)));
+        assert!(r.is_due(t0 + Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn reports_the_delta_since_the_previous_reading() {
+        let mut r = UnderrunReporter::new(Duration::from_secs(30));
+        let t0 = Instant::now();
+        r.record(t0, 5);
+        assert_eq!(r.record(t0 + Duration::from_secs(30), 5), (0, 5));
+        assert_eq!(r.record(t0 + Duration::from_secs(60), 9), (4, 9));
+    }
+
+    #[test]
+    fn defer_pushes_the_next_reading_out_without_a_value() {
+        let mut r = UnderrunReporter::new(Duration::from_secs(30));
+        let t0 = Instant::now();
+        r.record(t0, 2);
+        r.defer(t0 + Duration::from_secs(30));
+        assert!(!r.is_due(t0 + Duration::from_secs(59)));
+        // The counter baseline is untouched by a deferral.
+        assert_eq!(r.record(t0 + Duration::from_secs(60), 2), (0, 2));
+    }
+
+    #[test]
+    fn reset_starts_a_fresh_track_at_zero() {
+        let mut r = UnderrunReporter::new(Duration::from_secs(30));
+        let t0 = Instant::now();
+        r.record(t0, 7);
+        r.reset();
+        assert!(r.is_due(t0));
+        // A new AudioTrack counts from zero again: no phantom negative delta.
+        assert_eq!(r.record(t0, 1), (1, 1));
     }
 }

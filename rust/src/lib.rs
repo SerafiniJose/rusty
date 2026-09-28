@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::{env, thread};
-use std::os::raw::c_void;
 use std::sync::{Arc, Mutex, Once, OnceLock};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
@@ -32,8 +31,7 @@ use tokio::time::{sleep_until, Instant};
 use log::{info, error, LevelFilter};
 use android_logger::Config;
 
-/// Custom audio sink that reopens the output stream when Android's active audio
-/// route changes (e.g. Bluetooth connect/disconnect) — see the module docs.
+/// Audio output: librespot `Sink` over android.media.AudioTrack via JNI — see the module docs.
 mod audio_sink;
 
 /// Duck-aware wrapper around librespot's soft mixer, used to lower the Spotify volume
@@ -123,7 +121,6 @@ const TOKEN_SCOPES: &str =
 static RECEIVER: OnceLock<Mutex<Option<ReceiverState>>> = OnceLock::new();
 static INIT_ANDROID_CONTEXT: Once = Once::new();
 static INIT_PANIC_HOOK: Once = Once::new();
-static mut ANDROID_CONTEXT_REF: Option<GlobalRef> = None;
 static JAVA_VM: OnceLock<JavaVM> = OnceLock::new();
 static SPOTIFY_SERVICE_CLASS: OnceLock<GlobalRef> = OnceLock::new();
 
@@ -269,7 +266,7 @@ fn bitrate_label(bitrate: Bitrate) -> &'static str {
 pub extern "system" fn Java_dev_rusty_app_NativeBridge_initAndroidContext(
     mut env: JNIEnv,
     _class: JClass,
-    context: JObject,
+    _context: JObject,
     cache_dir_java: JString,
 ) {
     let cache_dir: String = env
@@ -282,16 +279,6 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_initAndroidContext(
 
     INIT_ANDROID_CONTEXT.call_once(|| {
         let java_vm = env.get_java_vm().expect("Failed to get JavaVM");
-        let context_ref = env.new_global_ref(context).expect("Failed to create global Android context ref");
-        let context_ptr = context_ref.as_obj().as_raw() as *mut c_void;
-        let vm_ptr = java_vm.get_java_vm_pointer() as *mut c_void;
-
-        // Establish the audio/JNI context first so it is set up even if the class
-        // lookup below fails.
-        unsafe {
-            ndk_context::initialize_android_context(vm_ptr, context_ptr);
-            ANDROID_CONTEXT_REF = Some(context_ref);
-        }
         let _ = JAVA_VM.set(java_vm);
 
         // Cache the SpotifyService class used by the JNI callbacks (playback/status/
@@ -318,7 +305,19 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_initAndroidContext(
             }
         }
 
-        info!("Android context initialized for cpal/AAudio audio backend; TMPDIR={}", cache_dir);
+        // Cache the PcmOutput class and method IDs for the audio sink. The sink lives on
+        // librespot's player thread — a bare Rust thread whose FindClass would go through
+        // the system class loader and miss app classes — so the lookup happens here, on a
+        // Java-attached thread. Same graceful-miss policy as above: Spotify audio stays
+        // silent (start() fails, the player pauses) but the service keeps running.
+        if let Err(e) = audio_sink::init(&mut env) {
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_clear();
+            }
+            error!("Failed to cache PcmOutput class; Spotify audio output disabled: {e}");
+        }
+
+        info!("Android context initialized (AudioTrack sink); TMPDIR={}", cache_dir);
     });
 }
 
@@ -627,11 +626,9 @@ async fn build_active_session(
     let mixer: Arc<DuckingMixer> =
         Arc::new(<DuckingMixer as Mixer>::open(MixerConfig::default()).expect("Failed to open mixer"));
 
-    // 0.8: Player::new returns Arc<Player>; the sink closure now takes NO args.
-    // We supply an android.media.AudioTrack sink instead of librespot's stock rodio
-    // backend. AudioFlinger migrates a track across an Android audio-route change
-    // (Bluetooth connect/disconnect, headset plug/unplug) on its own, so unlike the
-    // AAudio path this needs no disconnect handling — see audio_sink.
+    // 0.8: Player::new returns Arc<Player>; the sink closure now takes NO args and runs on
+    // the player thread. Our AudioTrack sink replaces librespot's stock rodio backend: deep
+    // buffer, power-saving mode, underrun accounting, and Android does the route following.
     let player = Player::new(
         player_config,
         session.clone(),

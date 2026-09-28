@@ -9,7 +9,6 @@ crate-type = ["cdylib"]
 [dependencies]
 # JNI for Android communication
 jni = "0.21"
-ndk-context = "0.1"
 
 # Async Runtime
 tokio = { version = "1", features = ["full"] }
@@ -20,15 +19,15 @@ log = "0.4"
 android_logger = "0.13"
 
 # Librespot (0.8.0 umbrella crate). default-features disabled to drop native-tls
-# (OpenSSL — painful on Android NDK). We select rustls with compiled-in webpki roots
-# (no host cert store / no OpenSSL) and the pure-Rust libmdns zeroconf discovery
-# backend. No audio backend is selected: the sink in src/audio_sink.rs writes
-# to android.media.AudioTrack directly, so rodio/cpal are not built at all.
+# (OpenSSL — painful on Android NDK) and the stock rodio/cpal audio backend. We
+# select rustls with compiled-in webpki roots (no host cert store / no OpenSSL)
+# and the pure-Rust libmdns zeroconf discovery backend. Audio output is our own
+# `Sink` over android.media.AudioTrack (src/audio_sink.rs), so no audio backend
+# feature — and therefore no cpal / AAudio / oboe / libc++ — is compiled in.
 librespot = { version = "0.8", default-features = false, features = [
     "rustls-tls-webpki-roots",
     "with-libmdns",
 ] }
-
 
 # Crypto
 sha1 = "0.10"
@@ -67,8 +66,7 @@ librespot-core = { path = "vendor/librespot-core" }
 # cross-unit inlining across the librespot/tokio stack.
 #
 # `strip = "symbols"` drops .symtab/.strtab only — the dynamic symbol table
-# (.dynsym) survives, so JNI method resolution and the libc++_shared NEEDED entry
-# are unaffected.
+# (.dynsym) survives, so JNI method resolution is unaffected.
 #
 # `panic` is deliberately left at the default `unwind`. tokio turns a panicking
 # task into a `JoinError` rather than taking down the process, and both the

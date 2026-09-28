@@ -61,7 +61,7 @@ data class ReceiverDashboardState(
     }
 
     companion object {
-        const val DEFAULT_AUDIO_LINE = "Audio: AAudio • Cache: app cache"
+        const val DEFAULT_AUDIO_LINE = "Audio: AudioTrack • Cache: app cache"
         const val QUEUE_UNAVAILABLE_LINE = "Queue unavailable from receiver API"
         const val DEFAULT_QUEUE_LINE = QUEUE_UNAVAILABLE_LINE
         const val NO_SESSION_LINE = "No active session"

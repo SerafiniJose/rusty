@@ -13,7 +13,7 @@ class ReceiverDashboardStateTest {
         assertEquals("Waiting", state.status)
         assertEquals("Discovery: active", state.discoveryLine)
         assertEquals("Service: listening for Spotify", state.serviceLine)
-        assertEquals("Audio: AAudio • Cache: app cache", state.audioLine)
+        assertEquals("Audio: AudioTrack • Cache: app cache", state.audioLine)
         assertEquals("Waiting for Spotify", state.trackTitle)
         assertEquals("Select this receiver from Spotify", state.trackArtist)
         assertEquals("Queue unavailable from receiver API", state.queueLine)
