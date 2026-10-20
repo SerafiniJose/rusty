@@ -318,7 +318,10 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
      */
     private fun renderCanvas(state: CanvasState) {
         if (view == null) return
-        canvasLayer?.apply(state, TrackTransition.durationMs(shell.currentCrossfadeSeconds))
+        canvasLayer?.apply(
+            state,
+            TrackTransition.durationMs(shell.currentCrossfadeSeconds, store.snapshot.state.autoAdvanced),
+        )
         canvasActive = canvasLayer?.isShowing == true
     }
 
@@ -612,7 +615,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         if (dissolving) {
             handler.postDelayed(
                 wordHoldDeadline,
-                TrackTransition.wordsLandByMs(shell.currentCrossfadeSeconds),
+                TrackTransition.wordsLandByMs(shell.currentCrossfadeSeconds, state.autoAdvanced),
             )
         }
         val target = if (dissolving) albumArtIncoming else albumArtImage
@@ -645,7 +648,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
                         if (view == null || viewLifecycleOwner.lifecycle.currentState < Lifecycle.State.STARTED) return@generate
                         val artwork = ArtworkProcessor.fromPalette(palette, bitmap, DEFAULT_ACCENT)
                         if (dissolving) {
-                            startDissolve(artwork)
+                            startDissolve(artwork, state.autoAdvanced)
                         } else {
                             washImage.setImageBitmap(artwork.wash)
                             applyAccent(artwork.accent)
@@ -673,8 +676,8 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
      * cross-fades under it, the accent tweens between the two covers' colours, and the title and
      * artist trade over the middle third. See [TrackTransition] for the timings.
      */
-    private fun startDissolve(artwork: Artwork) {
-        val duration = TrackTransition.durationMs(shell.currentCrossfadeSeconds)
+    private fun startDissolve(artwork: Artwork, autoAdvanced: Boolean) {
+        val duration = TrackTransition.durationMs(shell.currentCrossfadeSeconds, autoAdvanced)
         val fromAccent = AccentHolder.accent
         val toAccent = artwork.accent
         pendingAccent = toAccent

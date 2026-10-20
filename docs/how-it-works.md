@@ -24,7 +24,7 @@ flowchart TD
   pointed at your own instance — no Rust involved.
 - **Rust** (`rust/`) wraps [librespot](https://github.com/librespot-org/librespot) 0.8 and exposes
   a small JNI surface (`NativeBridge`) for session lifecycle, transport, token retrieval, rename,
-  startup volume and crossfade — used only by the Spotify feature. Four librespot crates are
+  startup volume and crossfade — used only by the Spotify feature. Five librespot crates are
   vendored under `rust/vendor/` with upstream fixes applied via `[patch.crates-io]` (each entry in
   `rust/Cargo.toml` names the PR and when to drop it); the crossfade is librespot PR #1756.
 

@@ -16,21 +16,28 @@ class TrackTransitionTest {
 
     @Test
     fun `dissolve lasts exactly as long as the audio crossfade`() {
-        assertEquals(8_000L, TrackTransition.durationMs(8))
-        assertEquals(1_000L, TrackTransition.durationMs(1))
-        assertEquals(12_000L, TrackTransition.durationMs(12))
+        assertEquals(8_000L, TrackTransition.durationMs(8, autoAdvanced = true))
+        assertEquals(1_000L, TrackTransition.durationMs(1, autoAdvanced = true))
+        assertEquals(12_000L, TrackTransition.durationMs(12, autoAdvanced = true))
     }
 
     @Test
     fun `a gapless boundary still gets the short floor dissolve`() {
         // Crossfade off means there is no overlap to match, but a hard cut is what this replaces.
-        assertEquals(TrackTransition.MIN_DURATION_MS, TrackTransition.durationMs(0))
+        assertEquals(TrackTransition.MIN_DURATION_MS, TrackTransition.durationMs(0, autoAdvanced = true))
+    }
+
+    @Test
+    fun `a track the listener picked dissolves over the floor, not the crossfade`() {
+        // The audio cuts over on a skip or a tap in a list, so the picture does too.
+        assertEquals(TrackTransition.MIN_DURATION_MS, TrackTransition.durationMs(8, autoAdvanced = false))
+        assertEquals(TrackTransition.MIN_DURATION_MS, TrackTransition.durationMs(0, autoAdvanced = false))
     }
 
     @Test
     fun `an out-of-range crossfade is clamped like the setting itself`() {
-        assertEquals(12_000L, TrackTransition.durationMs(99))
-        assertEquals(TrackTransition.MIN_DURATION_MS, TrackTransition.durationMs(-4))
+        assertEquals(12_000L, TrackTransition.durationMs(99, autoAdvanced = true))
+        assertEquals(TrackTransition.MIN_DURATION_MS, TrackTransition.durationMs(-4, autoAdvanced = true))
     }
 
     // ---- Art + wash + accent: one linear ramp ----------------------------------------------
@@ -114,11 +121,11 @@ class TrackTransitionTest {
         // leave the outgoing track's title on screen forever. This is the backstop's deadline.
         assertEquals(
             8_000L + TrackTransition.LOAD_GRACE_MS,
-            TrackTransition.wordsLandByMs(8),
+            TrackTransition.wordsLandByMs(8, autoAdvanced = true),
         )
         assertEquals(
             5_000L + TrackTransition.LOAD_GRACE_MS,
-            TrackTransition.wordsLandByMs(5),
+            TrackTransition.wordsLandByMs(5, autoAdvanced = true),
         )
     }
 
@@ -126,7 +133,15 @@ class TrackTransitionTest {
     fun `a gapless boundary gives the cover the same grace, not the floor alone`() {
         assertEquals(
             TrackTransition.MIN_DURATION_MS + TrackTransition.LOAD_GRACE_MS,
-            TrackTransition.wordsLandByMs(0),
+            TrackTransition.wordsLandByMs(0, autoAdvanced = true),
+        )
+    }
+
+    @Test
+    fun `a picked track's words land within the floor plus the cover's grace`() {
+        assertEquals(
+            TrackTransition.MIN_DURATION_MS + TrackTransition.LOAD_GRACE_MS,
+            TrackTransition.wordsLandByMs(8, autoAdvanced = false),
         )
     }
 

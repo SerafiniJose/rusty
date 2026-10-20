@@ -777,6 +777,7 @@ async fn consume_player_events(session: Session, mut event_channel: PlayerEventC
     // (and moved into the timer future) so the timer never borrows `idle_deadline`,
     // leaving the event arm free to mutate it.
     let mut idle_deadline: Option<Instant> = None;
+    let mut arrival = TrackArrival::default();
 
     loop {
         let deadline = idle_deadline;
@@ -788,12 +789,12 @@ async fn consume_player_events(session: Session, mut event_channel: PlayerEventC
                     // 0.8: `Started` removed; `Loading` carries play_request_id+track_id+position_ms.
                     PlayerEvent::Loading { track_id, position_ms, .. } => {
                         idle_deadline = None;
-                        publish_track_event(&session, "LOADING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
+                        publish_track_event(&session, "LOADING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published, &mut arrival).await;
                     }
                     // 0.8: Playing/Paused no longer carry duration_ms; pass 0 and let metadata fill it.
                     PlayerEvent::Playing { track_id, position_ms, .. } => {
                         idle_deadline = None;
-                        publish_track_event(&session, "PLAYING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
+                        publish_track_event(&session, "PLAYING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published, &mut arrival).await;
                     }
                     // A seek republishes the transport state we are already in, at the new
                     // position. Guarding on last_published is belt-and-braces — librespot 0.8 only
@@ -805,11 +806,11 @@ async fn consume_player_events(session: Session, mut event_channel: PlayerEventC
                         match last_published.as_ref().map(|fp| fp.0.as_str()) {
                             Some("PLAYING") => {
                                 idle_deadline = None;
-                                publish_track_event(&session, "PLAYING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
+                                publish_track_event(&session, "PLAYING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published, &mut arrival).await;
                             }
                             Some("PAUSED") => {
                                 idle_deadline = Some(Instant::now() + IDLE_SESSION_TIMEOUT);
-                                publish_track_event(&session, "PAUSED", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
+                                publish_track_event(&session, "PAUSED", track_id, position_ms, 0, &mut metadata_cache, &mut last_published, &mut arrival).await;
                             }
                             _ => {}
                         }
@@ -822,21 +823,24 @@ async fn consume_player_events(session: Session, mut event_channel: PlayerEventC
                     PlayerEvent::PositionCorrection { track_id, position_ms, .. } => {
                         if last_published.as_ref().map(|fp| fp.0.as_str()) == Some("PLAYING") {
                             idle_deadline = None;
-                            publish_track_event(&session, "PLAYING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
+                            publish_track_event(&session, "PLAYING", track_id, position_ms, 0, &mut metadata_cache, &mut last_published, &mut arrival).await;
                         }
                     }
                     PlayerEvent::Paused { track_id, position_ms, .. } => {
                         idle_deadline = Some(Instant::now() + IDLE_SESSION_TIMEOUT);
-                        publish_track_event(&session, "PAUSED", track_id, position_ms, 0, &mut metadata_cache, &mut last_published).await;
+                        publish_track_event(&session, "PAUSED", track_id, position_ms, 0, &mut metadata_cache, &mut last_published, &mut arrival).await;
                     }
                     PlayerEvent::Stopped { track_id, .. } => {
                         idle_deadline = Some(Instant::now() + IDLE_SESSION_TIMEOUT);
-                        publish_track_event(&session, "STOPPED", track_id, 0, 0, &mut metadata_cache, &mut last_published).await;
+                        publish_track_event(&session, "STOPPED", track_id, 0, 0, &mut metadata_cache, &mut last_published, &mut arrival).await;
                     }
                     PlayerEvent::Unavailable { track_id, .. } => {
                         idle_deadline = Some(Instant::now() + IDLE_SESSION_TIMEOUT);
-                        publish_track_event(&session, "UNAVAILABLE", track_id, 0, 0, &mut metadata_cache, &mut last_published).await;
+                        publish_track_event(&session, "UNAVAILABLE", track_id, 0, 0, &mut metadata_cache, &mut last_published, &mut arrival).await;
                     }
+                    // Published by nothing on its own: it marks the next track as one that
+                    // followed this one, as opposed to one the listener picked.
+                    PlayerEvent::EndOfTrack { .. } => arrival.ended(),
                     PlayerEvent::Preloading { track_id } => {
                         if let Some((title, artist, _duration, _cover)) = resolve_cached_metadata(&session, track_id, &mut metadata_cache).await {
                             info!("Preloading possible next track: {} — {}", title, artist);
@@ -872,7 +876,9 @@ async fn publish_track_event(
     duration_ms: u32,
     metadata_cache: &mut HashMap<SpotifyUri, TrackMetadata>,
     last_published: &mut Option<EventFingerprint>,
+    arrival: &mut TrackArrival,
 ) {
+    let auto_advanced = arrival.observe(&track_id);
     let metadata = if matches!(playback_state, "STOPPED") {
         None
     } else {
@@ -917,7 +923,38 @@ async fn publish_track_event(
         true,
         cover_url.as_deref(),
         track_id_base62.as_deref(),
+        auto_advanced,
     );
+}
+
+/// Tells the UI how the current track came to be playing: by following the previous one on its
+/// own (the player reached the end, or began a crossfade into it — both announce `EndOfTrack`
+/// first), or because the listener picked it (skip, previous, a tap in a list, a new context),
+/// which librespot loads without ending the old track. The screen dissolves between covers for
+/// the crossfade only in the first case, matching what the audio does.
+#[derive(Default)]
+struct TrackArrival {
+    track: Option<SpotifyUri>,
+    ended: bool,
+    auto_advanced: bool,
+}
+
+impl TrackArrival {
+    /// The playing track ran out (or is crossfading out); whatever plays next followed it.
+    fn ended(&mut self) {
+        self.ended = true;
+    }
+
+    /// Records an event about `track` and answers whether that track followed its predecessor
+    /// on its own. Settled on the first event of a new track and kept for the rest of its events.
+    fn observe(&mut self, track: &SpotifyUri) -> bool {
+        if self.track.as_ref() != Some(track) {
+            self.auto_advanced = self.ended;
+            self.track = Some(track.clone());
+        }
+        self.ended = false;
+        self.auto_advanced
+    }
 }
 
 /// Resolves track metadata, consulting (and populating) the per-session cache so
@@ -1129,6 +1166,7 @@ fn send_native_playback_event(
     queue_unavailable: bool,
     cover_url: Option<&str>,
     track_id: Option<&str>,
+    auto_advanced: bool,
 ) {
     let Some(java_vm) = JAVA_VM.get() else {
         error!("Cannot publish playback event before JavaVM is initialized");
@@ -1169,7 +1207,7 @@ fn send_native_playback_event(
     if let Err(e) = env.call_static_method(
         service_class,
         "onNativePlaybackEvent",
-        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;)V",
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;Z)V",
         &[
             JValue::Object(&state_obj),
             JValue::Object(&title_obj),
@@ -1181,6 +1219,7 @@ fn send_native_playback_event(
             JValue::Bool(queue_flag),
             JValue::Object(&cover_obj),
             JValue::Object(&track_id_obj),
+            JValue::Bool(u8::from(auto_advanced)),
         ],
     ) {
         error!("Failed to publish native playback event to Android: {:?}", e);
@@ -1495,5 +1534,51 @@ mod crossfade_tests {
         // Crosses a JNI boundary: a bad value must never panic or exceed the player's 12 s cap.
         assert_eq!(crossfade_from_seconds(-3), Duration::ZERO);
         assert_eq!(crossfade_from_seconds(60), Duration::from_secs(12));
+    }
+}
+
+#[cfg(test)]
+mod track_arrival_tests {
+    use super::TrackArrival;
+    use librespot::core::SpotifyUri;
+
+    fn track(id: &str) -> SpotifyUri {
+        SpotifyUri::from_uri(&format!("spotify:track:{id}")).unwrap()
+    }
+
+    #[test]
+    fn a_track_that_follows_the_end_of_the_last_one_auto_advanced() {
+        let mut arrival = TrackArrival::default();
+        assert!(!arrival.observe(&track("4uLU6hMCjMI75M1A2tKUQC")));
+        arrival.ended();
+        assert!(arrival.observe(&track("7GhIk7Il098yCjg4BQjzvb")));
+    }
+
+    #[test]
+    fn a_track_loaded_mid_song_was_picked() {
+        let mut arrival = TrackArrival::default();
+        arrival.observe(&track("4uLU6hMCjMI75M1A2tKUQC"));
+        assert!(!arrival.observe(&track("7GhIk7Il098yCjg4BQjzvb")));
+    }
+
+    #[test]
+    fn the_answer_holds_for_every_event_of_the_same_track() {
+        let mut arrival = TrackArrival::default();
+        arrival.observe(&track("4uLU6hMCjMI75M1A2tKUQC"));
+        arrival.ended();
+        let next = track("7GhIk7Il098yCjg4BQjzvb");
+        assert!(arrival.observe(&next)); // LOADING
+        assert!(arrival.observe(&next)); // PLAYING
+        assert!(arrival.observe(&next)); // PAUSED
+    }
+
+    #[test]
+    fn a_pick_after_the_last_track_stopped_is_still_a_pick() {
+        let mut arrival = TrackArrival::default();
+        let last = track("4uLU6hMCjMI75M1A2tKUQC");
+        arrival.observe(&last);
+        arrival.ended();
+        arrival.observe(&last); // STOPPED at the end of the context
+        assert!(!arrival.observe(&track("7GhIk7Il098yCjg4BQjzvb")));
     }
 }

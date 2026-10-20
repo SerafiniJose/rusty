@@ -1,7 +1,9 @@
 package dev.rusty.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReceiverDashboardPlaybackEventTest {
@@ -26,6 +28,22 @@ class ReceiverDashboardPlaybackEventTest {
         assertEquals("1:05", state.elapsedLabel)
         assertEquals("3:05", state.durationLabel)
         assertEquals("Queue unavailable from receiver API", state.queueLine)
+    }
+
+    @Test
+    fun autoAdvancedIsCarriedIntoTheState() {
+        val followed = ReceiverDashboardPlaybackEvent(
+            receiverName = "Salotto Echo Show",
+            playbackState = ReceiverDashboardPlaybackEvent.PlaybackState.PLAYING,
+            autoAdvanced = true
+        ).toDashboardState(ReceiverDashboardState.waiting("Salotto Echo Show"))
+        val picked = ReceiverDashboardPlaybackEvent(
+            receiverName = "Salotto Echo Show",
+            playbackState = ReceiverDashboardPlaybackEvent.PlaybackState.PLAYING
+        ).toDashboardState(followed)
+
+        assertTrue(followed.autoAdvanced)
+        assertFalse(picked.autoAdvanced)
     }
 
     @Test

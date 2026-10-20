@@ -79,6 +79,7 @@ class CanvasTheme : ScreensaverTheme {
     }
 
     override fun bind(state: ReceiverDashboardState, is24Hour: Boolean) {
+        autoAdvanced = state.autoAdvanced
         val now = System.currentTimeMillis()
         val locale = root.resources.configuration.locales[0] ?: Locale.getDefault()
         val zone = TimeZone.getDefault()
@@ -108,9 +109,12 @@ class CanvasTheme : ScreensaverTheme {
         canvasActive = canvasLayer?.isShowing == true
     }
 
+    /** Whether the playing track ran on from the last one (crossfaded) or was picked (cut over). */
+    private var autoAdvanced = false
+
     /** The audio crossfade's length — the saver has no shell to ask, so it reads the same pref. */
     private fun transitionMs(): Long =
-        TrackTransition.durationMs(prefs?.let { CrossfadeSettings.seconds(it) } ?: 0)
+        TrackTransition.durationMs(prefs?.let { CrossfadeSettings.seconds(it) } ?: 0, autoAdvanced)
 
     override fun onShown() { controller?.start() }
 

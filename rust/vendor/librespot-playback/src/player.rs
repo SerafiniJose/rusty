@@ -49,6 +49,17 @@ const CROSSFADE_MAX: Duration = Duration::from_secs(12);
 
 const CROSSFADE_TAIL_PACKET_FRAMES: usize = 1024;
 
+/// A track the listener picks (skip, previous, a tap in a list) cuts over instead of blending:
+/// the crossfade is for one track running into the next. The outgoing track still ramps down
+/// over this much, and the picked one up, so the cut lands without a click.
+const SKIP_FADE: Duration = Duration::from_millis(30);
+
+/// How long a picked track overlaps the one it replaces: a declick when crossfade is on, and a
+/// plain cut, as in stock librespot, when it is off.
+fn skip_fade(crossfade: Duration) -> Duration {
+    crossfade.min(SKIP_FADE)
+}
+
 fn crossfade_frames(crossfade: Duration) -> u64 {
     let ms = crossfade.min(CROSSFADE_MAX).as_millis() as u64;
     u64::from(SAMPLE_RATE) * ms / 1000
@@ -2079,7 +2090,7 @@ impl PlayerInternal {
     }
 
     fn begin_skip_crossfade(&mut self, next: &SpotifyUri) {
-        let crossfade = self.crossfade();
+        let crossfade = skip_fade(self.crossfade());
         let leaving = match &self.state {
             PlayerState::Playing { track_id, .. } => track_id != next,
             _ => false,
@@ -2977,8 +2988,8 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        AudioPacket, AudioPacketPosition, CROSSFADE_MAX, Outgoing, Ramp, apply_fade_in,
-        crossfade_frames, mix_tail,
+        AudioPacket, AudioPacketPosition, CROSSFADE_MAX, Outgoing, Ramp, SKIP_FADE, apply_fade_in,
+        crossfade_frames, mix_tail, skip_fade,
     };
     use crate::decoder::{AudioDecoder, DecoderError, DecoderResult};
 
@@ -3101,5 +3112,18 @@ mod tests {
             crossfade_frames(Duration::from_secs(60)),
             crossfade_frames(CROSSFADE_MAX)
         );
+    }
+
+    #[test]
+    fn a_skip_only_declicks_instead_of_crossfading() {
+        assert_eq!(skip_fade(Duration::from_secs(4)), SKIP_FADE);
+        assert_eq!(skip_fade(CROSSFADE_MAX), SKIP_FADE);
+        assert!(SKIP_FADE < Duration::from_millis(100));
+    }
+
+    #[test]
+    fn a_skip_stays_a_plain_cut_with_crossfade_off() {
+        assert_eq!(skip_fade(Duration::ZERO), Duration::ZERO);
+        assert_eq!(skip_fade(Duration::from_millis(10)), Duration::from_millis(10));
     }
 }

@@ -184,7 +184,8 @@ class SpotifyService : Service() {
         queueArtist: String?,
         queueUnavailable: Boolean,
         coverUrl: String?,
-        trackId: String?
+        trackId: String?,
+        autoAdvanced: Boolean
     ) {
         currentTrackId = trackId?.takeIf { it.isNotBlank() } ?: currentTrackId
 
@@ -208,7 +209,8 @@ class SpotifyService : Service() {
                         durationMs = durationMs,
                         queueTitle = queueTitle,
                         queueArtist = queueArtist,
-                        queueUnavailable = queueUnavailable
+                        queueUnavailable = queueUnavailable,
+                        autoAdvanced = autoAdvanced
                     )
                 )
             )
@@ -311,7 +313,8 @@ class SpotifyService : Service() {
             queueArtist = null,
             queueUnavailable = true,
             coverUrl = null,
-            trackId = null
+            trackId = null,
+            autoAdvanced = false
         )
         // Full service teardown → STOPPED (carried with the honest "Off" display event).
         publishStatus(ReceiverDashboardStatusEvent.Lifecycle.OFF, service = ReceiverServiceState.STOPPED)
@@ -402,7 +405,8 @@ class SpotifyService : Service() {
                     queueArtist = null,
                     queueUnavailable = true,
                     coverUrl = null,
-                    trackId = null
+                    trackId = null,
+                    autoAdvanced = false
                 )
             }
         }
@@ -433,7 +437,8 @@ class SpotifyService : Service() {
             queueArtist: String?,
             queueUnavailable: Boolean,
             coverUrl: String?,
-            trackId: String?
+            trackId: String?,
+            autoAdvanced: Boolean
         ) {
             activeService?.publishPlayback(
                 playbackState = playbackState,
@@ -445,7 +450,8 @@ class SpotifyService : Service() {
                 queueArtist = queueArtist,
                 queueUnavailable = queueUnavailable,
                 coverUrl = coverUrl,
-                trackId = trackId
+                trackId = trackId,
+                autoAdvanced = autoAdvanced
             )
         }
     }

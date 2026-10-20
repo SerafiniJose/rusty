@@ -17,7 +17,9 @@ data class ReceiverDashboardPlaybackEvent(
     val durationMs: Long = 0L,
     val queueTitle: String? = null,
     val queueArtist: String? = null,
-    val queueUnavailable: Boolean = false
+    val queueUnavailable: Boolean = false,
+    /** The track ran on from the previous one by itself, rather than being picked by the listener. */
+    val autoAdvanced: Boolean = false
 ) {
     enum class PlaybackState {
         LOADING,
@@ -60,7 +62,8 @@ data class ReceiverDashboardPlaybackEvent(
             sessionAvatarUrl = sessionAvatarUrl?.trim()?.takeIf { it.isNotBlank() } ?: previous.sessionAvatarUrl,
             queueLine = queueLine,
             elapsedMs = elapsedMs.coerceAtLeast(0L),
-            durationMs = durationMs.coerceAtLeast(0L)
+            durationMs = durationMs.coerceAtLeast(0L),
+            autoAdvanced = autoAdvanced
         )
     }
 

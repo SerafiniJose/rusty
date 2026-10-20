@@ -61,13 +61,24 @@ librespot-core = { path = "vendor/librespot-core" }
 # Patch librespot-playback with a Spotify-style crossfade from upstream PR #1756
 # (https://github.com/librespot-org/librespot/pull/1756): `PlayerConfig::crossfade`
 # and `Player::set_crossfade()` overlap the ending track with the preloaded next
-# one (equal-power sin/cos ramp, capped at 12 s, on a manual skip too). 0.8.0 has
-# no fade code at all and its second decoder is private to the player, so this
-# cannot be done from outside the crate. The PR applies cleanly except for the
+# one (equal-power sin/cos ramp, capped at 12 s). 0.8.0 has no fade code at all
+# and its second decoder is private to the player, so this cannot be done from
+# outside the crate. The PR applies cleanly except for the
 # `PlayerCommand::SetCrossfade` arm of `handle_command`, which is re-added by
-# hand (its context in the PR is dev-branch-only code). Drop this once a
-# librespot release newer than 0.8.0 carries the feature.
+# hand (its context in the PR is dev-branch-only code). Local change on top: the
+# PR blends a manual skip over the full crossfade too; here a track the listener
+# picks only gets a 30 ms declick (`SKIP_FADE`), so the crossfade is kept for one
+# track running into the next. Drop this once a librespot release newer than
+# 0.8.0 carries the feature (and re-check the skip behaviour).
 librespot-playback = { path = "vendor/librespot-playback" }
+# Patch librespot-connect with the fix from upstream PR #1795
+# (https://github.com/librespot-org/librespot/pull/1795): picking a track in a list
+# in the Spotify app played the FIRST track of the context instead. The app's
+# `skip_to` carries `"track_uri": ""` next to the `track_uid` that names the pick,
+# and 0.8.0 takes the empty uri, fails to find it and falls back to index 0. Empty
+# uri/uid now count as not provided. Drop this once a librespot release newer
+# than 0.8.0 carries the fix.
+librespot-connect = { path = "vendor/librespot-connect" }
 
 
 # Release profile. Cargo's stock release settings left ~10.5 MB of dead weight in

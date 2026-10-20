@@ -19,7 +19,9 @@ data class ReceiverDashboardState(
     val coverArtUrl: String? = null,
     val queueLine: String = DEFAULT_QUEUE_LINE,
     val elapsedMs: Long = 0L,
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    /** See [ReceiverDashboardPlaybackEvent.autoAdvanced]; decides whether a cover change crossfades. */
+    val autoAdvanced: Boolean = false
 ) {
     val elapsedLabel: String = formatDuration(elapsedMs)
     val durationLabel: String = formatDuration(durationMs)

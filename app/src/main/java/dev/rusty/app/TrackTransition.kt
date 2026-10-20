@@ -27,9 +27,15 @@ object TrackTransition {
     /** The incoming words are fully readable from here on. */
     const val WORDS_IN_UNTIL = 0.65f
 
-    /** "Follow the audio": the dissolve is the crossfade, floored so a gapless cut still softens. */
-    fun durationMs(crossfadeSeconds: Int): Long =
-        (CrossfadeSettings.clamp(crossfadeSeconds) * 1_000L).coerceAtLeast(MIN_DURATION_MS)
+    /**
+     * "Follow the audio": the dissolve is the crossfade, floored so a gapless cut still softens.
+     * Only a track that [autoAdvanced] — ran on from the one before — crossfades; one the listener
+     * picked cuts over in the audio, so it gets the floor too.
+     */
+    fun durationMs(crossfadeSeconds: Int, autoAdvanced: Boolean): Long {
+        val crossfadeMs = if (autoAdvanced) CrossfadeSettings.clamp(crossfadeSeconds) * 1_000L else 0L
+        return crossfadeMs.coerceAtLeast(MIN_DURATION_MS)
+    }
 
     /**
      * The incoming cover sits on top of the outgoing one at this alpha, so the blend never dips
@@ -62,8 +68,8 @@ object TrackTransition {
     const val LOAD_GRACE_MS = 2_000L
 
     /** The deadline for the new track's words: a full dissolve plus the cover's grace. */
-    fun wordsLandByMs(crossfadeSeconds: Int): Long =
-        durationMs(crossfadeSeconds) + LOAD_GRACE_MS
+    fun wordsLandByMs(crossfadeSeconds: Int, autoAdvanced: Boolean): Long =
+        durationMs(crossfadeSeconds, autoAdvanced) + LOAD_GRACE_MS
 
     /** True once the title/artist text belongs to the incoming track. */
     fun wordsSwapped(fraction: Float): Boolean = fraction >= WORDS_SWAP_AT
