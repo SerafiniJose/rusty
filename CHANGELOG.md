@@ -7,6 +7,19 @@ All notable changes to Rusty are documented here. The format follows
 The section matching each release tag is published as that release's notes and is
 what the app shows under **About & updates → What's new**.
 
+## [2.8.2] - 2026-10-21
+
+### Fixed
+- Picking a song from a list in the Spotify app plays that song again,
+  instead of the first song in the list. This was a recent bug in librespot,
+  the Spotify library Rusty uses: the Spotify app changed what it sends when
+  you pick a song.
+
+### Changed
+- Crossfade now only blends a song into the next one when it plays on by
+  itself. A song you pick, skip to or go back to starts right away, and the
+  screen changes with it.
+
 ## [2.8.1] - 2026-10-14
 
 ### Fixed
