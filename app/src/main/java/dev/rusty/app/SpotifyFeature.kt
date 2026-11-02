@@ -38,7 +38,7 @@ object SpotifyFeature : Feature {
 /**
  * Feature-owned settings panel for Spotify Connect.
  *
- * Owns: device name change, bitrate slider, startup volume, crossfade, service start/stop toggle.
+ * Owns: device name change, bitrate slider, volume, crossfade, service start/stop toggle.
  * Moved verbatim from [SettingsSheet.bindSpotify]; no behavior changes.
  */
 private class SpotifySettingsPanel(
@@ -59,8 +59,8 @@ private class SpotifySettingsPanel(
         val saveButton = panel.findViewById<MaterialButton>(R.id.btnSaveName)
         val bitrateSlider = panel.findViewById<Slider>(R.id.sliderBitrate)
         val bitrateValue = panel.findViewById<TextView>(R.id.tvBitrateValue)
-        val startupVolumeSlider = panel.findViewById<Slider>(R.id.sliderStartupVolume)
-        val startupVolumeValue = panel.findViewById<TextView>(R.id.tvStartupVolumeValue)
+        val volumeSlider = panel.findViewById<Slider>(R.id.sliderStartupVolume)
+        val volumeValue = panel.findViewById<TextView>(R.id.tvStartupVolumeValue)
         val crossfadeSlider = panel.findViewById<Slider>(R.id.sliderCrossfade)
         val crossfadeValue = panel.findViewById<TextView>(R.id.tvCrossfadeValue)
         val feedback = panel.findViewById<TextView>(R.id.tvSettingsFeedback)
@@ -71,8 +71,8 @@ private class SpotifySettingsPanel(
         nameInput.setText(host.currentDeviceName)
         bitrateSlider.value = bitrateToIndex(host.currentBitrateKbps)
         bitrateValue.text = bitrateLabel(host.currentBitrateKbps)
-        startupVolumeSlider.value = host.currentStartupVolumePercent.toFloat()
-        startupVolumeValue.text = StartupVolumeSettings.label(host.currentStartupVolumePercent)
+        volumeSlider.value = host.currentMediaVolumePercent.toFloat()
+        volumeValue.text = volumeLabel(host.currentMediaVolumePercent)
         crossfadeSlider.value = host.currentCrossfadeSeconds.toFloat()
         crossfadeValue.text = CrossfadeSettings.label(host.currentCrossfadeSeconds)
 
@@ -218,31 +218,31 @@ private class SpotifySettingsPanel(
             }
         })
 
-        // Startup volume: the label tracks the drag, the value commits on release. Committing is
-        // cheap and interrupts nothing — the native side only reads it when the next controller
-        // connects — so unlike the bitrate slider there is no reason to gate it behind a restart.
-        fun commitStartupVolume(percent: Int) {
-            val selected = StartupVolumeSettings.clamp(percent)
-            if (selected == host.currentStartupVolumePercent) return
-            host.applyStartupVolume(selected)
+        // Volume: the device media stream is the master (see SystemVolume), so this slider moves
+        // the level the room actually hears — the same level the hardware keys and the control
+        // page move. The label tracks the drag, the value commits on release.
+        fun commitVolume(percent: Int) {
+            val selected = percent.coerceIn(0, 100)
+            if (selected == host.currentMediaVolumePercent) return
+            host.applyMediaVolume(selected)
             showFeedback(
                 feedback,
-                "✓ New sessions will start at ${StartupVolumeSettings.label(selected)}",
+                "✓ Volume now follows the device media stream",
                 FEEDBACK_SUCCESS,
             )
         }
-        startupVolumeSlider.addOnChangeListener { slider, value, fromUser ->
-            startupVolumeValue.text = StartupVolumeSettings.label(value.toInt())
+        volumeSlider.addOnChangeListener { slider, value, fromUser ->
+            volumeValue.text = volumeLabel(value.toInt())
             // A D-pad step never produces a touch event, so onStopTrackingTouch below would never
             // fire on a TV and the change would be silently dropped. `isPressed` skips most of a
             // touch drag (which commits on release); a step that slips through mid-drag is
-            // harmless — committing is a pref write plus an atomic store, and interrupts nothing.
-            if (fromUser && !slider.isPressed) commitStartupVolume(value.toInt())
+            // harmless — committing is one AudioManager stream write.
+            if (fromUser && !slider.isPressed) commitVolume(value.toInt())
         }
-        startupVolumeSlider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+        volumeSlider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
             override fun onStartTrackingTouch(slider: Slider) {}
             override fun onStopTrackingTouch(slider: Slider) {
-                commitStartupVolume(slider.value.toInt())
+                commitVolume(slider.value.toInt())
             }
         })
 
@@ -399,6 +399,10 @@ private class SpotifySettingsPanel(
             panel.viewTreeObserver.removeOnWindowFocusChangeListener(overlayFocusListener)
         }
     }
+
+    /** "100% · full" at the top, otherwise a plain percentage — the stream has no "loud" tier. */
+    private fun volumeLabel(percent: Int): String =
+        if (percent >= 100) "100% · full" else "${percent.coerceIn(0, 100)}%"
 
     private fun showFeedback(view: TextView, message: String, color: Int) {
         view.text = message

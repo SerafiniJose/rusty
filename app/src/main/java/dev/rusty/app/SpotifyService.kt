@@ -5,13 +5,16 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import java.util.UUID
 
 class SpotifyService : Service() {
@@ -39,6 +42,41 @@ class SpotifyService : Service() {
     @Volatile
     private var nativeStartedConfig: NativeReceiverConfig? = null
 
+    // The last Connect volume we wrote INTO the system stream (0..100). A system volume change
+    // that matches it is our own write echoing back, so it must not be forwarded to Spotify
+    // again. Written on the main thread and on JNI callback threads → @Volatile.
+    @Volatile
+    private var lastNativeVolumePercent: Int? = null
+
+    /**
+     * Watches the media stream so the hardware volume keys (and the control page) move Spotify's
+     * slider with them. Registered for the system's own broadcast, never forwarded to other apps.
+     */
+    private val volumeObserver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != VOLUME_CHANGED_ACTION) return
+            if (intent.getIntExtra(EXTRA_VOLUME_STREAM_TYPE, -1) != SystemVolume.STREAM) return
+            onSystemVolumeChanged()
+        }
+    }
+
+    /** Routes a media-stream change to the receiver: remember it for the next cast and echo it. */
+    private fun onSystemVolumeChanged() {
+        val percent = SystemVolume.percent(this) ?: return
+        NativeBridge.setStartupVolume(percent)
+        if (percent == lastNativeVolumePercent) return   // our own write coming back
+        lastNativeVolumePercent = percent
+        NativeBridge.setVolume(percent)
+    }
+
+    /** Applies a volume the Connect controller asked for to the system media stream. */
+    private fun applyNativeVolume(percent: Int) {
+        val clamped = percent.coerceIn(0, 100)
+        lastNativeVolumePercent = clamped
+        NativeBridge.setStartupVolume(clamped)
+        SystemVolume.setPercent(this, clamped)
+    }
+
     override fun onCreate() {
         super.onCreate()
         activeService = this
@@ -49,6 +87,19 @@ class SpotifyService : Service() {
         // from prefs so the shade never shows the stale default.
         currentDeviceName = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .getString(KEY_DEVICE_NAME, DEFAULT_DEVICE_NAME) ?: DEFAULT_DEVICE_NAME
+        // The system media stream is the master volume (see SystemVolume): seed the native
+        // startup slot from it so a controller that connects before any Activity has run, and the
+        // duplicate-start path that skips onStartCommand's start block, both report the real level.
+        NativeBridge.setStartupVolume(
+            SystemVolume.percent(this)
+                ?: StartupVolumeSettings.percent(getSharedPreferences(PREFS_NAME, MODE_PRIVATE)),
+        )
+        ContextCompat.registerReceiver(
+            this,
+            volumeObserver,
+            IntentFilter(VOLUME_CHANGED_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         startForeground(1, createNotification())
         ServiceNotifications.started(this, ServiceNotifications.Kind.SPOTIFY)
     }
@@ -71,8 +122,10 @@ class SpotifyService : Service() {
         // Read from prefs rather than a start extra: unlike the name and the bitrate this is not
         // part of the native receiver's identity (see NativeReceiverConfig), it only seeds the
         // volume of the NEXT Connect session — so every start path, including BootReceiver's,
-        // gets the user's value without carrying an extra it doesn't know about.
-        val startupVolumePercent = StartupVolumeSettings.percent(prefs)
+        // gets the user's value without carrying an extra it doesn't know about. The system media
+        // stream wins when the platform has one: it is the level the user actually hears.
+        val startupVolumePercent = SystemVolume.percent(this)
+            ?: StartupVolumeSettings.percent(prefs)
         // Same store, same reasoning: not part of the receiver's identity, just a value the native
         // core must already hold when the first controller connects — including on a boot start,
         // where no Activity has seeded it yet.
@@ -293,6 +346,7 @@ class SpotifyService : Service() {
     }
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(volumeObserver) }
         currentSessionUser = null
         currentSessionDisplayName = null
         currentSessionAvatarUrl = null
@@ -338,6 +392,12 @@ class SpotifyService : Service() {
         private const val DEFAULT_BITRATE_KBPS = 160
         private val SUPPORTED_BITRATES_KBPS = setOf(96, 160, 320)
 
+        // Public AudioManager constants are hidden in the SDK, so the action string is spelled out.
+        // (Watching this instead of polling: every volume key, the control page and Spotify's own
+        // stream write all end in AudioService broadcasting this.)
+        private const val VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION"
+        private const val EXTRA_VOLUME_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE"
+
         @Volatile
         private var activeService: SpotifyService? = null
 
@@ -359,9 +419,21 @@ class SpotifyService : Service() {
             }
         }
 
+        /**
+         * The active session's Connect volume changed (0..100) — a controller moved Spotify's
+         * slider, or something asked the native core directly. Move the device's media stream to
+         * match so the hardware keys, the control page and the apps agree on one level.
+         *
+         * Called from the Rust playback/controller thread; [android.media.AudioManager] and the
+         * native startup slot are both safe from any thread, so no main-thread hop is needed.
+         */
         @JvmStatic
-        fun onNativeReceiverConnected(username: String?) {
-            activeService?.let { service ->
+        fun onNativeVolumeChanged(percent: Int) {
+            activeService?.applyNativeVolume(percent)
+        }
+
+        @JvmStatic
+        fun onNativeReceiverConnected(username: String?) {            activeService?.let { service ->
                 service.currentSessionUser = username?.takeIf { it.isNotBlank() }
                 // Spotify account connected — the receiver stays up, so the service stays RUNNING.
                 service.publishStatus(

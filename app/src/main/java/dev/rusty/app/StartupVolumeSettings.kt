@@ -3,14 +3,12 @@ package dev.rusty.app
 import android.content.SharedPreferences
 
 /**
- * The Spotify "Startup volume" setting: the volume a NEW Spotify Connect session starts at.
+ * The stored fallback for the receiver's volume, used only when the device exposes no adjustable
+ * media stream (see [SystemVolume], which is the master on every normal device).
  *
- * librespot hard-coded this at ~50%, which meant every fresh connection had to be turned up by
- * hand — useless for a receiver wired into a car or an amplifier, where the real volume knob is
- * downstream (issue #10). Rusty defaults it to 100% and lets it be dialled back.
- *
- * It is deliberately NOT the live volume: changing it never touches a session already playing,
- * it only decides where the next one starts.
+ * Upstream this was "Startup volume": the volume a NEW Spotify Connect session starts at. It is
+ * kept with the same bounds and step so an existing pref stays valid, but the settings panel now
+ * moves the system stream instead, and Android remembers that across casts on its own.
  */
 object StartupVolumeSettings {
     const val KEY_STARTUP_VOLUME_PERCENT = "startup_volume_percent"

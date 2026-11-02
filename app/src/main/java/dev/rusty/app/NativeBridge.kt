@@ -67,6 +67,14 @@ object NativeBridge {
     external fun setStartupVolume(percent: Int)
 
     /**
+     * Sets the active session's Connect volume (0..=100) so Spotify's device slider follows the
+     * Echo's media volume. The mixer does not attenuate the samples by this value — the system
+     * media stream is the audible level (see rust/src/duck.rs) — so this changes what the apps
+     * display, not the loudness. Safe no-op without a session.
+     */
+    external fun setVolume(percent: Int)
+
+    /**
      * Sets the crossfade between tracks (0..=12 whole seconds, 0 = gapless). Unlike the startup
      * volume this applies to the session playing right now — the native player honours it at the
      * next track boundary or manual skip — and to every session after it. Safe no-op for the
