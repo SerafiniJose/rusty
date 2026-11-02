@@ -642,7 +642,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
                         return@listener
                     }
                     // Palette runs its pixel histogram on a worker thread and calls back on the
-                    // main thread; the remaining accent math + 48px downscale are cheap to apply here.
+                    // main thread; the remaining accent math + 640px blur are cheap to apply here.
                     Palette.from(bitmap).generate { palette ->
                         if (req != artworkRequestId) return@generate
                         if (view == null || viewLifecycleOwner.lifecycle.currentState < Lifecycle.State.STARTED) return@generate
