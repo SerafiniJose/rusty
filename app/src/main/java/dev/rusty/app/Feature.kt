@@ -127,11 +127,15 @@ interface ShellHost {
     fun stopReceiver()
     fun applyReceiverName(newName: String)
     fun applyBitrate(newKbps: Int)
-    /** Sets the volume (10..100) a NEW Connect session starts at; never touches a live session. */
-    fun applyStartupVolume(percent: Int)
+    /**
+     * Sets the receiver's volume (0..100). The device's media stream is the master, so this moves
+     * [android.media.AudioManager.STREAM_MUSIC] — the hardware keys, the control page and Spotify
+     * all follow — and the level is remembered by Android for the next cast.
+     */
+    fun applyMediaVolume(percent: Int)
     val currentDeviceName: String
     val currentBitrateKbps: Int
-    val currentStartupVolumePercent: Int
+    val currentMediaVolumePercent: Int
 
     /** Sets the crossfade (0..12 whole seconds, 0 = gapless) — applied to the live session and every later one. */
     fun applyCrossfadeSeconds(seconds: Int)

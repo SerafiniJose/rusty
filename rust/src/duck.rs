@@ -1,13 +1,20 @@
-//! Duck-aware wrapper around librespot's SoftMixer.
+//! Duck-aware wrapper around librespot's SoftMixer, with the Connect volume handed off to Android.
+//!
+//! The audible level on this receiver is the device's media stream (STREAM_MUSIC) — the same
+//! level the hardware volume keys and the remote-control page move. Spotify's Connect volume is
+//! mirrored into it, so the mixer reports the volume but does NOT attenuate by it; otherwise the
+//! signal would be cut twice (once here, once by the system stream) and the two sliders would
+//! disagree about loudness.
 //!
 //! Spirc is handed THIS mixer, so every volume path (remote Connect volume changes included)
 //! goes through the same lock as ducking:
-//!   set_volume(v)              -> logical = v; inner volume = effective(v, current)
+//!   set_volume(v)              -> logical = v (reported to Spirc and to Android);
+//!                                 inner volume = duck-only attenuation (base always FULL)
 //!   volume()                   -> logical (the Connect slider NEVER sees the duck)
 //!   set_attenuation(t, fade)   -> ramps `current` from wherever it is to `t`, re-applying
-//!                                 effective(logical, current) at every step
+//!                                 that duck (and nothing else) at every step
 //! A restore therefore cannot clobber a volume the user changed mid-fade — the change already
-//! updated `logical`, and the ramp just keeps re-applying it at the in-flight attenuation.
+//! updated `logical`, and the ramp just keeps re-applying the in-flight attenuation.
 //!
 //! Fades are computed in the MAPPED domain (the attenuation factor the player actually
 //! multiplies the samples by), NOT on the raw u16 slider position. librespot's default volume
@@ -49,16 +56,34 @@ pub struct DuckingMixer {
     /// The mixer's own position -> attenuation curve; fades are computed in ITS output domain.
     volume_ctrl: VolumeCtrl,
     state: Mutex<DuckState>,
+    /// Called with the logical Connect volume whenever it changes, so Android can move its media
+    /// stream to match. Behind its own lock so the reporter never runs while `state` is held: it
+    /// crosses into the JVM and can block for the attach.
+    volume_reporter: Mutex<Option<Arc<dyn Fn(u16) + Send + Sync>>>,
 }
 
 impl DuckingMixer {
-    /// The u16 position whose audible volume is `atten` x the audible volume of `logical`.
-    fn effective(&self, logical: u16, atten: f64) -> u16 {
+    /// The u16 position for a duck of `atten` applied to full-scale audio. The base volume is
+    /// never applied to the samples (see the module doc); only the duck attenuates them.
+    fn audible(&self, atten: f64) -> u16 {
         if atten >= 1.0 {
-            return logical;
+            return u16::MAX;
         }
-        let mapped = self.volume_ctrl.to_mapped(logical) * atten;
+        let mapped = self.volume_ctrl.to_mapped(u16::MAX) * atten;
         self.volume_ctrl.as_unmapped(mapped)
+    }
+
+    /// Installs the sink for logical Connect volume changes. Only the last reporter is kept, and
+    /// the current value is not replayed — callers seed Android from the startup volume.
+    pub fn set_volume_reporter(&self, reporter: impl Fn(u16) + Send + Sync + 'static) {
+        *self.volume_reporter.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::new(reporter));
+    }
+
+    fn report(&self, volume: u16) {
+        let reporter = self.volume_reporter.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        if let Some(reporter) = reporter {
+            reporter(volume);
+        }
     }
 
     /// Fade the audible volume to `target` over `fade_ms`. `fade_ms == 0` applies instantly.
@@ -77,7 +102,7 @@ impl DuckingMixer {
             s.target = target;
             if fade_ms == 0 {
                 s.current = target;
-                let v = self.effective(s.logical, target);
+                let v = self.audible(target);
                 self.inner.set_volume(v);
                 return;
             }
@@ -95,7 +120,7 @@ impl DuckingMixer {
                     return; // superseded — a newer call owns the mixer now
                 }
                 s.current = start + (s.target - start) * frac;
-                let v = mixer.effective(s.logical, s.current);
+                let v = mixer.audible(s.current);
                 mixer.inner.set_volume(v);
                 if frac >= 1.0 {
                     return;
@@ -109,6 +134,8 @@ impl Mixer for DuckingMixer {
     fn open(config: MixerConfig) -> Result<Self, Error> {
         let volume_ctrl = config.volume_ctrl;
         let inner = <SoftMixer as Mixer>::open(config)?;
+        // Base at unity: the audible level is the Android stream volume (see module doc).
+        inner.set_volume(u16::MAX);
         let logical = inner.volume();
         Ok(DuckingMixer {
             inner,
@@ -119,6 +146,7 @@ impl Mixer for DuckingMixer {
                 target: 1.0,
                 ramp_gen: 0,
             }),
+            volume_reporter: Mutex::new(None),
         })
     }
 
@@ -127,10 +155,18 @@ impl Mixer for DuckingMixer {
     }
 
     fn set_volume(&self, volume: u16) {
-        let mut s = self.state.lock().unwrap_or_else(|p| p.into_inner());
-        s.logical = volume;
-        let v = self.effective(volume, s.current);
-        self.inner.set_volume(v);
+        let changed = {
+            let mut s = self.state.lock().unwrap_or_else(|p| p.into_inner());
+            let changed = s.logical != volume;
+            s.logical = volume;
+            let v = self.audible(s.current);
+            self.inner.set_volume(v);
+            changed
+        };
+        // Outside the state lock: the reporter is a JNI call into Android.
+        if changed {
+            self.report(volume);
+        }
     }
 
     fn get_soft_volume(&self) -> Box<dyn VolumeGetter + Send> {
@@ -160,10 +196,28 @@ mod tests {
     fn instant_duck_and_restore() {
         let m = mixer();
         m.set_attenuation(0.2, 0);
-        assert_eq!(m.inner.volume(), m.effective(FULL, 0.2));
+        assert_eq!(m.inner.volume(), m.audible(0.2));
         assert_eq!(m.volume(), FULL); // the Connect slider never sees the duck
         m.set_attenuation(1.0, 0);
         assert_eq!(m.inner.volume(), FULL);
+    }
+
+    #[test]
+    fn connect_volume_is_reported_but_not_applied_to_samples() {
+        let m = mixer();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        m.set_volume_reporter(move |v| sink.lock().unwrap().push(v));
+
+        m.set_volume(1234);
+        // Reported to Spirc and Android...
+        assert_eq!(m.volume(), 1234);
+        assert_eq!(*seen.lock().unwrap(), vec![1234]);
+        // ...but not applied to the samples: the system stream owns the level.
+        assert_eq!(m.inner.volume(), FULL);
+
+        m.set_volume(1234); // unchanged: no second report
+        assert_eq!(*seen.lock().unwrap(), vec![1234]);
     }
 
     #[test]
@@ -171,7 +225,7 @@ mod tests {
         let m = mixer();
         m.set_attenuation(0.2, 100);
         sleep(Duration::from_millis(300));
-        assert_eq!(m.inner.volume(), m.effective(FULL, 0.2));
+        assert_eq!(m.inner.volume(), m.audible(0.2));
         m.set_attenuation(1.0, 100);
         sleep(Duration::from_millis(300));
         assert_eq!(m.inner.volume(), FULL);
@@ -196,7 +250,7 @@ mod tests {
         m.set_volume(half); // user moves the Connect slider mid-fade
         sleep(Duration::from_millis(300));
         assert_eq!(m.volume(), half);
-        assert_eq!(m.inner.volume(), m.effective(half, 0.2));
+        assert_eq!(m.inner.volume(), m.audible(0.2));
     }
 
     #[test]
@@ -207,7 +261,7 @@ mod tests {
         m.set_attenuation(1.5, 0); // clamped to 1.0
         assert_eq!(m.inner.volume(), FULL);
         m.set_attenuation(-0.3, 0); // clamped to 0.0 (silence)
-        assert_eq!(m.inner.volume(), m.effective(FULL, 0.0));
+        assert_eq!(m.inner.volume(), m.audible(0.0));
     }
 
     #[test]
