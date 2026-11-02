@@ -10,6 +10,13 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Soft scrim centred on the numerals. The backdrop radios in settings choose the field; this
+         keeps the clock legible over both the moving mesh and the flat gradients. -->
+    <dev.rusty.app.ClockScrimView
+        android:id="@+id/ssClockScrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
     <!-- Centered migrating clock, matching the real idle face -->
     <TextView
         android:id="@+id/ssClock"
@@ -17,6 +24,10 @@
         android:layout_height="wrap_content"
         android:fontFamily="@font/bricolage_regular"
         android:includeFontPadding="false"
+        android:shadowColor="#99000000"
+        android:shadowDx="0"
+        android:shadowDy="3"
+        android:shadowRadius="24"
         android:text="9:41"
         android:textColor="@color/ink"
         android:textSize="120sp"
@@ -41,6 +52,10 @@
             android:layout_height="wrap_content"
             android:fontFamily="@font/hanken_regular"
             android:letterSpacing="0.14"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="16"
             android:text="Tuesday · June 8"
             android:textAllCaps="true"
             android:textColor="@color/muted"
@@ -52,6 +67,10 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
             android:fontFamily="@font/hanken_regular"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="16"
             android:text="Ready for Spotify"
             android:textColor="@color/muted_dim"
             android:textSize="15sp" />
