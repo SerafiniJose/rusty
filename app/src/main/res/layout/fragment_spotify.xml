@@ -163,8 +163,6 @@
         android:id="@+id/albumArtCard"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginTop="56dp"
-        android:layout_marginBottom="8dp"
         android:focusable="true"
         android:nextFocusRight="@id/btnPrev"
         android:visibility="gone"
@@ -172,6 +170,7 @@
         app:cardElevation="0dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintHeight_percent="0.52"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
@@ -218,7 +217,8 @@
         android:id="@+id/playingInfo"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="44dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginEnd="24dp"
         android:orientation="vertical"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="@id/albumArtCard"
@@ -232,33 +232,34 @@
             android:layout_height="wrap_content"
             android:fontFamily="@font/hanken_semibold"
             android:letterSpacing="0.18"
-            android:text="NOW PLAYING"
+            android:text="PLAYING ON THIS SPEAKER"
             android:textColor="@color/accent_fallback"
-            android:textSize="13sp" />
+            android:textSize="12sp" />
 
         <TextView
             android:id="@+id/tvFullTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="8dp"
             android:ellipsize="end"
-            android:fontFamily="@font/bricolage_bold"
+            android:fontFamily="@font/bricolage_regular"
             android:maxLines="2"
             android:text="Waiting for Spotify"
             android:textColor="@color/ink"
-            android:textSize="40sp" />
+            android:textSize="38sp" />
 
         <TextView
             android:id="@+id/tvFullArtist"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="4dp"
             android:ellipsize="end"
             android:fontFamily="@font/hanken_regular"
             android:maxLines="1"
             android:text="Select this receiver from Spotify"
             android:textColor="@color/muted"
-            android:textSize="21sp" />
+            android:textSize="19sp" />
+
 
         <!-- Drawn bar (no per-tick layout). 32dp tall with the 6dp bar centred: the extra 13dp
              above/below is the touch target, so the margins below subtract it to keep the bar
@@ -342,10 +343,21 @@
                 android:contentDescription="Next track"
                 android:foreground="@drawable/bg_tv_focus"
                 android:nextFocusLeft="@id/btnPlayPause"
-                android:nextFocusRight="@id/btnSettings"
-                android:nextFocusDown="@id/btnSettings"
+                android:nextFocusRight="@id/btnLyrics"
+                android:nextFocusDown="@id/btnLyrics"
                 android:scaleType="centerInside"
                 android:src="@drawable/ic_skip_next" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnLyrics"
+                style="@style/Widget.Rusty.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="52dp"
+                android:layout_marginStart="24dp"
+                android:foreground="@drawable/bg_tv_focus"
+                android:nextFocusLeft="@id/btnNext"
+                android:nextFocusRight="@id/btnSettings"
+                android:text="Lyrics" />
         </LinearLayout>
     </LinearLayout>
     </androidx.constraintlayout.widget.ConstraintLayout>
