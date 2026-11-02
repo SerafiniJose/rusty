@@ -24,6 +24,22 @@
     <color name="mesh_blue">#FF243B6E</color>
     <color name="mesh_violet">#FF5A2C6E</color>
 
+    <!-- Clock screensaver backdrops (see ClockAppearance). The flat fields are gradients rather
+         than solids so the clock still sits in a little light without competing with it. -->
+    <color name="clock_midnight_start">#FF101D30</color>
+    <color name="clock_midnight_end">#FF05080E</color>
+    <color name="clock_slate_start">#FF20232A</color>
+    <color name="clock_slate_end">#FF0C0D10</color>
+    <color name="clock_ember_start">#FF2B1912</color>
+    <color name="clock_ember_end">#FF0C0908</color>
+    <color name="clock_paper_start">#FFF4EFE6</color>
+    <color name="clock_paper_end">#FFE5DCCD</color>
+
+    <!-- Ink/muted pairs for the light Paper backdrop. Warm, not neutral grey, to match the palette. -->
+    <color name="ink_on_light">#FF1B1815</color>
+    <color name="muted_on_light">#FF5F574E</color>
+    <color name="muted_dim_on_light">#FF7C7368</color>
+
     <!-- Functional status-dot colors -->
     <color name="dot_green">#FF1DB954</color>
     <color name="dot_amber">#FFE3B341</color>
