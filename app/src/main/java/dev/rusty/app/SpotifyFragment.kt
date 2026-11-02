@@ -35,6 +35,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.palette.graphics.Palette
+import com.google.android.material.button.MaterialButton
 import coil.dispose
 import coil.load
 import com.google.android.material.card.MaterialCardView
@@ -105,6 +106,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     private lateinit var prevButton: ImageButton
     private lateinit var playPauseButton: ImageButton
     private lateinit var nextButton: ImageButton
+    private lateinit var lyricsButton: MaterialButton
 
     private lateinit var bloom: BloomController
 
@@ -381,6 +383,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         prevButton = view.findViewById(R.id.btnPrev)
         playPauseButton = view.findViewById(R.id.btnPlayPause)
         nextButton = view.findViewById(R.id.btnNext)
+        lyricsButton = view.findViewById(R.id.btnLyrics)
 
         bloom = BloomController(
             clock = clockText,
@@ -397,6 +400,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         nextButton.setOnClickListener { NativeBridge.nextTrack() }
         playPauseButton.setOnClickListener { togglePlayPause() }
         albumArtCard.setOnClickListener { openLyrics() }
+        lyricsButton.setOnClickListener { openLyrics() }
 
         // Seeking. The view reports ratios; the model decides what they mean; runScrubEffect does
         // the one Android thing (the native seek / the debounce timer) and redraws.
@@ -577,7 +581,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     private fun renderControlsEnabled(state: ReceiverDashboardState) {
         val live = state.sessionUser != null || state.status == STATUS_PLAYING
         val alpha = if (live) 1f else 0.35f
-        for (button in listOf(prevButton, playPauseButton, nextButton)) {
+        for (button in listOf(prevButton, playPauseButton, nextButton, lyricsButton)) {
             button.isEnabled = live
             button.alpha = alpha
         }
