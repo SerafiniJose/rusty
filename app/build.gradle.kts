@@ -17,8 +17,8 @@ android {
         applicationId = "dev.rusty.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "2.8.2"
+        versionCode = 17
+        versionName = "2.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
