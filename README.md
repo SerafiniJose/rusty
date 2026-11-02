@@ -34,6 +34,13 @@ playing on ("PLAYING ON Kitchen"). When nothing is playing anywhere it falls bac
 and it always prefers the local receiver's state when this device is the active Connect target, so
 there is no round-trip lag on the screen you look at most. It polls the Web API every ten seconds
 and extrapolates between polls, which keeps the progress bar smooth without tripping rate limits.
+Tapping the card opens a detail view with a seek bar, play/pause, skip, and **lyrics** for the
+track playing elsewhere: transport goes through the Web API to whoever owns playback, and lyrics
+fall back to [LRCLIB](https://lrclib.net) when Spotify's own lyrics endpoint will not answer an
+OAuth token. (Control needs the token to include `user-modify-playback-state`, so an account linked
+before this build shows "Re-link Spotify to control playback" until you re-link it.) The main
+now-playing screen uses the same cover-left, info-right layout with a Lyrics button when this
+device is the speaker.
 
 **Spotify account linking** — Settings → Screensaver → *Spotify account* links the device to your
 account with OAuth PKCE in an embedded browser; there is no client secret in the app and no
