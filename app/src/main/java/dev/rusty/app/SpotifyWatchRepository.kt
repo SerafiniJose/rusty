@@ -33,6 +33,28 @@ data class WatchNowPlaying(
     }
 }
 
+/** A transport press the Watch detail view can ask the playing device to act on. */
+enum class WatchTransport(val method: String, val path: String) {
+    PLAY("PUT", "/me/player/play"),
+    PAUSE("PUT", "/me/player/pause"),
+    NEXT("POST", "/me/player/next"),
+    PREVIOUS("POST", "/me/player/previous"),
+}
+
+/**
+ * Outcome of a transport call against the Web API.
+ *
+ * [Forbidden] is its own case on purpose: it means the linked token was minted before the
+ * `user-modify-playback-state` scope was requested (or the account has no Premium), and the only
+ * fix is to re-link — a generic error would leave the user retrying a button that cannot work.
+ */
+sealed interface TransportResult {
+    data object Done : TransportResult
+    data object Unauthorized : TransportResult
+    data object Forbidden : TransportResult
+    data object Error : TransportResult
+}
+
 sealed interface WatchResult {
     data class Playing(val track: WatchNowPlaying) : WatchResult
     data object Nothing : WatchResult
@@ -61,8 +83,8 @@ sealed interface WatchResult {
  */
 object SpotifyWatchRepository {
     private const val TAG = "SpotifyWatchRepository"
-    private const val ENDPOINT =
-        "https://api.spotify.com/v1/me/player?additional_types=track,episode"
+    private const val API_ROOT = "https://api.spotify.com/v1"
+    private const val ENDPOINT = "$API_ROOT/me/player?additional_types=track,episode"
 
     /** Pure: maps a `GET /v1/me/player` JSON body to a [WatchResult]. */
     fun parse(json: String, nowMs: Long = System.currentTimeMillis()): WatchResult {
@@ -142,6 +164,48 @@ object SpotifyWatchRepository {
         } catch (e: Exception) {
             Log.w(TAG, "player fetch failed: ${e.message}")
             WatchResult.Error
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    /** I/O: asks the account's active device to pause, resume, or skip. */
+    fun transport(token: String, action: WatchTransport): TransportResult =
+        call(token, action.method, API_ROOT + action.path)
+
+    /** I/O: seeks the account's active device. Clamped by the caller, not here. */
+    fun seek(token: String, positionMs: Long): TransportResult =
+        call(token, "PUT", "$API_ROOT/me/player/seek?position_ms=${positionMs.coerceAtLeast(0L)}")
+
+    /**
+     * One empty-bodied Web API call. Spotify answers 204 for a completed transport command and 403
+     * when the token lacks the modify scope, so the status code is the whole result.
+     */
+    private fun call(token: String, method: String, url: String): TransportResult {
+        var conn: HttpURLConnection? = null
+        return try {
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Content-Length", "0")
+                connectTimeout = 8000
+                readTimeout = 8000
+            }
+            when (val code = conn.responseCode) {
+                in 200..299 -> TransportResult.Done
+                401 -> TransportResult.Unauthorized
+                403 -> {
+                    Log.w(TAG, "transport $method ${conn.url.path} forbidden; relink needed")
+                    TransportResult.Forbidden
+                }
+                else -> {
+                    Log.w(TAG, "transport $method ${conn.url.path} HTTP $code")
+                    TransportResult.Error
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "transport $method failed: ${e.message}")
+            TransportResult.Error
         } finally {
             conn?.disconnect()
         }

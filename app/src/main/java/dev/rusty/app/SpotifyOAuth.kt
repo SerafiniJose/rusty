@@ -25,8 +25,15 @@ object SpotifyOAuth {
     const val CLIENT_ID = "90d7fa8653384b63bdd1d795406b6be4"
     const val REDIRECT_URI = "http://127.0.0.1:25566/callback"
 
-    /** `/me/player` needs the first two; the profile read supplies the linked account's name. */
-    const val SCOPES = "user-read-playback-state user-read-currently-playing user-read-private user-read-email"
+    /**
+     * Read state for the Watch face, the profile read for the linked account's name, and
+     * `user-modify-playback-state` for the Watch detail view's transport buttons. A token minted
+     * before that last scope was added still reads fine but answers 403 on transport — which the
+     * detail view reports as "relink".
+     */
+    const val SCOPES =
+        "user-read-playback-state user-read-currently-playing user-read-private user-read-email " +
+            "user-modify-playback-state"
 
     private const val AUTHORIZE_ENDPOINT = "https://accounts.spotify.com/authorize"
     private const val TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token"

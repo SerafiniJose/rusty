@@ -269,6 +269,272 @@
         </LinearLayout>
     </androidx.constraintlayout.widget.ConstraintLayout>
 
+
+    <!-- Detail view. Tapping the card (or any key on a D-pad remote) opens this: a bigger cover,
+         a seek slider and transport buttons for the device that is actually playing, plus a
+         lyrics panel. It lives inside the saver rather than a new activity so the same poll keeps
+         feeding it and waking/closing costs no crossfade. -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/ssWatchDetail"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@color/bg_base"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/ssDetailArtCard"
+            android:layout_width="232dp"
+            android:layout_height="232dp"
+            android:layout_marginStart="64dp"
+            app:cardBackgroundColor="@color/surface"
+            app:cardCornerRadius="22dp"
+            app:cardElevation="0dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:strokeWidth="0dp">
+
+            <ImageView
+                android:id="@+id/ssDetailArt"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="Now playing album art"
+                android:scaleType="centerCrop" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="40dp"
+            android:layout_marginEnd="64dp"
+            android:orientation="vertical"
+            app:layout_constraintBottom_toBottomOf="@id/ssDetailArtCard"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/ssDetailArtCard"
+            app:layout_constraintTop_toTopOf="@id/ssDetailArtCard">
+
+            <TextView
+                android:id="@+id/ssDetailEyebrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_semibold"
+                android:letterSpacing="0.18"
+                android:text="PLAYING ON SPOTIFY"
+                android:textAllCaps="true"
+                android:textColor="@color/accent_fallback"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/ssDetailTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:ellipsize="end"
+                android:fontFamily="@font/bricolage_regular"
+                android:maxLines="2"
+                android:text="Track title"
+                android:textColor="@color/ink"
+                android:textSize="38sp" />
+
+            <TextView
+                android:id="@+id/ssDetailArtist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_regular"
+                android:maxLines="1"
+                android:text="Artist"
+                android:textColor="@color/muted"
+                android:textSize="19sp" />
+
+            <TextView
+                android:id="@+id/ssDetailAlbum"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_regular"
+                android:maxLines="1"
+                android:text="Album"
+                android:textColor="@color/muted_dim"
+                android:textSize="14sp" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/ssDetailSeek"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:value="0"
+                android:valueFrom="0"
+                android:valueTo="1000"
+                android:stepSize="1"
+                app:haloColor="@color/accent_fallback"
+                app:labelBehavior="gone"
+                app:thumbColor="@color/ink"
+                app:tickVisible="false"
+                app:trackColorActive="@color/ink"
+                app:trackColorInactive="@color/surface_border" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/ssDetailElapsed"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="@font/hanken_regular"
+                    android:text="0:00"
+                    android:textColor="@color/muted_dim"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/ssDetailDuration"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/hanken_regular"
+                    android:text="0:00"
+                    android:textColor="@color/muted_dim"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/ssDetailPrev"
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Previous track"
+                    android:foreground="@drawable/bg_tv_focus"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_skip_previous" />
+
+                <ImageButton
+                    android:id="@+id/ssDetailPlay"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:layout_marginStart="14dp"
+                    android:layout_marginEnd="14dp"
+                    android:background="@drawable/bg_playpause_button"
+                    android:contentDescription="Play or pause"
+                    android:foreground="@drawable/bg_tv_focus"
+                    android:padding="15dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_play" />
+
+                <ImageButton
+                    android:id="@+id/ssDetailNext"
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Next track"
+                    android:foreground="@drawable/bg_tv_focus"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_skip_next" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/ssDetailLyrics"
+                    style="@style/Widget.Rusty.Button.Secondary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="52dp"
+                    android:layout_marginStart="24dp"
+                    android:foreground="@drawable/bg_tv_focus"
+                    android:text="Lyrics" />
+
+                <ImageButton
+                    android:id="@+id/ssDetailClose"
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:layout_marginStart="12dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Close"
+                    android:foreground="@drawable/bg_tv_focus"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_close" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/ssDetailStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:fontFamily="@font/hanken_regular"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- Lyrics take over the whole detail view: white-ish type on near-black is the same
+         readability rule the standalone lyrics screen follows. -->
+    <FrameLayout
+        android:id="@+id/ssDetailLyricsPanel"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@color/bg_base"
+        android:clickable="true"
+        android:focusable="false"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ScrollView
+            android:id="@+id/ssDetailLyricsScroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingStart="120dp"
+            android:paddingTop="72dp"
+            android:paddingEnd="120dp"
+            android:paddingBottom="72dp"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/ssDetailLyricsLines"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+
+        <ImageButton
+            android:id="@+id/ssDetailLyricsClose"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_gravity="top|end"
+            android:layout_marginTop="28dp"
+            android:layout_marginEnd="32dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Close lyrics"
+            android:foreground="@drawable/bg_tv_focus"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_close" />
+
+        <TextView
+            android:id="@+id/ssDetailLyricsStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:fontFamily="@font/hanken_regular"
+            android:text="Loading lyrics…"
+            android:textColor="@color/muted"
+            android:textSize="18sp" />
+    </FrameLayout>
+
     <!-- Tap-catcher that dismisses the saver launcher; GONE unless the menu is open. -->
     <View
         android:id="@+id/ssLauncherScrim"
