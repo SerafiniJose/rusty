@@ -1,4 +1,4 @@
-# Rusty
+# Rusty Got Better
 
 **Rusty turns a spare Android screen into an always-on appliance for the room it sits in.**
 
@@ -8,13 +8,56 @@ device itself, under an ambient, lyrics-aware now-playing screen. Leave it alone
 whatever else the room needs: a photo frame, a **Home Assistant** dashboard, a wall of camera
 feeds, or just a good clock.
 
+This is a fork of **[SerafiniJose/rusty](https://github.com/SerafiniJose/rusty)** with a handful of
+additions aimed at the "always on a shelf" case — a screensaver that follows your account instead
+of only this receiver, more readable clock faces, a sharper now-playing background, and a volume
+that behaves like a normal speaker. See [What's different in this fork](#whats-different-in-this-fork).
+
 Built on **[Rust](https://www.rust-lang.org/)** and **[Kotlin](https://kotlinlang.org/)** — and
 built to give new life to rusty devices. Runs on any Android 8.0+ device, and is at home on
 always-on screens like the Amazon Echo Show.
 
-<!-- Replace the badge owner/repo if you rename the repository. -->
-[![Release](https://img.shields.io/github/v/release/SerafiniJose/rusty?sort=semver)](https://github.com/SerafiniJose/rusty/releases/latest)
+[![Release](https://img.shields.io/github/v/release/Ibi-bit/rusty-got-better?sort=semver)](https://github.com/Ibi-bit/rusty-got-better/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
+
+## What's different in this fork
+
+Everything below is additive: the receiver, lyrics, Canvas, Home Assistant, cameras, announcements
+and the remote-control page work as they do upstream.
+
+**Watch Spotify screensaver** — a new idle face for the case where this receiver is *not* the one
+casting. It shows what the linked account is playing somewhere else: album art, the track's
+**Canvas** video where there is one, title, artist, album, progress bar, and the device it is
+playing on ("PLAYING ON Kitchen"). When nothing is playing anywhere it falls back to the big clock,
+and it always prefers the local receiver's state when this device is the active Connect target, so
+there is no round-trip lag on the screen you look at most. It polls the Web API every ten seconds
+and extrapolates between polls, which keeps the progress bar smooth without tripping rate limits.
+
+**Spotify account linking** — Settings → Screensaver → *Spotify account* links the device to your
+account with OAuth PKCE in an embedded browser; there is no client secret in the app and no
+password typed into Rusty. Upstream mints a Web API token only while a Connect session is live, so
+anything that needed the API went dark when the receiver went idle. A linked account keeps a
+refreshable token, which is what lets the Watch face keep working before the first cast of the day.
+
+**Readable clock faces** — the clock screensaver now has five backdrops (the original ambient mesh,
+Midnight, Slate, Ember, and a light Paper face) plus an adjustable **scrim** behind the time. Type
+carries a soft shadow, the light face switches the text and chrome to dark ink, and the Canvas
+screensaver gets the same scrim so the clock stays legible over a bright video. Clock backgrounds
+affect the Clock face only; Canvas and Watch keep their own artwork and scrim.
+
+**A sharp now-playing background** — the colour wash behind the now-playing screen was a 48×48
+bitmap scaled up to a wall, which read as a pixelated mosaic next to the album cover. It is now a
+640 px copy with a two-pass box blur: still soft under the scrim, but with the cover's actual
+detail instead of coloured blocks.
+
+**A volume that behaves like a speaker** — the device's media stream is the single master volume.
+Spotify's Connect slider moves the Echo's system volume (not a second software attenuation on top
+of it), the hardware volume keys move Spotify's slider, and the remote-control page agrees with
+both. Android remembers the stream volume, so the next cast starts where the last one ended rather
+than at a fixed configured level. The Spotify settings slider is now a live *Volume* slider, and
+the native core reports volume changes back over JNI instead of applying them to the samples.
 
 ---
 
@@ -78,7 +121,8 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 **When nothing is playing**
 
 - **Screensaver** — after an idle timeout, a clean **Clock** face, a burn-in-safe **OLED** face,
-  the track's **Canvas**, or your own photos. It wakes gently back to now-playing.
+  the track's **Canvas**, a **Watch Spotify** face that follows your account on other devices, or
+  your own photos. It wakes gently back to now-playing.
 - **Immich Slideshow** — point Rusty at a self-hosted [Immich](https://immich.app) server and the
   idle screen becomes a photo frame: the whole library or just the albums, people and tags you
   pick, with slow Ken Burns motion, a blurred fill and an optional clock. The key it needs is
@@ -118,7 +162,8 @@ https://github.com/user-attachments/assets/973e78b3-98b2-4a9f-96a5-fc913f78ac96
 
 ## Install
 
-1. Go to the [**Releases**](https://github.com/SerafiniJose/rusty/releases/latest) page.
+1. Go to the [**Releases**](https://github.com/Ibi-bit/rusty-got-better/releases/latest) page — or build the
+   debug APK yourself with `./gradlew assembleDebug` (see [Build from source](docs/build.md)).
 2. Download the `.apk` for the latest release (e.g. `rusty-v2.8.1.apk`).
 3. Sideload it onto your device:
    ```bash
@@ -165,7 +210,9 @@ The detail lives in [`docs/`](docs/), one page per area:
 - **A Home Assistant integration on HACS** — install Rusty support from HACS instead of leaning
   on auto-discovery, with the device's services and status as proper entities.
 
-Ideas and votes are welcome in the [issues](https://github.com/SerafiniJose/rusty/issues).
+Ideas and votes are welcome in the [issues](https://github.com/Ibi-bit/rusty-got-better/issues); anything that
+is not specific to this fork belongs upstream in
+[SerafiniJose/rusty](https://github.com/SerafiniJose/rusty/issues).
 
 ## Credits & attribution
 
