@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Now-playing card over the Watch theme's full-bleed artwork. Translucent so the backdrop still
+     reads; the corner radius matches the album-art card inside it. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#B30B0A0C" />
+    <corners android:radius="24dp" />
+</shape>

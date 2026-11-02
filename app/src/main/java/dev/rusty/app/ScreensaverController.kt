@@ -70,9 +70,21 @@ class ScreensaverController(
 
     private val tickRunnable = object : Runnable {
         override fun run() {
-            activeTheme?.bind(store.snapshot.state, is24Hour())
+            activeTheme?.bind(liveState(), is24Hour())
             handler.postDelayed(this, 1_000L)
         }
+    }
+
+    /**
+     * The snapshot's [ReceiverDashboardState.elapsedMs] is the anchor frozen at the last playback
+     * event, so a theme binding it directly would draw a progress bar that never moves between
+     * events (the Watch theme's now-playing card was visibly stuck). The store already exposes the
+     * extrapolated position; fold it in here so every theme sees a live state each second.
+     */
+    private fun liveState(): ReceiverDashboardState {
+        val state = store.snapshot.state
+        val live = store.liveElapsedMs()
+        return if (live == state.elapsedMs) state else state.copy(elapsedMs = live)
     }
 
     // Persistent (registered across the whole resumed window, not only while showing) so the
@@ -91,7 +103,7 @@ class ScreensaverController(
                 ScreensaverEdgeAction.EXIT_TO_DASHBOARD -> if (isReceiverForeground()) exitToDashboard()
                 ScreensaverEdgeAction.NONE -> {}
             }
-            if (isShowing) activeTheme?.bind(state, is24Hour())
+            if (isShowing) activeTheme?.bind(liveState(), is24Hour())
         }
     }
 
@@ -218,7 +230,7 @@ class ScreensaverController(
         // batch fetch in flight (the loop starts eagerly on the main dispatcher).
         theme.setSlideshowSuppressed(screenSuppressed())
         theme.onShown()
-        theme.bind(store.snapshot.state, is24Hour())
+        theme.bind(liveState(), is24Hour())
     }
 
     /**
@@ -327,6 +339,7 @@ class ScreensaverController(
         ScreensaverThemeId.CLOCK -> ClockTheme()
         ScreensaverThemeId.OLED -> OledTheme()
         ScreensaverThemeId.CANVAS -> CanvasTheme()
+        ScreensaverThemeId.WATCH -> WatchTheme()
         ScreensaverThemeId.SLIDESHOW -> SlideshowTheme()
     }
 
