@@ -37,14 +37,29 @@ class FeatureLauncher(
     private val toggle: ImageButton,
     private val menu: LinearLayout,
     private val scrim: View,
-    private val activeTint: Int,
-    private val inactiveTint: Int,
+    activeTint: Int,
+    inactiveTint: Int,
     private val itemLayoutRes: Int,
     private val minEntriesToShow: Int,
     private val provideEntries: () -> List<LauncherEntry>,
 ) {
     var isOpen = false
         private set
+
+    private var activeTint: Int = activeTint
+    private var inactiveTint: Int = inactiveTint
+
+    /**
+     * Repaints the toggle and (if open) the pills. Used by the clock theme when its backdrop flips
+     * between dark and light ink; the saver menu is built on demand, so updating the stored colours
+     * is enough for the next open.
+     */
+    fun updateTints(active: Int, inactive: Int) {
+        activeTint = active
+        inactiveTint = inactive
+        toggle.setColorFilter(inactive)
+        if (isOpen) build(provideEntries())
+    }
 
     /** Invoked with the new open-state on every expand/collapse. */
     var onOpenChanged: ((Boolean) -> Unit)? = null

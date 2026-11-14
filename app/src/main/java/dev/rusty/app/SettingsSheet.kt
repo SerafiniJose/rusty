@@ -392,6 +392,46 @@ object SettingsSheet {
             }
         }
 
+        // Clock face appearance — backdrop + scrim. These are app-wide prefs, not per-theme, and
+        // ClockTheme re-reads them on its 1 Hz bind so the face already on screen updates live.
+        val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val backdropRadios: List<Pair<RadioButton, ClockBackdrop>> = listOf(
+            R.id.rbBackdropAmbient to ClockBackdrop.AMBIENT,
+            R.id.rbBackdropMidnight to ClockBackdrop.MIDNIGHT,
+            R.id.rbBackdropSlate to ClockBackdrop.SLATE,
+            R.id.rbBackdropEmber to ClockBackdrop.EMBER,
+            R.id.rbBackdropPaper to ClockBackdrop.PAPER,
+        ).map { (viewId, backdrop) -> panel.findViewById<RadioButton>(viewId) to backdrop }
+        var suppressBackdropCallback = false
+        fun checkBackdrop(backdrop: ClockBackdrop) {
+            suppressBackdropCallback = true
+            backdropRadios.forEach { (radio, id) -> radio.isChecked = id == backdrop }
+            suppressBackdropCallback = false
+        }
+        checkBackdrop(ClockAppearance.backdrop(prefs))
+        backdropRadios.forEach { (radio, backdrop) ->
+            radio.setOnCheckedChangeListener { _, isChecked ->
+                if (!isChecked || suppressBackdropCallback) return@setOnCheckedChangeListener
+                suppressBackdropCallback = true
+                backdropRadios.forEach { (other, _) -> if (other !== radio) other.isChecked = false }
+                suppressBackdropCallback = false
+                prefs.edit().putString(ClockAppearance.KEY_BACKDROP, backdrop.prefValue).apply()
+            }
+        }
+
+        val scrimSlider = panel.findViewById<Slider>(R.id.sliderClockScrim)
+        val scrimValue = panel.findViewById<TextView>(R.id.tvClockScrimValue)
+        val initialScrim = ClockAppearance.scrimPercent(prefs)
+        scrimSlider.value = initialScrim.toFloat()
+        scrimValue.text = "$initialScrim%"
+        scrimSlider.addOnChangeListener { _, value, _ ->
+            val percent = ClockAppearance.snapScrimPercent(value.toInt())
+            scrimValue.text = "$percent%"
+            if (percent != ClockAppearance.scrimPercent(prefs)) {
+                prefs.edit().putInt(ClockAppearance.KEY_SCRIM_PERCENT, percent).apply()
+            }
+        }
+
         // Idle-timeout picker — a stepped slider mirroring the Spotify bitrate control. The slider
         // index is a position into ScreensaverTimeout.ordered; the sub-label echoes the choice.
         val timeoutSlider = panel.findViewById<Slider>(R.id.sliderScreensaverTimeout)
