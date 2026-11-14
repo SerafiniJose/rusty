@@ -11,7 +11,7 @@
         android:id="@+id/ssWatchArt"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:alpha="0.55"
+        android:alpha="0.65"
         android:contentDescription="Now playing artwork"
         android:scaleType="centerCrop"
         app:layout_constraintBottom_toBottomOf="parent"

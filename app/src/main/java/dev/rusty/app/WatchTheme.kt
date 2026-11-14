@@ -387,6 +387,6 @@ class WatchTheme : ScreensaverTheme {
         const val STALE_AFTER_MS = 15 * 60 * 1_000L
 
         /** Even if the clock scrim is dialled down, the artwork needs some separation from type. */
-        const val WATCH_MIN_SCRIM_PERCENT = 55
+        const val WATCH_MIN_SCRIM_PERCENT = 40
     }
 }
