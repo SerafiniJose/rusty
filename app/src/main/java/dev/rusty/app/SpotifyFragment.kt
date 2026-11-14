@@ -35,6 +35,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.palette.graphics.Palette
+import com.google.android.material.button.MaterialButton
 import coil.dispose
 import coil.load
 import com.google.android.material.card.MaterialCardView
@@ -105,6 +106,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     private lateinit var prevButton: ImageButton
     private lateinit var playPauseButton: ImageButton
     private lateinit var nextButton: ImageButton
+    private lateinit var lyricsButton: MaterialButton
 
     private lateinit var bloom: BloomController
 
@@ -381,6 +383,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         prevButton = view.findViewById(R.id.btnPrev)
         playPauseButton = view.findViewById(R.id.btnPlayPause)
         nextButton = view.findViewById(R.id.btnNext)
+        lyricsButton = view.findViewById(R.id.btnLyrics)
 
         bloom = BloomController(
             clock = clockText,
@@ -397,6 +400,7 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         nextButton.setOnClickListener { NativeBridge.nextTrack() }
         playPauseButton.setOnClickListener { togglePlayPause() }
         albumArtCard.setOnClickListener { openLyrics() }
+        lyricsButton.setOnClickListener { openLyrics() }
 
         // Seeking. The view reports ratios; the model decides what they mean; runScrubEffect does
         // the one Android thing (the native seek / the debounce timer) and redraws.
@@ -581,6 +585,11 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
             button.isEnabled = live
             button.alpha = alpha
         }
+        // Lyrics needs a track as well as a live control route: a phone can connect before
+        // anything is loaded, and openLyrics() can only ignore a press with no track id.
+        val lyricsLive = live && !state.trackId.isNullOrBlank()
+        lyricsButton.isEnabled = lyricsLive
+        lyricsButton.alpha = if (lyricsLive) 1f else 0.35f
     }
 
     /**
@@ -765,12 +774,13 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         heldWords = null
     }
 
-    /** Tints the accent-driven chrome: progress fill, play button, eyebrow. */
+    /** Tints the accent-driven chrome: progress fill, play button, eyebrow, the Lyrics action. */
     private fun applyAccent(color: Int) {
         AccentHolder.accent = color
         progressBar.fillColor = color
         playPauseButton.backgroundTintList = ColorStateList.valueOf(color)
         eyebrowText.setTextColor(color)
+        lyricsButton.setTextColor(color)
     }
 
     private fun schedulePlaybackClockTick(state: ReceiverDashboardState) {
