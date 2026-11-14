@@ -365,6 +365,7 @@ object SettingsSheet {
             R.id.rbThemeClock to ScreensaverThemeId.CLOCK,
             R.id.rbThemeOled to ScreensaverThemeId.OLED,
             R.id.rbThemeCanvas to ScreensaverThemeId.CANVAS,
+            R.id.rbThemeWatch to ScreensaverThemeId.WATCH,
             R.id.rbThemeSlideshow to ScreensaverThemeId.SLIDESHOW,
         ).map { (viewId, themeId) -> panel.findViewById<RadioButton>(viewId) to themeId }
         var suppressThemeCallback = false
