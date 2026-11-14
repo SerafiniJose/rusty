@@ -769,12 +769,13 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
         heldWords = null
     }
 
-    /** Tints the accent-driven chrome: progress fill, play button, eyebrow. */
+    /** Tints the accent-driven chrome: progress fill, play button, eyebrow, the Lyrics action. */
     private fun applyAccent(color: Int) {
         AccentHolder.accent = color
         progressBar.fillColor = color
         playPauseButton.backgroundTintList = ColorStateList.valueOf(color)
         eyebrowText.setTextColor(color)
+        lyricsButton.setTextColor(color)
     }
 
     private fun schedulePlaybackClockTick(state: ReceiverDashboardState) {
