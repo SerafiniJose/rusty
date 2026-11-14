@@ -88,6 +88,9 @@ class WatchTheme : ScreensaverTheme {
     private var pollJob: Job? = null
     private var remote: WatchNowPlaying? = null
     private var remoteStatus = RemoteStatus.WAITING
+
+    /** When the last `/me/player` request went out, so remounts can reuse the budget. */
+    private var lastFetchMs = 0L
     private var loadedArtUrl: String? = null
     private var appliedScrimPercent = -1
     private var lastState: ReceiverDashboardState? = null
@@ -264,12 +267,20 @@ class WatchTheme : ScreensaverTheme {
         if (pollJob?.isActive == true) return
         pollJob = scope.launch {
             var forceRefresh = false
+            var rateLimitWaits = 0
             while (isActive) {
                 // Local playback wins over the API (see class doc), so polling while the receiver
                 // is casting only burns the endpoint's small rate-limit budget for a snapshot the
                 // card never shows.
                 if (lastState?.visualState() == VisualState.ACTIVE) {
                     delay(POLL_INTERVAL_MS)
+                    continue
+                }
+                // Reopening the saver is not a reason to spend another request: /me/player's budget
+                // is shared by every install of this client id, and bursts are what trip it.
+                val sinceFetch = System.currentTimeMillis() - lastFetchMs
+                if (lastFetchMs > 0L && sinceFetch < POLL_INTERVAL_MS) {
+                    delay(POLL_INTERVAL_MS - sinceFetch)
                     continue
                 }
                 val token = tokenProvider.token(forceRefresh)
@@ -282,6 +293,7 @@ class WatchTheme : ScreensaverTheme {
                     forceRefresh = false
                     continue
                 }
+                lastFetchMs = System.currentTimeMillis()
                 var backoffMs = POLL_INTERVAL_MS
                 when (val result = withContext(Dispatchers.IO) {
                     SpotifyWatchRepository.fetch(token)
@@ -289,25 +301,32 @@ class WatchTheme : ScreensaverTheme {
                     is WatchResult.Playing -> {
                         remote = result.track
                         remoteStatus = RemoteStatus.PLAYING
+                        rateLimitWaits = 0
                         forceRefresh = false
                     }
                     WatchResult.Nothing -> {
                         remote = null
                         remoteStatus = RemoteStatus.NOTHING
+                        rateLimitWaits = 0
                         forceRefresh = false
                     }
                     WatchResult.Unauthorized -> {
                         // The cached token was rejected. Force one rotation and retry immediately
                         // rather than showing a false "nothing playing" for a full poll interval.
                         forceRefresh = true
+                        lastFetchMs = 0L
                         delay(500)
                         continue
                     }
                     is WatchResult.RateLimited -> {
-                        // Keep the last snapshot (its progress keeps advancing locally) and wait
-                        // out the server's Retry-After rather than tripping the limit again.
-                        backoffMs = result.retryAfterMs?.coerceAtLeast(MIN_RATE_LIMIT_WAIT_MS)
-                            ?: RATE_LIMIT_RETRY_MS
+                        // Keep the last snapshot (its progress keeps advancing locally) and back
+                        // off past the server's Retry-After. A second 429 in a row means the
+                        // window is still shut, so double the wait instead of re-tripping it.
+                        rateLimitWaits++
+                        val floor = MIN_RATE_LIMIT_WAIT_MS * (1L shl (rateLimitWaits - 1).coerceAtMost(4))
+                        backoffMs = maxOf(result.retryAfterMs ?: RATE_LIMIT_RETRY_MS, floor)
+                            .coerceAtMost(MAX_RATE_LIMIT_WAIT_MS)
+                        if (remote == null) remoteStatus = RemoteStatus.LIMITED
                         forceRefresh = false
                     }
                     WatchResult.Error -> {
@@ -408,6 +427,7 @@ class WatchTheme : ScreensaverTheme {
         emptyStatus.text = when (remoteStatus) {
             RemoteStatus.NOTHING -> "Nothing playing on Spotify"
             RemoteStatus.ERROR -> "Spotify is unreachable"
+            RemoteStatus.LIMITED -> "Spotify is busy — retrying"
             RemoteStatus.WAITING -> if (state.visualState() == VisualState.ACTIVE) {
                 state.idleStatus().first
             } else {
@@ -917,11 +937,11 @@ class WatchTheme : ScreensaverTheme {
 
     override fun refreshLauncher() = launcher.refresh()
 
-    private enum class RemoteStatus { WAITING, PLAYING, NOTHING, ERROR }
+    private enum class RemoteStatus { WAITING, PLAYING, NOTHING, ERROR, LIMITED }
 
     private companion object {
         const val PREFS_NAME = "spotify_receiver_prefs"
-        const val POLL_INTERVAL_MS = 10_000L
+        const val POLL_INTERVAL_MS = 30_000L
         const val NO_TOKEN_RETRY_MS = 20_000L
 
         /** Same cadence as the standalone lyrics screen, so a line lands when it is sung. */
@@ -932,6 +952,9 @@ class WatchTheme : ScreensaverTheme {
 
         /** Never retry a 429 sooner than this, even if the header says `0`. */
         const val MIN_RATE_LIMIT_WAIT_MS = 10_000L
+
+        /** Cap for the doubling wait while the rate-limit window stays shut. */
+        const val MAX_RATE_LIMIT_WAIT_MS = 5 * 60 * 1_000L
 
         /** A stale snapshot is better than a blank card for a few minutes, but not forever. */
         const val STALE_AFTER_MS = 15 * 60 * 1_000L
