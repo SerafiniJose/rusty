@@ -581,10 +581,15 @@ class SpotifyFragment : Fragment(), InsetAware, KeyEventTarget, ScreensaverExitT
     private fun renderControlsEnabled(state: ReceiverDashboardState) {
         val live = state.sessionUser != null || state.status == STATUS_PLAYING
         val alpha = if (live) 1f else 0.35f
-        for (button in listOf(prevButton, playPauseButton, nextButton, lyricsButton)) {
+        for (button in listOf(prevButton, playPauseButton, nextButton)) {
             button.isEnabled = live
             button.alpha = alpha
         }
+        // Lyrics needs a track as well as a live control route: a phone can connect before
+        // anything is loaded, and openLyrics() can only ignore a press with no track id.
+        val lyricsLive = live && !state.trackId.isNullOrBlank()
+        lyricsButton.isEnabled = lyricsLive
+        lyricsButton.alpha = if (lyricsLive) 1f else 0.35f
     }
 
     /**
