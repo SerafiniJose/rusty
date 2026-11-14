@@ -25,6 +25,7 @@ import java.util.TimeZone
 class CanvasTheme : ScreensaverTheme {
     private lateinit var root: View
     private lateinit var wash: ImageView
+    private lateinit var scrim: ClockScrimView
     private lateinit var canvasPlayer: CanvasPlayerView
     private lateinit var clock: TextView
     private lateinit var date: TextView
@@ -39,14 +40,17 @@ class CanvasTheme : ScreensaverTheme {
     private var prefs: android.content.SharedPreferences? = null
     private var canvasActive = false
     private var loadedWashUrl: String? = null
+    private var appliedScrimPercent = -1
 
     override fun createView(context: Context, parent: ViewGroup, host: ScreensaverHost): View {
         root = LayoutInflater.from(context).inflate(R.layout.screensaver_canvas, parent, false)
         wash = root.findViewById(R.id.ssCanvasWash)
+        scrim = root.findViewById(R.id.ssCanvasScrim)
         canvasPlayer = root.findViewById(R.id.ssCanvasPlayer)
         canvasPlayer.setFill(true)
         canvasLayer = CanvasLayer(canvasPlayer)
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        applyScrim()
         clock = root.findViewById(R.id.ssClock)
         date = root.findViewById(R.id.ssDate)
         status = root.findViewById(R.id.ssStatus)
@@ -88,6 +92,21 @@ class CanvasTheme : ScreensaverTheme {
         status.text = state.idleStatus().first
         // Keep the blurred wash populated from the cover so the no-Canvas fallback looks intentional.
         loadWash(state.coverArtUrl)
+        applyScrim()
+    }
+
+    /** The clock scrim is a shared readability setting; Canvas applies it over video and wash. */
+    private fun applyScrim() {
+        val percent = prefs?.let { ClockAppearance.scrimPercent(it) }
+            ?: ClockAppearance.DEFAULT_SCRIM_PERCENT
+        if (percent == appliedScrimPercent) return
+        appliedScrimPercent = percent
+        scrim.configure(
+            color = android.graphics.Color.BLACK,
+            strength = percent / 100f,
+            centerYFraction = 0.42f,
+            radiusFraction = 0.62f,
+        )
     }
 
     private fun loadWash(url: String?) {

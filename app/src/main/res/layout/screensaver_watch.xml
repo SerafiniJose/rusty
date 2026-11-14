@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_base">
+
+    <!-- Full-bleed artwork of whatever the linked account is playing elsewhere. Dimmed twice:
+         once here so it never fights the type, then by the central scrim. -->
+    <ImageView
+        android:id="@+id/ssWatchArt"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:alpha="0.65"
+        android:contentDescription="Now playing artwork"
+        android:scaleType="centerCrop"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- The track's Spotify Canvas loop, when one exists. Sits over the art so the art is the
+         fallback; CanvasLayer fades it in/out and dips between tracks. -->
+    <dev.rusty.app.CanvasPlayerView
+        android:id="@+id/ssWatchCanvas"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:alpha="0"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <dev.rusty.app.ClockScrimView
+        android:id="@+id/ssWatchScrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Compact clock while a track is on screen. -->
+    <LinearLayout
+        android:id="@+id/ssWatchHeader"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="56dp"
+        android:layout_marginTop="40dp"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:id="@+id/ssWatchHeaderClock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/bricolage_regular"
+            android:includeFontPadding="false"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="3"
+            android:shadowRadius="24"
+            android:text="9:41"
+            android:textColor="@color/ink"
+            android:textSize="96sp" />
+
+        <TextView
+            android:id="@+id/ssWatchHeaderDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:fontFamily="@font/hanken_regular"
+            android:letterSpacing="0.14"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="16"
+            android:text="Tuesday · June 8"
+            android:textAllCaps="true"
+            android:textColor="@color/muted"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- Fallback face when nothing is playing anywhere, or the account token is unavailable. -->
+    <LinearLayout
+        android:id="@+id/ssWatchEmpty"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.42">
+
+        <TextView
+            android:id="@+id/ssWatchClock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/bricolage_regular"
+            android:includeFontPadding="false"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="3"
+            android:shadowRadius="24"
+            android:text="9:41"
+            android:textColor="@color/ink"
+            android:textSize="120sp" />
+
+        <TextView
+            android:id="@+id/ssWatchDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:fontFamily="@font/hanken_regular"
+            android:letterSpacing="0.14"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="16"
+            android:text="Tuesday · June 8"
+            android:textAllCaps="true"
+            android:textColor="@color/muted"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/ssWatchEmptyStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:fontFamily="@font/hanken_regular"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="16"
+            android:text="Waiting for Spotify"
+            android:textColor="@color/muted_dim"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <!-- Now-playing complication, not the dashboard's card at 80%: the clock is the face's
+         subject, so the track gets a compact chip with two lines and a hairline of progress. -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/ssWatchTrack"
+        android:layout_width="480dp"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="88dp"
+        android:background="@drawable/bg_watch_card"
+        android:padding="16dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/ssWatchArtCard"
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            app:cardBackgroundColor="@color/surface"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="0dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:strokeWidth="0dp">
+
+            <ImageView
+                android:id="@+id/ssWatchArtCardImage"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="Now playing album art"
+                android:scaleType="centerCrop" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:orientation="vertical"
+            app:layout_constraintBottom_toBottomOf="@id/ssWatchArtCard"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/ssWatchArtCard"
+            app:layout_constraintTop_toTopOf="@id/ssWatchArtCard">
+
+            <TextView
+                android:id="@+id/ssWatchTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/bricolage_regular"
+                android:maxLines="1"
+                android:text="Track title"
+                android:textColor="@color/ink"
+                android:textSize="24sp" />
+
+            <TextView
+                android:id="@+id/ssWatchArtist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_regular"
+                android:maxLines="1"
+                android:text="Artist"
+                android:textColor="@color/muted"
+                android:textSize="15sp" />
+
+            <ProgressBar
+                android:id="@+id/ssWatchProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="2dp"
+                android:layout_marginTop="10dp"
+                android:max="1000"
+                android:progress="0"
+                android:progressBackgroundTint="#4DF3EEE7"
+                android:progressTint="@color/ink" />
+        </LinearLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- Tap-catcher that dismisses the saver launcher; GONE unless the menu is open. -->
+    <View
+        android:id="@+id/ssLauncherScrim"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clickable="true"
+        android:focusable="false"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Settings/Info chrome, matching the idle face (bottom-end, dimmed) -->
+    <LinearLayout
+        android:id="@+id/ssChrome"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/screensaver_chrome_margin"
+        android:alpha="0.55"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ImageButton
+            android:id="@+id/ssBtnSettings"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Receiver settings"
+            android:foreground="@drawable/bg_tv_focus"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_settings" />
+
+        <ImageButton
+            android:id="@+id/ssBtnInfo"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Services and status"
+            android:foreground="@drawable/bg_tv_focus"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_info" />
+
+        <ImageButton
+            android:id="@+id/ssBtnLauncher"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Open menu"
+            android:foreground="@drawable/bg_tv_focus"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_apps"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/ssLauncherMenu"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="@dimen/screensaver_chrome_margin"
+        android:layout_marginBottom="8dp"
+        android:gravity="end"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/ssChrome"
+        app:layout_constraintEnd_toEndOf="parent" />
+</androidx.constraintlayout.widget.ConstraintLayout>

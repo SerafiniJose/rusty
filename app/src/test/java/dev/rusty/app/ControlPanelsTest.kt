@@ -55,6 +55,7 @@ class ControlPanelsTest {
         assertEquals("clock", ControlLockscreenThemes.wire(ScreensaverThemeId.CLOCK))
         assertEquals("oled", ControlLockscreenThemes.wire(ScreensaverThemeId.OLED))
         assertEquals("canvas", ControlLockscreenThemes.wire(ScreensaverThemeId.CANVAS))
+        assertEquals("watch", ControlLockscreenThemes.wire(ScreensaverThemeId.WATCH))
         assertEquals("slideshow", ControlLockscreenThemes.wire(ScreensaverThemeId.SLIDESHOW))
     }
 
@@ -79,12 +80,18 @@ class ControlPanelsTest {
                 ScreensaverThemeId.CLOCK,
                 ScreensaverThemeId.OLED,
                 ScreensaverThemeId.CANVAS,
+                ScreensaverThemeId.WATCH,
                 ScreensaverThemeId.SLIDESHOW,
             ),
             ControlLockscreenThemes.selectable(slideshowEnabled = true),
         )
         assertEquals(
-            listOf(ScreensaverThemeId.CLOCK, ScreensaverThemeId.OLED, ScreensaverThemeId.CANVAS),
+            listOf(
+                ScreensaverThemeId.CLOCK,
+                ScreensaverThemeId.OLED,
+                ScreensaverThemeId.CANVAS,
+                ScreensaverThemeId.WATCH,
+            ),
             ControlLockscreenThemes.selectable(slideshowEnabled = false),
         )
     }
