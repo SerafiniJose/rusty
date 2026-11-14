@@ -446,14 +446,27 @@
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_skip_next" />
 
+                <!-- Same text action as the dashboard's Lyrics button: the row's only filled
+                     control is play/pause. -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/ssDetailLyrics"
-                    style="@style/Widget.Rusty.Button.Secondary"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="52dp"
-                    android:layout_marginStart="24dp"
+                    android:layout_marginStart="20dp"
+                    android:fontFamily="@font/hanken_semibold"
                     android:foreground="@drawable/bg_tv_focus"
-                    android:text="Lyrics" />
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:letterSpacing="0.18"
+                    android:minWidth="0dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:text="Lyrics"
+                    android:textAllCaps="true"
+                    android:textColor="@color/accent_fallback"
+                    android:textSize="12sp"
+                    app:rippleColor="@color/accent_fallback" />
 
                 <ImageButton
                     android:id="@+id/ssDetailClose"
