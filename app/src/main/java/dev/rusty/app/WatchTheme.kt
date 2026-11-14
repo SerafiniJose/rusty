@@ -171,6 +171,9 @@ class WatchTheme : ScreensaverTheme {
         card.setOnClickListener { openDetail() }
         // Tapping the sheet's own background (anywhere but a control) closes it again.
         detail.setOnClickListener { closeDetail() }
+        // The cover opens the lyrics, as it does on the dashboard: the sheet's Lyrics button is
+        // touch-only by nature (ownsRemote spends every D-pad key on transport).
+        root.findViewById<View>(R.id.ssDetailArtCard).setOnClickListener { openLyrics() }
         detailSeek.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
             override fun onStartTrackingTouch(slider: Slider) {
                 seeking = true
@@ -566,6 +569,9 @@ class WatchTheme : ScreensaverTheme {
     override fun ownsRemote(): Boolean = detailOpen
 
     override fun onNavKey(keyCode: Int) {
+        // The lyrics sheet covers the whole view: a remote press there must not change the track
+        // behind it, or the lines on screen stop being the song the user is reading.
+        if (lyricsOpen) return
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_LEFT -> skip(previous = true)
             KeyEvent.KEYCODE_DPAD_RIGHT -> skip(previous = false)
