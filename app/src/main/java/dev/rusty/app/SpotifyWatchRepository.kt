@@ -147,8 +147,16 @@ object SpotifyWatchRepository {
                 connectTimeout = 8000
                 readTimeout = 8000
             }
+            // Spotify reads progress_ms when it builds the response, i.e. somewhere between these
+            // two stamps. Anchoring on the end made the local clock late by the whole round trip,
+            // which showed up as lyrics highlighting behind the song; the midpoint splits it.
+            val startedMs = System.currentTimeMillis()
             when (val code = conn.responseCode) {
-                200 -> parse(conn.inputStream.bufferedReader().use { it.readText() })
+                200 -> {
+                    val body = conn.inputStream.bufferedReader().use { it.readText() }
+                    val midMs = startedMs + (System.currentTimeMillis() - startedMs) / 2
+                    parse(body, midMs)
+                }
                 204 -> WatchResult.Nothing
                 401 -> WatchResult.Unauthorized
                 429 -> {

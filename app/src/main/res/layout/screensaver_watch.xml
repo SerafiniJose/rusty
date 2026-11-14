@@ -230,12 +230,28 @@
                 android:textColor="@color/muted_dim"
                 android:textSize="13sp" />
 
+            <!-- One synced line, not the whole sheet: a glanceable saver should not read as a
+                 karaoke screen. Fixed height so the card does not reflow when a track has no
+                 lyrics: the progress bar and times stay put across songs. -->
+            <TextView
+                android:id="@+id/ssWatchLyric"
+                android:layout_width="match_parent"
+                android:layout_height="22dp"
+                android:layout_marginTop="8dp"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_medium"
+                android:gravity="center_vertical"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/ink"
+                android:textSize="15sp" />
+
             <ProgressBar
                 android:id="@+id/ssWatchProgress"
                 style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="match_parent"
                 android:layout_height="3dp"
-                android:layout_marginTop="18dp"
+                android:layout_marginTop="12dp"
                 android:max="1000"
                 android:progress="0"
                 android:progressBackgroundTint="#4DF3EEE7"

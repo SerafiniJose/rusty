@@ -62,6 +62,7 @@ class WatchTheme : ScreensaverTheme {
     private lateinit var title: TextView
     private lateinit var artist: TextView
     private lateinit var album: TextView
+    private lateinit var lyricLine: TextView
     private lateinit var progress: ProgressBar
     private lateinit var elapsed: TextView
     private lateinit var duration: TextView
@@ -110,11 +111,15 @@ class WatchTheme : ScreensaverTheme {
     private var detailArtUrl: String? = null
     private var transportJob: Job? = null
     private var lyricsJob: Job? = null
+    private var lyricTickJob: Job? = null
     private var lyricsTrackId: String? = null
     private var lyricsResult: LyricsResult? = null
     private var lyricViews: List<TextView> = emptyList()
     private var lyricStarts: List<Long> = emptyList()
     private var lyricActive = -1
+
+    /** Last synced line painted on the card; "\u0000" forces the next update through. */
+    private var cardLyric = "\u0000"
 
     override fun createView(context: Context, parent: ViewGroup, host: ScreensaverHost): View {
         root = LayoutInflater.from(context).inflate(R.layout.screensaver_watch, parent, false)
@@ -139,6 +144,7 @@ class WatchTheme : ScreensaverTheme {
         title = root.findViewById(R.id.ssWatchTitle)
         artist = root.findViewById(R.id.ssWatchArtist)
         album = root.findViewById(R.id.ssWatchAlbum)
+        lyricLine = root.findViewById(R.id.ssWatchLyric)
         progress = root.findViewById(R.id.ssWatchProgress)
         elapsed = root.findViewById(R.id.ssWatchElapsed)
         duration = root.findViewById(R.id.ssWatchDuration)
@@ -226,6 +232,7 @@ class WatchTheme : ScreensaverTheme {
     override fun onShown() {
         applyScrim()
         startPolling()
+        startLyricTick()
     }
 
     // Stop resolving during the exit crossfade; onHidden tears the theme down.
@@ -238,6 +245,8 @@ class WatchTheme : ScreensaverTheme {
         transportJob = null
         lyricsJob?.cancel()
         lyricsJob = null
+        lyricTickJob?.cancel()
+        lyricTickJob = null
     }
 
     override fun onHidden() {
@@ -249,6 +258,8 @@ class WatchTheme : ScreensaverTheme {
         transportJob = null
         lyricsJob?.cancel()
         lyricsJob = null
+        lyricTickJob?.cancel()
+        lyricTickJob = null
         canvasLayer?.reset()
         canvasPlayer.release()
         canvasKey = null
@@ -375,6 +386,8 @@ class WatchTheme : ScreensaverTheme {
         elapsed.text = ReceiverDashboardState.formatDuration(played)
         duration.text = ReceiverDashboardState.formatDuration(total)
         loadArt(track.artUrl)
+        ensureLyrics(track)
+        updateCardLyric(played)
         renderDetail(state, track, now)
     }
 
@@ -402,6 +415,7 @@ class WatchTheme : ScreensaverTheme {
         empty.visibility = View.VISIBLE
         header.visibility = View.GONE
         trackView.visibility = View.GONE
+        clearCardLyric()
         emptyStatus.text = when (remoteStatus) {
             RemoteStatus.NOTHING -> "Nothing playing on Spotify"
             RemoteStatus.ERROR -> "Spotify is unreachable"
@@ -666,6 +680,56 @@ class WatchTheme : ScreensaverTheme {
 
     // ---- Lyrics -------------------------------------------------------------
 
+    /**
+     * The card and the detail sheet show the same track's lyrics, so one fetch feeds both: the card
+     * paints the current line, the sheet paints every line. Fetched on the track change rather than
+     * on the sheet opening, because the card line has to be ready before anyone taps.
+     */
+    private fun ensureLyrics(track: WatchNowPlaying) {
+        val trackId = track.trackId ?: return
+        if (trackId != lyricsTrackId) fetchLyrics(trackId)
+    }
+
+    /** Recomputes the card's single line; a no-op for unsynced, absent or stale lyrics. */
+    private fun updateCardLyric(playedMs: Long) {
+        val result = lyricsResult
+        val line = if (result?.kind == LyricsKind.SYNCED && lyricsTrackId == shownTrack?.trackId) {
+            val index = LyricSync.activeIndex(lyricStarts, playedMs)
+            result.lines.getOrNull(index)?.words?.trim()?.ifBlank { "♪" }
+        } else {
+            null
+        }
+        val text = line ?: ""
+        if (text == cardLyric) return
+        cardLyric = text
+        lyricLine.text = text
+    }
+
+    private fun clearCardLyric() {
+        cardLyric = "\u0000"
+        lyricLine.text = ""
+    }
+
+    /**
+     * Lyric lines change on the second, not on the poll: the sheet used to repaint on the
+     * screensaver's 1 Hz bind, which left the highlight up to a second behind the audio. This ticks
+     * at the same 200 ms the standalone lyrics screen uses.
+     */
+    private fun startLyricTick() {
+        if (lyricTickJob?.isActive == true) return
+        lyricTickJob = scope.launch {
+            while (isActive) {
+                val track = shownTrack
+                if (track != null) {
+                    val played = track.elapsedAt(System.currentTimeMillis())
+                    updateCardLyric(played)
+                    if (lyricsOpen) updateLyricsHighlight(played)
+                }
+                delay(LYRIC_TICK_MS)
+            }
+        }
+    }
+
     private fun toggleLyrics() {
         if (lyricsOpen) closeLyrics() else openLyrics()
     }
@@ -679,8 +743,15 @@ class WatchTheme : ScreensaverTheme {
             showLyricsMessage("No lyrics for this track")
             return
         }
-        if (trackId == lyricsTrackId && lyricsResult != null) {
+        val result = lyricsResult
+        if (trackId == lyricsTrackId && result != null) {
+            // The card already fetched this track: paint the sheet from the same result.
+            if (lyricViews.isEmpty()) buildLyrics(result)
             updateLyricsHighlight(track.elapsedAt(System.currentTimeMillis()))
+            return
+        }
+        if (trackId == lyricsTrackId && lyricsJob?.isActive == true) {
+            showLyricsMessage("Loading lyrics…")
             return
         }
         fetchLyrics(trackId)
@@ -710,16 +781,21 @@ class WatchTheme : ScreensaverTheme {
         lyricViews = emptyList()
         lyricStarts = emptyList()
         lyricActive = -1
-        showLyricsMessage("Loading lyrics…")
+        clearCardLyric()
+        if (lyricsOpen) showLyricsMessage("Loading lyrics…")
         lyricsJob = scope.launch {
             val token = tokenProvider.token(false)
             if (token == null) {
-                showLyricsMessage("Link Spotify to see lyrics")
+                if (lyricsOpen) showLyricsMessage("Link Spotify to see lyrics")
                 return@launch
             }
-            var result = withContext(Dispatchers.IO) { LyricsRepository.fetch(trackId, token) }
-            // Spotify's own lyrics endpoint only accepts a native-session token, so a remote track
-            // (the normal case for this face) falls back to LRCLIB's public database.
+            // color-lyrics only accepts a native-session token, so a remote track (the normal case
+            // for this face) goes straight to LRCLIB instead of spending a guaranteed 403 first.
+            var result = if (localPlaying) {
+                withContext(Dispatchers.IO) { LyricsRepository.fetch(trackId, token) }
+            } else {
+                LyricsResult(LyricsKind.NONE)
+            }
             if (result.kind == LyricsKind.NONE || result.kind == LyricsKind.ERROR) {
                 val info = shownTrack
                 if (info != null) {
@@ -728,13 +804,18 @@ class WatchTheme : ScreensaverTheme {
                     }
                 }
             }
-            if (trackId != lyricsTrackId || !lyricsOpen) return@launch
+            if (trackId != lyricsTrackId) return@launch
             lyricsResult = result
-            when (result.kind) {
-                LyricsKind.SYNCED, LyricsKind.UNSYNCED -> buildLyrics(result)
-                LyricsKind.NONE -> showLyricsMessage("No lyrics for this track")
-                LyricsKind.ERROR -> showLyricsMessage("Couldn't load lyrics")
+            // The card reads the starts even when the sheet is closed; buildLyrics is only for it.
+            lyricStarts = result.lines.map { it.startMs }
+            if (lyricsOpen) {
+                when (result.kind) {
+                    LyricsKind.SYNCED, LyricsKind.UNSYNCED -> buildLyrics(result)
+                    LyricsKind.NONE -> showLyricsMessage("No lyrics for this track")
+                    LyricsKind.ERROR -> showLyricsMessage("Couldn't load lyrics")
+                }
             }
+            updateCardLyric(shownTrack?.elapsedAt(System.currentTimeMillis()) ?: 0L)
         }
     }
 
@@ -844,6 +925,9 @@ class WatchTheme : ScreensaverTheme {
         const val PREFS_NAME = "spotify_receiver_prefs"
         const val POLL_INTERVAL_MS = 10_000L
         const val NO_TOKEN_RETRY_MS = 20_000L
+
+        /** Same cadence as the standalone lyrics screen, so a line lands when it is sung. */
+        const val LYRIC_TICK_MS = 200L
 
         /** Backoff when Spotify answers 429 without a usable `Retry-After`. */
         const val RATE_LIMIT_RETRY_MS = 30_000L
