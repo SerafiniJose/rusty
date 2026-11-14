@@ -7,6 +7,10 @@ import android.os.Handler
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Process-wide bootstrap for the receiver state store and HA dashboard repository.
@@ -51,6 +55,10 @@ class RustyApp : Application() {
 
         // Before anything can check for updates: the once-a-day answer is persisted through it.
         UpdateNotice.init(this)
+
+        // Decrypt the linked Spotify account's refresh token away from the main thread so the
+        // first Watch/Canvas token read has it ready.
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { SpotifyAccount.preload(this@RustyApp) }
 
         val mainHandler = Handler(mainLooper)
         receiverStore = ReceiverStateStore(
