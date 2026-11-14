@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The detail sheet is an overlay on the face, not a new opaque screen: let the face's artwork
+     show through it, dimmed enough for the type to stay legible. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="270"
+        android:endColor="#E60B0C0D"
+        android:startColor="#990B0C0D" />
+</shape>

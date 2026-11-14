@@ -211,13 +211,13 @@
             <TextView
                 android:id="@+id/ssWatchLyric"
                 android:layout_width="match_parent"
-                android:layout_height="20dp"
+                android:layout_height="40dp"
                 android:layout_marginTop="6dp"
                 android:ellipsize="end"
                 android:fontFamily="@font/hanken_medium"
                 android:gravity="center_vertical"
                 android:includeFontPadding="false"
-                android:maxLines="1"
+                android:maxLines="2"
                 android:textColor="@color/ink"
                 android:textSize="14sp" />
 
@@ -242,7 +242,7 @@
         android:id="@+id/ssWatchDetail"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:background="@color/bg_base"
+        android:background="@drawable/bg_watch_detail"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone"

@@ -360,8 +360,9 @@ class WatchTheme : ScreensaverTheme {
         }
 
         empty.visibility = View.GONE
-        header.visibility = View.VISIBLE
-        trackView.visibility = View.VISIBLE
+        // The detail sheet is a translucent overlay: keep the face's own clock and chip out of it.
+        header.visibility = if (detailOpen) View.GONE else View.VISIBLE
+        trackView.visibility = if (detailOpen) View.GONE else View.VISIBLE
 
         title.text = track.title
         artist.text = track.artist
@@ -520,6 +521,8 @@ class WatchTheme : ScreensaverTheme {
         val state = lastState ?: return
         detailOpen = true
         detail.visibility = View.VISIBLE
+        header.visibility = View.GONE
+        trackView.visibility = View.GONE
         applyChromeVisibility()
         detailStatus.text = ""
         renderDetail(state, track, System.currentTimeMillis())
@@ -530,6 +533,10 @@ class WatchTheme : ScreensaverTheme {
         closeLyrics()
         detailOpen = false
         detail.visibility = View.GONE
+        if (shownTrack != null) {
+            header.visibility = View.VISIBLE
+            trackView.visibility = View.VISIBLE
+        }
         applyChromeVisibility()
     }
 
