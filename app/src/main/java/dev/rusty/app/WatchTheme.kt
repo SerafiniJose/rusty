@@ -207,9 +207,7 @@ class WatchTheme : ScreensaverTheme {
                         // off past the server's Retry-After. A second 429 in a row means the
                         // window is still shut, so double the wait instead of re-tripping it.
                         rateLimitWaits++
-                        val floor = MIN_RATE_LIMIT_WAIT_MS * (1L shl (rateLimitWaits - 1).coerceAtMost(4))
-                        backoffMs = maxOf(result.retryAfterMs ?: RATE_LIMIT_RETRY_MS, floor)
-                            .coerceAtMost(MAX_RATE_LIMIT_WAIT_MS)
+                        backoffMs = rateLimitBackoff(result.retryAfterMs, rateLimitWaits)
                         if (remote == null) remoteStatus = RemoteStatus.LIMITED
                         forceRefresh = false
                     }
@@ -392,7 +390,17 @@ class WatchTheme : ScreensaverTheme {
 
     private enum class RemoteStatus { WAITING, PLAYING, NOTHING, ERROR, LIMITED }
 
-    private companion object {
+    internal companion object {
+        /**
+         * Wait before retrying /me/player after [waits] consecutive 429s: our own doubling floor,
+         * capped, but never sooner than the server's Retry-After.
+         */
+        fun rateLimitBackoff(retryAfterMs: Long?, waits: Int): Long {
+            val floor = (MIN_RATE_LIMIT_WAIT_MS shl (waits - 1).coerceIn(0, 5))
+                .coerceAtMost(MAX_RATE_LIMIT_WAIT_MS)
+            return maxOf(retryAfterMs ?: RATE_LIMIT_RETRY_MS, floor)
+        }
+
         const val PREFS_NAME = "spotify_receiver_prefs"
         const val POLL_INTERVAL_MS = 30_000L
         const val NO_TOKEN_RETRY_MS = 20_000L
