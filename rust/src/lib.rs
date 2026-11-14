@@ -169,6 +169,12 @@ fn startup_volume_from_percent(percent: i32) -> u16 {
     ((percent * u16::MAX as u32) / 100) as u16
 }
 
+/// The inverse of [`startup_volume_from_percent`], rounded rather than truncated so a value that
+/// came from a percentage lands back on the same percentage.
+fn volume_percent_from_u16(volume: u16) -> i32 {
+    (((volume as u32 * 100) + (u16::MAX as u32 / 2)) / u16::MAX as u32) as i32
+}
+
 /// A UI/API seek target as `Spirc::set_position_ms` wants it: never negative. Spirc itself drops
 /// a target past the track's end (`handle_seek` warns and returns), so only the lower bound is
 /// enforced here; Kotlin callers clamp to the duration they know before calling.
@@ -680,6 +686,11 @@ async fn build_active_session(
     // serialize behind one lock, and the Connect slider only ever sees the logical volume.
     let mixer: Arc<DuckingMixer> =
         Arc::new(<DuckingMixer as Mixer>::open(MixerConfig::default()).expect("Failed to open mixer"));
+    // The mixer reports the Connect volume instead of applying it (the Android media stream is
+    // the audible level — see duck.rs). Every change, whether it came from a controller or from
+    // `NativeBridge.setVolume` below, is mirrored back to Android so the system volume and the
+    // Spotify slider stay in step.
+    mixer.set_volume_reporter(|volume| send_native_volume_changed(volume));
 
     // 0.8: Player::new returns Arc<Player>; the sink closure now takes NO args and runs on
     // the player thread. Our AudioTrack sink replaces librespot's stock rodio backend: deep
@@ -1080,6 +1091,39 @@ fn send_native_receiver_connected(username: &str) {
     }
 }
 
+/// Notifies Android that the active session's Connect volume changed (0..=100), so it can move the
+/// system media stream to match. Fired from the mixer's reporter on the playback/controller thread;
+/// Android posts the actual stream write to the main thread.
+fn send_native_volume_changed(volume: u16) {
+    let Some(java_vm) = JAVA_VM.get() else {
+        error!("Cannot publish volume change before JavaVM is initialized");
+        return;
+    };
+    let Some(service_class) = SPOTIFY_SERVICE_CLASS.get() else {
+        error!("Cannot publish volume change before SpotifyService class is initialized");
+        return;
+    };
+    let Ok(mut env) = java_vm.attach_current_thread() else {
+        error!("Failed to attach Rust volume thread to JVM");
+        return;
+    };
+
+    if let Err(e) = env.call_static_method(
+        service_class,
+        "onNativeVolumeChanged",
+        "(I)V",
+        &[JValue::Int(volume_percent_from_u16(volume))],
+    ) {
+        error!("Failed to publish native volume change to Android: {:?}", e);
+    }
+
+    if let Ok(true) = env.exception_check() {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+        error!("Android threw while handling native volume change");
+    }
+}
+
 /// Notifies Android that the active session ended on its own (network loss, remote
 /// logout, or the idle timeout) and the receiver has returned to idle/discoverable.
 /// Mirrors `send_native_receiver_connected` but carries no payload. NOT fired on a
@@ -1296,6 +1340,20 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_setSpotifyAttenuation(
     }
 }
 
+/// Sets the Connect volume from Android (0..=100). Used to keep Spotify's device slider in step
+/// when the Echo's media volume changes. Routed through `Spirc` so the controller sees the value;
+/// the mixer reports it without attenuating the samples (see duck.rs), so this changes the level
+/// the apps display, while the Android stream does the actual attenuation.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rusty_app_NativeBridge_setVolume(
+    _env: JNIEnv,
+    _class: JClass,
+    percent: jint,
+) {
+    let volume = startup_volume_from_percent(percent);
+    dispatch_spirc("volume", |spirc| spirc.set_volume(volume));
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_rusty_app_NativeBridge_nextTrack(
     _env: JNIEnv,
@@ -1481,7 +1539,7 @@ pub extern "system" fn Java_dev_rusty_app_NativeBridge_requestAccessToken(
 
 #[cfg(test)]
 mod startup_volume_tests {
-    use super::startup_volume_from_percent;
+    use super::{startup_volume_from_percent, volume_percent_from_u16};
 
     #[test]
     fn maps_the_endpoints_and_the_middle() {
@@ -1495,6 +1553,13 @@ mod startup_volume_tests {
     fn clamps_out_of_range_input() {
         assert_eq!(startup_volume_from_percent(-40), 0);
         assert_eq!(startup_volume_from_percent(1000), u16::MAX);
+    }
+
+    #[test]
+    fn volume_percent_round_trips() {
+        for percent in [0, 1, 10, 33, 50, 99, 100] {
+            assert_eq!(volume_percent_from_u16(startup_volume_from_percent(percent)), percent);
+        }
     }
 }
 
