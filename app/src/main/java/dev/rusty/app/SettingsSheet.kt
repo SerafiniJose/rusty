@@ -16,6 +16,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.RadioButton
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.tabs.TabLayout
@@ -365,6 +366,7 @@ object SettingsSheet {
             R.id.rbThemeClock to ScreensaverThemeId.CLOCK,
             R.id.rbThemeOled to ScreensaverThemeId.OLED,
             R.id.rbThemeCanvas to ScreensaverThemeId.CANVAS,
+            R.id.rbThemeWatch to ScreensaverThemeId.WATCH,
             R.id.rbThemeSlideshow to ScreensaverThemeId.SLIDESHOW,
         ).map { (viewId, themeId) -> panel.findViewById<RadioButton>(viewId) to themeId }
         var suppressThemeCallback = false
@@ -391,6 +393,71 @@ object SettingsSheet {
                 activity.applyScreensaverTheme(themeId)
             }
         }
+
+        // Clock face appearance — backdrop + scrim. These are app-wide prefs, not per-theme, and
+        // ClockTheme re-reads them on its 1 Hz bind so the face already on screen updates live.
+        val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val backdropRadios: List<Pair<RadioButton, ClockBackdrop>> = listOf(
+            R.id.rbBackdropAmbient to ClockBackdrop.AMBIENT,
+            R.id.rbBackdropMidnight to ClockBackdrop.MIDNIGHT,
+            R.id.rbBackdropSlate to ClockBackdrop.SLATE,
+            R.id.rbBackdropEmber to ClockBackdrop.EMBER,
+            R.id.rbBackdropPaper to ClockBackdrop.PAPER,
+        ).map { (viewId, backdrop) -> panel.findViewById<RadioButton>(viewId) to backdrop }
+        var suppressBackdropCallback = false
+        fun checkBackdrop(backdrop: ClockBackdrop) {
+            suppressBackdropCallback = true
+            backdropRadios.forEach { (radio, id) -> radio.isChecked = id == backdrop }
+            suppressBackdropCallback = false
+        }
+        checkBackdrop(ClockAppearance.backdrop(prefs))
+        backdropRadios.forEach { (radio, backdrop) ->
+            radio.setOnCheckedChangeListener { _, isChecked ->
+                if (!isChecked || suppressBackdropCallback) return@setOnCheckedChangeListener
+                suppressBackdropCallback = true
+                backdropRadios.forEach { (other, _) -> if (other !== radio) other.isChecked = false }
+                suppressBackdropCallback = false
+                prefs.edit().putString(ClockAppearance.KEY_BACKDROP, backdrop.prefValue).apply()
+            }
+        }
+
+        val scrimSlider = panel.findViewById<Slider>(R.id.sliderClockScrim)
+        val scrimValue = panel.findViewById<TextView>(R.id.tvClockScrimValue)
+        val initialScrim = ClockAppearance.scrimPercent(prefs)
+        scrimSlider.value = initialScrim.toFloat()
+        scrimValue.text = "$initialScrim%"
+        scrimSlider.addOnChangeListener { _, value, _ ->
+            val percent = ClockAppearance.snapScrimPercent(value.toInt())
+            scrimValue.text = "$percent%"
+            if (percent != ClockAppearance.scrimPercent(prefs)) {
+                prefs.edit().putInt(ClockAppearance.KEY_SCRIM_PERCENT, percent).apply()
+            }
+        }
+
+        // Linked account for Watch mode. The OAuth token extends the Web API beyond a live cast;
+        // without it Watch falls back to the native session token and the clock.
+        val accountValue = panel.findViewById<TextView>(R.id.tvSpotifyAccountValue)
+        val linkButton = panel.findViewById<MaterialButton>(R.id.btnLinkSpotify)
+        val unlinkButton = panel.findViewById<MaterialButton>(R.id.btnUnlinkSpotify)
+        fun refreshAccount() {
+            val linked = SpotifyAccount.isLinked(activity)
+            val name = SpotifyAccount.displayName(activity)
+            accountValue.text = if (linked) {
+                name?.let { "Linked · $it" } ?: "Linked · Spotify"
+            } else {
+                "Not linked · using the receiver session"
+            }
+            linkButton.text = if (linked) "Relink" else "Link"
+            unlinkButton.visibility = if (linked) View.VISIBLE else View.GONE
+        }
+        linkButton.setOnClickListener {
+            SpotifyLoginDialog(activity) { refreshAccount() }.show()
+        }
+        unlinkButton.setOnClickListener {
+            SpotifyAccount.unlink(activity)
+            refreshAccount()
+        }
+        refreshAccount()
 
         // Idle-timeout picker — a stepped slider mirroring the Spotify bitrate control. The slider
         // index is a position into ScreensaverTimeout.ordered; the sub-label echoes the choice.

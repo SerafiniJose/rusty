@@ -39,7 +39,7 @@
             <androidx.constraintlayout.helper.widget.Flow
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:constraint_referenced_ids="rbThemeClock,rbThemeOled,rbThemeCanvas,rbThemeSlideshow"
+                app:constraint_referenced_ids="rbThemeClock,rbThemeOled,rbThemeCanvas,rbThemeWatch,rbThemeSlideshow"
                 app:flow_horizontalBias="0"
                 app:flow_horizontalGap="24dp"
                 app:flow_horizontalStyle="packed"
@@ -86,6 +86,18 @@
                 android:textColor="@color/ink" />
 
             <RadioButton
+                android:id="@+id/rbThemeWatch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
+                android:buttonTint="@color/accent_fallback"
+                android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="Watch Spotify"
+                android:textColor="@color/ink" />
+
+            <RadioButton
                 android:id="@+id/rbThemeSlideshow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -98,6 +110,174 @@
                 android:textColor="@color/ink"
                 android:visibility="gone" />
         </androidx.constraintlayout.widget.ConstraintLayout>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="14dp"
+        android:layout_marginBottom="14dp"
+        android:background="@color/surface_border" />
+
+    <!-- Clock face: backdrop + text scrim. The backdrop is Clock-theme only; the scrim is shared
+         with the clock overlay in Canvas/Watch, so they live in the same panel instead of a second
+         settings screen. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="top"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Clock background"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:text="Clock theme only"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1">
+
+            <androidx.constraintlayout.helper.widget.Flow
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:constraint_referenced_ids="rbBackdropAmbient,rbBackdropMidnight,rbBackdropSlate,rbBackdropEmber,rbBackdropPaper"
+                app:flow_horizontalBias="0"
+                app:flow_horizontalGap="24dp"
+                app:flow_horizontalStyle="packed"
+                app:flow_verticalGap="6dp"
+                app:flow_wrapMode="chain"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <RadioButton
+                android:id="@+id/rbBackdropAmbient"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
+                android:buttonTint="@color/accent_fallback"
+                android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="Ambient"
+                android:textColor="@color/ink" />
+
+            <RadioButton
+                android:id="@+id/rbBackdropMidnight"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
+                android:buttonTint="@color/accent_fallback"
+                android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="Midnight"
+                android:textColor="@color/ink" />
+
+            <RadioButton
+                android:id="@+id/rbBackdropSlate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
+                android:buttonTint="@color/accent_fallback"
+                android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="Slate"
+                android:textColor="@color/ink" />
+
+            <RadioButton
+                android:id="@+id/rbBackdropEmber"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
+                android:buttonTint="@color/accent_fallback"
+                android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="Ember"
+                android:textColor="@color/ink" />
+
+            <RadioButton
+                android:id="@+id/rbBackdropPaper"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/tv_focus_ring_gap"
+                android:paddingVertical="4dp"
+                android:buttonTint="@color/accent_fallback"
+                android:fontFamily="@font/hanken_regular"
+                android:foreground="@drawable/bg_tv_focus_switch"
+                android:text="Paper"
+                android:textColor="@color/ink" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Clock scrim"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvClockScrimValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_regular"
+                android:text="40%"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/sliderClockScrim"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_weight="1"
+            android:value="40"
+            android:valueFrom="0"
+            android:valueTo="80"
+            android:stepSize="5"
+            app:haloColor="@color/accent_fallback"
+            app:labelBehavior="gone"
+            app:thumbColor="@color/accent_fallback"
+            app:tickColorActive="@color/white"
+            app:tickColorInactive="@color/muted_dim"
+            app:trackColorActive="@color/accent_fallback"
+            app:trackColorInactive="@color/surface_border" />
     </LinearLayout>
 
     <View
@@ -155,6 +335,59 @@
             app:tickColorInactive="@color/muted_dim"
             app:trackColorActive="@color/accent_fallback"
             app:trackColorInactive="@color/surface_border" />
+    </LinearLayout>
+
+    <!-- The linked account gives Watch mode a token that outlives a cast session. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Spotify account"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvSpotifyAccountValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_regular"
+                android:maxLines="1"
+                android:text="Not linked · using the receiver session"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnLinkSpotify"
+            style="@style/Widget.Rusty.Button.Secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:foreground="@drawable/bg_tv_focus"
+            android:text="Link" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnUnlinkSpotify"
+            style="@style/Widget.Rusty.Button.Secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:foreground="@drawable/bg_tv_focus"
+            android:text="Unlink"
+            android:visibility="gone" />
     </LinearLayout>
 
     <View
