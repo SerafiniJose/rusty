@@ -43,9 +43,10 @@ class SpotifyTokenProvider(
 }
 
 /**
- * Production wiring shared by the now-playing fragment and the screensaver theme. A linked Spotify
- * account (OAuth refresh token) wins over the native Connect-session token because it survives
- * idle/reboot; when no account is linked this behaves exactly as before. The native awaiter is
+ * Production wiring shared by the now-playing fragment and the screensaver theme. The native
+ * Connect-session token wins while one is valid: the Canvas endpoint only accepts that token, and
+ * answers 403 to the account's OAuth token. When no session is alive the linked account's refresh
+ * token takes over, so `/v1/me/player` keeps working while this display is idle. The native awaiter is
  * registered BEFORE [NativeBridge.requestAccessToken] fires, mirroring [LyricsActivity]'s ordering,
  * so the `ACTION_TOKEN` broadcast is never lost to a race.
  */
@@ -53,11 +54,12 @@ fun androidSpotifyTokenProvider(context: Context): SpotifyTokenProvider {
     val app = context.applicationContext
     return SpotifyTokenProvider(
         source = {
-            SpotifyAccount.cachedToken()
-                ?: TokenStore.accessToken?.takeIf { TokenStore.isValid() }
+            TokenStore.accessToken?.takeIf { TokenStore.isValid() }
+                ?: SpotifyAccount.cachedToken()
         },
         refresh = { timeoutMs ->
-            if (SpotifyAccount.isLinked(app)) {
+            val nativeValid = TokenStore.accessToken?.let { TokenStore.isValid() } == true
+            if (!nativeValid && SpotifyAccount.isLinked(app)) {
                 SpotifyAccount.accessToken(app, forceRefresh = true)?.let { return@SpotifyTokenProvider it.isNotBlank() }
             }
             withTimeoutOrNull(timeoutMs) {
