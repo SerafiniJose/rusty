@@ -43,15 +43,23 @@ class SpotifyTokenProvider(
 }
 
 /**
- * Production wiring shared by the now-playing fragment and the screensaver theme. The awaiter is
+ * Production wiring shared by the now-playing fragment and the screensaver theme. A linked Spotify
+ * account (OAuth refresh token) wins over the native Connect-session token because it survives
+ * idle/reboot; when no account is linked this behaves exactly as before. The native awaiter is
  * registered BEFORE [NativeBridge.requestAccessToken] fires, mirroring [LyricsActivity]'s ordering,
  * so the `ACTION_TOKEN` broadcast is never lost to a race.
  */
 fun androidSpotifyTokenProvider(context: Context): SpotifyTokenProvider {
     val app = context.applicationContext
     return SpotifyTokenProvider(
-        source = { TokenStore.accessToken?.takeIf { TokenStore.isValid() } },
+        source = {
+            SpotifyAccount.cachedToken()
+                ?: TokenStore.accessToken?.takeIf { TokenStore.isValid() }
+        },
         refresh = { timeoutMs ->
+            if (SpotifyAccount.isLinked(app)) {
+                SpotifyAccount.accessToken(app, forceRefresh = true)?.let { return@SpotifyTokenProvider it.isNotBlank() }
+            }
             withTimeoutOrNull(timeoutMs) {
                 suspendCancellableCoroutine<Boolean> { cont ->
                     val receiver = object : BroadcastReceiver() {

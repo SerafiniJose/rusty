@@ -16,6 +16,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.RadioButton
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.tabs.TabLayout
@@ -391,6 +392,31 @@ object SettingsSheet {
                 activity.applyScreensaverTheme(themeId)
             }
         }
+
+        // Linked account for Watch mode. The OAuth token extends the Web API beyond a live cast;
+        // without it Watch falls back to the native session token and the clock.
+        val accountValue = panel.findViewById<TextView>(R.id.tvSpotifyAccountValue)
+        val linkButton = panel.findViewById<MaterialButton>(R.id.btnLinkSpotify)
+        val unlinkButton = panel.findViewById<MaterialButton>(R.id.btnUnlinkSpotify)
+        fun refreshAccount() {
+            val linked = SpotifyAccount.isLinked(activity)
+            val name = SpotifyAccount.displayName(activity)
+            accountValue.text = if (linked) {
+                name?.let { "Linked · $it" } ?: "Linked · Spotify"
+            } else {
+                "Not linked · using the receiver session"
+            }
+            linkButton.text = if (linked) "Relink" else "Link"
+            unlinkButton.visibility = if (linked) View.VISIBLE else View.GONE
+        }
+        linkButton.setOnClickListener {
+            SpotifyLoginDialog(activity) { refreshAccount() }.show()
+        }
+        unlinkButton.setOnClickListener {
+            SpotifyAccount.unlink(activity)
+            refreshAccount()
+        }
+        refreshAccount()
 
         // Idle-timeout picker — a stepped slider mirroring the Spotify bitrate control. The slider
         // index is a position into ScreensaverTimeout.ordered; the sub-label echoes the choice.

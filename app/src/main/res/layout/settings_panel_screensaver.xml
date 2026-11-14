@@ -157,6 +157,59 @@
             app:trackColorInactive="@color/surface_border" />
     </LinearLayout>
 
+    <!-- The linked account gives Watch mode a token that outlives a cast session. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/hanken_medium"
+                android:text="Spotify account"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvSpotifyAccountValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/hanken_regular"
+                android:maxLines="1"
+                android:text="Not linked · using the receiver session"
+                android:textColor="@color/muted_dim"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnLinkSpotify"
+            style="@style/Widget.Rusty.Button.Secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:foreground="@drawable/bg_tv_focus"
+            android:text="Link" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnUnlinkSpotify"
+            style="@style/Widget.Rusty.Button.Secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:foreground="@drawable/bg_tv_focus"
+            android:text="Unlink"
+            android:visibility="gone" />
+    </LinearLayout>
+
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
