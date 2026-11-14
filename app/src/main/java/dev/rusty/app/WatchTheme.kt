@@ -49,13 +49,9 @@ class WatchTheme : ScreensaverTheme {
     private lateinit var emptyDate: TextView
     private lateinit var emptyStatus: TextView
     private lateinit var trackView: View
-    private lateinit var eyebrow: TextView
     private lateinit var title: TextView
     private lateinit var artist: TextView
-    private lateinit var album: TextView
     private lateinit var progress: ProgressBar
-    private lateinit var elapsed: TextView
-    private lateinit var duration: TextView
     private lateinit var chrome: View
     private lateinit var launcher: FeatureLauncher
     private lateinit var prefs: android.content.SharedPreferences
@@ -94,13 +90,9 @@ class WatchTheme : ScreensaverTheme {
         emptyDate = root.findViewById(R.id.ssWatchDate)
         emptyStatus = root.findViewById(R.id.ssWatchEmptyStatus)
         trackView = root.findViewById(R.id.ssWatchTrack)
-        eyebrow = root.findViewById(R.id.ssWatchEyebrow)
         title = root.findViewById(R.id.ssWatchTitle)
         artist = root.findViewById(R.id.ssWatchArtist)
-        album = root.findViewById(R.id.ssWatchAlbum)
         progress = root.findViewById(R.id.ssWatchProgress)
-        elapsed = root.findViewById(R.id.ssWatchElapsed)
-        duration = root.findViewById(R.id.ssWatchDuration)
         chrome = root.findViewById(R.id.ssChrome)
 
         root.findViewById<ImageButton>(R.id.ssBtnSettings).setOnClickListener { host.openSettings() }
@@ -253,21 +245,8 @@ class WatchTheme : ScreensaverTheme {
         header.visibility = View.VISIBLE
         trackView.visibility = View.VISIBLE
 
-        val device = track.deviceName?.takeIf { it.isNotBlank() }
-        val where = when {
-            local != null -> device ?: state.receiverName
-            remoteStatus == RemoteStatus.ERROR -> device?.let { "LAST SEEN ON $it" } ?: "LAST SEEN ON SPOTIFY"
-            !track.isPlaying -> device?.let { "PAUSED ON $it" } ?: "PAUSED ON SPOTIFY"
-            track.isEpisode -> device?.let { "PODCAST ON $it" } ?: "PODCAST ON SPOTIFY"
-            else -> device?.let { "PLAYING ON $it" } ?: "PLAYING ON SPOTIFY"
-        }
-        eyebrow.text = where.uppercase(locale)
-
         title.text = track.title
         artist.text = track.artist
-        val albumName = track.album?.takeIf { it.isNotBlank() }
-        album.text = albumName.orEmpty()
-        album.visibility = if (albumName == null) View.GONE else View.VISIBLE
 
         val total = track.durationMs
         val played = track.elapsedAt(now)
@@ -276,8 +255,6 @@ class WatchTheme : ScreensaverTheme {
         } else {
             0
         }
-        elapsed.text = ReceiverDashboardState.formatDuration(played)
-        duration.text = ReceiverDashboardState.formatDuration(total)
         loadArt(track.artUrl)
     }
 
